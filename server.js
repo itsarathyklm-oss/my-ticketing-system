@@ -122,10 +122,31 @@ app.get('/tickets', async (req, res) => {
     }
 });
 
-app.post('/tickets/:id/assign', async (req, res) => {
-    if (!req.session || !req.session.isAdmin) return res.status(401).json({ error: "Unauthorized" });
-    await Ticket.findByIdAndUpdate(req.params.id, { assignedTo: req.body.staffId });
-    res.json({ success: true });
+// Keep track of the last assigned staff index in memory
+let nextStaffIndex = 0;
+
+// DATABASE API ACTIONS WITH AUTO ALLOCATION
+app.post('/tickets', upload.single('screenshot'), async (req, res) => {
+    try {
+        // Round-robin assignment logic
+        const assignedStaff = IT_STAFF[nextStaffIndex];
+        
+        // Move to the next person in the list for the next ticket
+        nextStaffIndex = (nextStaffIndex + 1) % IT_STAFF.length;
+
+        const newTicket = new Ticket({
+            title: req.body.title,
+            priority: req.body.priority,
+            description: req.body.description,
+            screenshot: req.file ? req.file.path : null,
+            assignedTo: assignedStaff.id // Automatically inject the staff ID here
+        });
+
+        await newTicket.save();
+        res.status(201).json(newTicket);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
 app.post('/tickets/:id/resolve', async (req, res) => {
