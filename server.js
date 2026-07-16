@@ -13,20 +13,17 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(__dirname));
 
-// 1. CONNECT TO MONGOBASE DB
+// 1. CONNECT TO MONGOBASE DB (Start listening immediately, connect in the background)
 const MONGO_URI = process.env.MONGO_URI; 
 mongoose.connect(MONGO_URI)
     .then(() => console.log("Connected permanently to MongoDB Cloud"))
     .catch(err => console.error("Database connection error:", err));
 
-// Define Mongoose Ticket Layout Template
-const ticketSchema = new mongoose.Schema({
-    title: String,
-    priority: { type: String, default: 'Medium' },
-    description: String,
-    screenshot: String, // Will store the permanent Cloudinary image web URL URL
-    status: { type: String, default: 'Open' },
-    assignedTo: { type: String, default: 'Unassigned' }
+// ... (keep the schema, cloudinary setup, and routes exactly the same) ...
+
+// START THE SERVER IMMEDIATELY (Crucial for Render port binding)
+app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Server cloud interface active on port ${PORT}`);
 });
 const Ticket = mongoose.model('Ticket', ticketSchema);
 
