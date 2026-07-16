@@ -25,6 +25,7 @@ const ticketSchema = new mongoose.Schema({
     title: String,
     priority: { type: String, default: 'Medium' },
     description: String,
+    mobile: { type: String, required: true }, // Added mandatory mobile number field
     screenshot: String, 
     status: { type: String, default: 'Open' },
     assignedTo: { type: String, default: 'Unassigned' },
@@ -97,7 +98,7 @@ function checkUserLogin(req, res, next) {
 
 // User Ticket Submission Page
 app.get('/', (req, res) => {
-    res.send(`<!DOCTYPE html><html><head><title>IT Helpdesk Support Ticket</title><style>body { font-family: Arial, sans-serif; max-width: 500px; margin: 0 auto; padding: 20px; }.company-header { display: flex; align-items: center; gap: 15px; margin-bottom: 30px; padding-bottom: 15px; border-bottom: 2px solid #eee; }.company-logo { height: 50px; width: auto; object-fit: contain; }.company-name { font-size: 24px; font-weight: bold; color: #333; }label { display: block; margin-top: 12px; font-weight: bold; }input, textarea, select { width: 100%; padding: 10px; margin-top: 5px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; }button { margin-top: 20px; padding: 12px; background: #007bff; color: white; border: none; cursor: pointer; width: 100%; font-size: 16px; border-radius: 4px; }button:hover { background: #0056b3; }</style></head><body><div class="company-header"><img src="/logo.png" alt="Company Logo" class="company-logo" onerror="this.style.display='none'"><span class="company-name">IT HELPDESK</span></div><h2>Submit a New Ticket</h2><form id="ticketForm" enctype="multipart/form-data"><label>Issue Title:</label><input type="text" id="title" required><label>Priority Level:</label><select id="priority"><option value="Low">Low</option><option value="Medium" selected>Medium</option><option value="High">High</option></select><label>Description:</label><textarea id="description" rows="4" required></textarea><label>Upload Screenshot (Optional):</label><input type="file" id="screenshot" accept="image/*"><button type="submit">Submit Ticket</button></form><script>document.getElementById('ticketForm').addEventListener('submit', async (e) => { e.preventDefault(); const formData = new FormData(); formData.append('title', document.getElementById('title').value); formData.append('priority', document.getElementById('priority').value); formData.append('description', document.getElementById('description').value); const fileInput = document.getElementById('screenshot'); if (fileInput.files[0]) formData.append('screenshot', fileInput.files[0]); const response = await fetch('/tickets', { method: 'POST', body: formData }); if (response.ok) { alert('Ticket submitted to IT cloud database!'); document.getElementById('ticketForm').reset(); } });</script></body></html>`);
+    res.send(`<!DOCTYPE html><html><head><title>IT Helpdesk Support Ticket</title><style>body { font-family: Arial, sans-serif; max-width: 500px; margin: 0 auto; padding: 20px; }.company-header { display: flex; align-items: center; gap: 15px; margin-bottom: 30px; padding-bottom: 15px; border-bottom: 2px solid #eee; }.company-logo { height: 50px; width: auto; object-fit: contain; }.company-name { font-size: 24px; font-weight: bold; color: #333; }label { display: block; margin-top: 12px; font-weight: bold; }input, textarea, select { width: 100%; padding: 10px; margin-top: 5px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; }button { margin-top: 20px; padding: 12px; background: #007bff; color: white; border: none; cursor: pointer; width: 100%; font-size: 16px; border-radius: 4px; }button:hover { background: #0056b3; }</style></head><body><div class="company-header"><img src="/logo.png" alt="Company Logo" class="company-logo" onerror="this.style.display='none'"><span class="company-name">IT HELPDESK</span></div><h2>Submit a New Ticket</h2><form id="ticketForm" enctype="multipart/form-data"><label>Issue Title:</label><input type="text" id="title" required><label>Mobile Number:</label><input type="tel" id="mobile" placeholder="Enter your 10-digit mobile number" pattern="[0-9]{10}" required><label>Priority Level:</label><select id="priority"><option value="Low">Low</option><option value="Medium" selected>Medium</option><option value="High">High</option></select><label>Description:</label><textarea id="description" rows="4" required></textarea><label>Upload Screenshot (Optional):</label><input type="file" id="screenshot" accept="image/*"><button type="submit">Submit Ticket</button></form><script>document.getElementById('ticketForm').addEventListener('submit', async (e) => { e.preventDefault(); const formData = new FormData(); formData.append('title', document.getElementById('title').value); formData.append('mobile', document.getElementById('mobile').value); formData.append('priority', document.getElementById('priority').value); formData.append('description', document.getElementById('description').value); const fileInput = document.getElementById('screenshot'); if (fileInput.files[0]) formData.append('screenshot', fileInput.files[0]); const response = await fetch('/tickets', { method: 'POST', body: formData }); if (response.ok) { alert('Ticket submitted to IT cloud database!'); document.getElementById('ticketForm').reset(); } });</script></body></html>`);
 });
 
 // Shared Login Page (Admin & Staff)
@@ -318,9 +319,10 @@ app.get('/admin', checkUserLogin, (req, res) => {
                         </div>
                         <p class="ticket-desc">\${ticket.description}</p>
                         \${imageHtml}
-                        <div class="assignment-info">
-                            <strong>Assigned Representative:</strong> \${ticket.assignedTo}
-                        </div>
+                        <div class="assignment-info" style="display: flex; gap: 15px;">
+    <span><strong>Mobile:</strong> \${ticket.mobile || 'N/A'}</span>
+    <span><strong>Assigned Representative:</strong> \${ticket.assignedTo}</span>
+</div>
                         <div class="comments-section">
                             <h4 class="comments-header">Internal Work Notes</h4>
                             <div id="comments-container-\${ticket._id}">
@@ -371,6 +373,7 @@ app.post('/tickets', upload.single('screenshot'), async (req, res) => {
 
         const newTicket = new Ticket({
             title: req.body.title,
+            mobile: req.body.mobile, // Capture mobile input from the form submission
             priority: req.body.priority,
             description: req.body.description,
             screenshot: req.file ? req.file.path : null,
@@ -384,7 +387,7 @@ app.post('/tickets', upload.single('screenshot'), async (req, res) => {
             from: process.env.EMAIL_USER,
             to: assignedStaff.email,
             subject: `[New Ticket Assigned] - ${newTicket.title}`,
-            text: `Hello ${assignedStaff.name},\n\nA new IT support ticket has been automatically allocated to you.\n\nTitle: ${newTicket.title}\nPriority: ${newTicket.priority}\nDescription: ${newTicket.description}\n\nPlease check your panel dashboard to resolve it.`
+            text: `Hello ${assignedStaff.name},\n\nA new IT support ticket has been automatically allocated to you.\n\nTitle: ${newTicket.title}\nMobile: ${newTicket.mobile}\nPriority: ${newTicket.priority}\nDescription: ${newTicket.description}\n\nPlease check your panel dashboard to resolve it.`
         };
 
         transporter.sendMail(mailOptions, (err, info) => {
