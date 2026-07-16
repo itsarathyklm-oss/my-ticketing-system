@@ -1,16 +1,51 @@
 const express = require('express');
-const fs = require('fs');
 const path = require('path');
 const session = require('express-session');
+const mongoose = require('mongoose');
 const multer = require('multer');
+const cloudinary = require('cloudinary').v2;
+const { CloudinaryStorage } = require('multer-storage-cloudinary');
+
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(__dirname));
 
-// List of IT Staff IDs and Names
+// 1. CONNECT TO MONGOBASE DB
+const MONGO_URI = process.env.MONGO_URI; 
+mongoose.connect(MONGO_URI)
+    .then(() => console.log("Connected permanently to MongoDB Cloud"))
+    .catch(err => console.error("Database connection error:", err));
+
+// Define Mongoose Ticket Layout Template
+const ticketSchema = new mongoose.Schema({
+    title: String,
+    priority: { type: String, default: 'Medium' },
+    description: String,
+    screenshot: String, // Will store the permanent Cloudinary image web URL URL
+    status: { type: String, default: 'Open' },
+    assignedTo: { type: String, default: 'Unassigned' }
+});
+const Ticket = mongoose.model('Ticket', ticketSchema);
+
+// 2. CONFIGURE CLOUDINARY PERMANENT STORAGE
+cloudinary.config({
+    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+    api_key: process.env.CLOUDINARY_API_KEY,
+    api_secret: process.env.CLOUDINARY_API_SECRET
+});
+
+const storage = new CloudinaryStorage({
+    cloudinary: cloudinary,
+    params: {
+        folder: 'helpdesk_screenshots',
+        allowed_formats: ['jpg', 'png', 'jpeg', 'webp']
+    }
+});
+const upload = multer({ storage: storage });
+
 const IT_STAFF = [
     { id: 'IT001', name: 'SADIQ' },
     { id: 'IT002', name: 'ANANTHU' },
