@@ -125,21 +125,22 @@ app.get('/tickets', async (req, res) => {
 // Keep track of the last assigned staff index in memory
 let nextStaffIndex = 0;
 
-// DATABASE API ACTIONS WITH AUTO ALLOCATION
+// DATABASE API ACTIONS WITH PERSISTENT AUTO ALLOCATION
 app.post('/tickets', upload.single('screenshot'), async (req, res) => {
     try {
-        // Round-robin assignment logic
-        const assignedStaff = IT_STAFF[nextStaffIndex];
+        // Count how many tickets are already in the database
+        const ticketCount = await Ticket.countDocuments();
         
-        // Move to the next person in the list for the next ticket
-        nextStaffIndex = (nextStaffIndex + 1) % IT_STAFF.length;
+        // Mathematically determine the next staff member based on the count
+        const staffIndex = ticketCount % IT_STAFF.length;
+        const assignedStaff = IT_STAFF[staffIndex];
 
         const newTicket = new Ticket({
             title: req.body.title,
             priority: req.body.priority,
             description: req.body.description,
             screenshot: req.file ? req.file.path : null,
-            assignedTo: assignedStaff.id // Automatically inject the staff ID here
+            assignedTo: assignedStaff.id // Persists the ID directly to the database record
         });
 
         await newTicket.save();
