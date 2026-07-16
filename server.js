@@ -135,7 +135,231 @@ app.get('/logout', (req, res) => {
 
 // Dashboard UI supporting Notes, Metrics Panels, and customized context views
 app.get('/admin', checkUserLogin, (req, res) => {
-    res.send(`<!DOCTYPE html><html><head><title>IT Panel Dashboard</title><style>body { font-family: Arial, sans-serif; max-width: 900px; margin: 0 auto; padding: 20px; background-color: #f4f6f9; }.company-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; padding-bottom: 15px; border-bottom: 2px solid #ddd; }.brand-side { display: flex; align-items: center; gap: 15px; }.company-logo { height: 40px; width: auto; object-fit: contain; }.company-name { font-size: 20px; font-weight: bold; color: #333; }.logout-btn { background: #dc3545; color: white; text-decoration: none; padding: 6px 12px; border-radius: 4px; font-size: 14px; }.metrics-row { display: flex; gap: 15px; margin-bottom: 25px; }.card-stat { flex: 1; padding: 15px; border-radius: 6px; background: white; box-shadow: 0 2px 4px rgba(0,0,0,0.05); text-align: center; border-left: 5px solid #007bff; }.card-stat h4 { margin: 0; color: #666; font-size: 14px; }.card-stat div { font-size: 24px; font-weight: bold; margin-top: 5px; color: #222; }.ticket-card { border: 1px solid #ddd; padding: 15px; margin-top: 15px; border-radius: 6px; background: white; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }.badge { padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: bold; display: inline-block; margin-right: 5px; }.p-Low { background: #e2e3e5; color: #383d41; }.p-Medium { background: #fff3cd; color: #856404; }.p-High { background: #f8d7da; color: #721c24; }.status-open { background: #cce5ff; color: #004085; }.status-resolved { background: #d4edda; color: #155724; }.resolve-btn { background: #28a745; color: white; border: none; padding: 6px 12px; font-size: 13px; border-radius: 4px; cursor: pointer; float: right; }.screenshot-preview { max-width: 100%; max-height: 200px; margin-top: 10px; display: block; border: 1px solid #ddd; border-radius: 4px; }.assignment-box { margin-top: 15px; padding-top: 10px; border-top: 1px dashed #eee; font-size: 14px; color: #555; }.comment-section { margin-top: 15px; background: #f8f9fa; padding: 10px; border-radius: 4px; }.comment-item { border-bottom: 1px solid #e9ecef; padding: 5px 0; font-size: 13px; }.comment-item:last-child { border-bottom: none; }.comment-input-box { display: flex; gap: 8px; margin-top: 10px; }.comment-input-box input { flex: 1; padding: 6px; border: 1px solid #ccc; border-radius: 4px; }.comment-input-box button { padding: 6px 12px; background: #17a2b8; color: white; border: none; border-radius: 4px; cursor: pointer; }</style></head><body><div class="company-header"><div class="brand-side"><img src="/logo.png" alt="Company Logo" class="company-logo" onerror="this.style.display='none'"><span class="company-name">IT HELPDESK</span></div><div><span style="margin-right:15px; font-weight:bold;">User: ${req.session.username}</span><a href="/logout" class="logout-btn">Logout</a></div></div><div class="metrics-row"><div class="card-stat"><h4>Total Open</h4><div id="statOpen">0</div></div><div class="card-stat" style="border-left-color: #28a745;"><h4>Total Resolved</h4><div id="statResolved">0</div></div><div class="card-stat" style="border-left-color: #ffc107;"><h4>My Assigned</h4><div id="statMine">0</div></div></div><div id="ticketList">Loading system records...</div><script>const currentUser = "${req.session.username}"; const isAdmin = ${req.session.isAdmin}; async function loadTickets() { const response = await fetch('/tickets'); if (response.status === 401) { window.location.href = '/login'; return; } let tickets = await response.json(); if (!isAdmin) { tickets = tickets.filter(t => t.assignedTo === currentUser); } let openCount = tickets.filter(t => t.status === 'Open').length; let resolvedCount = tickets.filter(t => t.status === 'Resolved').length; let mineCount = tickets.filter(t => t.assignedTo === currentUser).length; document.getElementById('statOpen').innerText = openCount; document.getElementById('statResolved').innerText = resolvedCount; document.getElementById('statMine').innerText = mineCount; const listDiv = document.getElementById('ticketList'); if (tickets.length === 0) { listDiv.innerHTML = '<p>No tickets logged under this view perspective.</p>'; return; } listDiv.innerHTML = ''; tickets.forEach(ticket => { const isResolved = ticket.status === 'Resolved'; const actionBtn = isResolved ? '' : \`<button class="resolve-btn" onclick="resolveTicket('\${ticket._id}')">Resolve</button>\`; const statusClass = isResolved ? 'status-resolved' : 'status-open'; let imageHtml = ticket.screenshot ? \`<a href="\${ticket.screenshot}" target="_blank"><img src="\${ticket.screenshot}" class="screenshot-preview"></a>\` : ''; let commentListHtml = ''; if(ticket.comments && ticket.comments.length > 0) { ticket.comments.forEach(c => { commentListHtml += \`<div class="comment-item"><strong>\${c.author}:</strong> \${c.text}</div>\`; }); } listDiv.innerHTML += \`<div class="ticket-card">\${actionBtn}<h3>\${ticket.title}</h3><p>\${ticket.description}</p>\${imageHtml}<div style="margin-top:15px;"><span class="badge p-\${ticket.priority}">\${ticket.priority} Priority</span><span class="badge \${statusClass}">\${ticket.status}</span></div><div class="assignment-box"><strong>Assigned Staff Member:</strong> \${ticket.assignedTo}</div><div class="comment-section"><h5>Notes & Updates</h5><div>\${commentListHtml}</div><div class="comment-input-box"><input type="text" id="input-\${ticket._id}" placeholder="Type internal note..."><button onclick="addComment('\${ticket._id}')">Add Note</button></div></div></div>\`; }); } async function addComment(id) { const textInput = document.getElementById(\`input-\${id}\`); const text = textInput.value.trim(); if(!text) return; await fetch(\`/tickets/\${id}/comment\`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }) }); textInput.value = ''; loadTickets(); } async function resolveTicket(id) { const response = await fetch(\`/tickets/\${id}/resolve\`, { method: 'POST' }); if (response.ok) loadTickets(); } loadTickets();</script></body></html>`);
+    res.send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IT Helpdesk | Dashboard</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        body { display: flex; height: 100vh; background-color: #f8f9fa; color: #333; overflow: hidden; }
+        
+        /* Sidebar Styles */
+        .sidebar { width: 260px; background-color: #1e2229; color: #fff; display: flex; flex-direction: column; justify-content: space-between; }
+        .sidebar-brand { padding: 24px; display: flex; align-items: center; gap: 12px; border-bottom: 1px solid #2d323e; }
+        .sidebar-logo { height: 35px; width: auto; object-fit: contain; }
+        .sidebar-title { font-size: 18px; font-weight: 700; color: #fff; letter-spacing: 0.5px; }
+        .sidebar-menu { list-style: none; padding: 20px 0; flex-grow: 1; }
+        .menu-item { padding: 12px 24px; display: flex; align-items: center; gap: 12px; color: #a0aec0; text-decoration: none; font-size: 14px; font-weight: 500; cursor: pointer; transition: all 0.2s; }
+        .menu-item:hover, .menu-item.active { background-color: #2d323e; color: #fff; border-left: 4px solid #0056b3; }
+        .sidebar-footer { padding: 20px; border-top: 1px solid #2d323e; }
+        .user-info { font-size: 12px; color: #a0aec0; margin-bottom: 12px; }
+        .user-info strong { color: #fff; display: block; font-size: 14px; margin-bottom: 2px; }
+        .logout-btn { display: block; width: 100%; text-align: center; background-color: #e53e3e; color: white; text-decoration: none; padding: 10px; border-radius: 6px; font-size: 14px; font-weight: 600; transition: background 0.2s; }
+        .logout-btn:hover { background-color: #c53030; }
+
+        /* Main Content Container */
+        .main-content { flex-grow: 1; display: flex; flex-direction: column; height: 100vh; overflow-y: auto; }
+        .top-navbar { height: 70px; background-color: #fff; border-bottom: 1px solid #e2e8f0; display: flex; align-items: center; justify-content: space-between; padding: 0 30px; }
+        .page-title { font-size: 20px; font-weight: 600; color: #2d3748; }
+        .content-body { padding: 30px; max-width: 1200px; width: 100%; margin: 0 auto; }
+
+        /* Metrics Grid */
+        .metrics-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 20px; margin-bottom: 30px; }
+        .metric-card { background: white; border-radius: 8px; padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); border: 1px solid #e2e8f0; border-top: 4px solid #3182ce; }
+        .metric-card.resolved { border-top-color: #38a169; }
+        .metric-card.assigned { border-top-color: #dd6b20; }
+        .metric-label { font-size: 13px; font-weight: 600; color: #718096; text-transform: uppercase; letter-spacing: 0.5px; }
+        .metric-value { font-size: 28px; font-weight: 700; color: #2d3748; margin-top: 5px; }
+
+        /* Ticket Cards */
+        .ticket-card { background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 24px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); position: relative; }
+        .ticket-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; }
+        .ticket-title { font-size: 18px; font-weight: 600; color: #2d3748; }
+        .ticket-desc { color: #4a5568; font-size: 14px; line-height: 1.5; margin-bottom: 16px; }
+        
+        .badge { padding: 4px 10px; border-radius: 50px; font-size: 11px; font-weight: 700; text-transform: uppercase; display: inline-block; margin-right: 8px; }
+        .p-Low { background-color: #edf2f7; color: #4a5568; }
+        .p-Medium { background-color: #feebc8; color: #c05621; }
+        .p-High { background-color: #fed7d7; color: #9b2c2c; }
+        .status-open { background-color: #ebf8ff; color: #2b6cb0; }
+        .status-resolved { background-color: #c6f6d5; color: #22543d; }
+
+        .resolve-btn { background-color: #38a169; color: white; border: none; padding: 8px 16px; font-size: 13px; font-weight: 600; border-radius: 6px; cursor: pointer; transition: background 0.2s; }
+        .resolve-btn:hover { background-color: #2f855a; }
+        .screenshot-preview { max-width: 100%; max-height: 180px; border-radius: 6px; border: 1px solid #e2e8f0; margin-top: 12px; display: block; object-fit: cover; }
+        
+        .assignment-info { margin-top: 16px; padding-top: 12px; border-top: 1px solid #edf2f7; font-size: 13px; color: #718096; }
+        .assignment-info strong { color: #4a5568; }
+
+        /* Comments / Notes Layout */
+        .comments-section { margin-top: 20px; background-color: #f7fafc; padding: 16px; border-radius: 8px; border: 1px solid #edf2f7; }
+        .comments-header { font-size: 12px; font-weight: 700; color: #718096; text-transform: uppercase; margin-bottom: 10px; letter-spacing: 0.5px; }
+        .comment-item { padding: 8px 0; border-bottom: 1px solid #edf2f7; font-size: 13px; color: #4a5568; }
+        .comment-item:last-child { border-bottom: none; }
+        .comment-item strong { color: #2d3748; }
+        
+        .comment-form { display: flex; gap: 10px; margin-top: 12px; }
+        .comment-form input { flex-grow: 1; padding: 8px 12px; border: 1px solid #e2e8f0; border-radius: 6px; font-size: 13px; }
+        .comment-form input:focus { outline: none; border-color: #3182ce; }
+        .comment-form button { background-color: #3182ce; color: white; border: none; padding: 8px 16px; font-size: 13px; font-weight: 600; border-radius: 6px; cursor: pointer; transition: background 0.2s; }
+        .comment-form button:hover { background-color: #2b6cb0; }
+    </style>
+</head>
+<body>
+
+    <!-- SIDEBAR -->
+    <aside class="sidebar">
+        <div>
+            <div class="sidebar-brand">
+                <img src="/logo.png" alt="Logo" class="sidebar-logo" onerror="this.style.display='none'">
+                <span class="sidebar-title">SARATHY IT</span>
+            </div>
+            <ul class="sidebar-menu">
+                <li class="menu-item active">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+                    All Tickets
+                </li>
+            </ul>
+        </div>
+        <div class="sidebar-footer">
+            <div class="user-info">
+                <span>Logged in as</span>
+                <strong>${req.session.username}</strong>
+            </div>
+            <a href="/logout" class="logout-btn">Logout</a>
+        </div>
+    </aside>
+
+    <!-- MAIN CONTENT LAYER -->
+    <main class="main-content">
+        <header class="top-navbar">
+            <h1 class="page-title">Helpdesk Operations</h1>
+        </header>
+
+        <section class="content-body">
+            <!-- Metrics Row -->
+            <div class="metrics-grid">
+                <div class="metric-card">
+                    <div class="metric-label">Open Issues</div>
+                    <div class="metric-value" id="statOpen">0</div>
+                </div>
+                <div class="metric-card resolved">
+                    <div class="metric-label">Resolved Issues</div>
+                    <div class="metric-value" id="statResolved">0</div>
+                </div>
+                <div class="metric-card assigned">
+                    <div class="metric-label">My Active Tickets</div>
+                    <div class="metric-value" id="statMine">0</div>
+                </div>
+            </div>
+
+            <!-- Ticket Feed -->
+            <div id="ticketList">Loading active queue...</div>
+        </section>
+    </main>
+
+    <script>
+        const currentUser = "${req.session.username}";
+        const isAdmin = ${req.session.isAdmin};
+
+        async function loadTickets() {
+            const response = await fetch('/tickets');
+            if (response.status === 401) {
+                window.location.href = '/login';
+                return;
+            }
+            let tickets = await response.json();
+            
+            if (!isAdmin) {
+                tickets = tickets.filter(t => t.assignedTo === currentUser);
+            }
+
+            let openCount = tickets.filter(t => t.status === 'Open').length;
+            let resolvedCount = tickets.filter(t => t.status === 'Resolved').length;
+            let mineCount = tickets.filter(t => t.assignedTo === currentUser).length;
+
+            document.getElementById('statOpen').innerText = openCount;
+            document.getElementById('statResolved').innerText = resolvedCount;
+            document.getElementById('statMine').innerText = mineCount;
+
+            const listDiv = document.getElementById('ticketList');
+            if (tickets.length === 0) {
+                listDiv.innerHTML = '<p style="text-align: center; color: #718096; padding: 40px 0;">No support requests logged in this category.</p>';
+                return;
+            }
+
+            listDiv.innerHTML = '';
+            tickets.forEach(ticket => {
+                const isResolved = ticket.status === 'Resolved';
+                const actionBtn = isResolved ? '' : \`<button class="resolve-btn" onclick="resolveTicket('\${ticket._id}')">Resolve Ticket</button>\`;
+                const statusClass = isResolved ? 'status-resolved' : 'status-open';
+                let imageHtml = ticket.screenshot ? \`<a href="\${ticket.screenshot}" target="_blank"><img src="\${ticket.screenshot}" class="screenshot-preview"></a>\` : '';
+                
+                let commentListHtml = '';
+                if (ticket.comments && ticket.comments.length > 0) {
+                    ticket.comments.forEach(c => {
+                        commentListHtml += \`<div class="comment-item"><strong>\${c.author}:</strong> \${c.text}</div>\`;
+                    });
+                }
+
+                listDiv.innerHTML += \`
+                    <div class="ticket-card">
+                        <div class="ticket-header">
+                            <div>
+                                <h3 class="ticket-title">\${ticket.title}</h3>
+                                <div style="margin-top: 8px;">
+                                    <span class="badge p-\${ticket.priority}">\${ticket.priority} Priority</span>
+                                    <span class="badge \${statusClass}">\${ticket.status}</span>
+                                </div>
+                            </div>
+                            \${actionBtn}
+                        </div>
+                        <p class="ticket-desc">\${ticket.description}</p>
+                        \${imageHtml}
+                        <div class="assignment-info">
+                            <strong>Assigned Representative:</strong> \${ticket.assignedTo}
+                        </div>
+                        <div class="comments-section">
+                            <h4 class="comments-header">Internal Work Notes</h4>
+                            <div id="comments-container-\${ticket._id}">
+                                \${commentListHtml || '<p style="font-size: 13px; color: #a0aec0; font-style: italic;">No internal updates added yet.</p>'}
+                            </div>
+                            <div class="comment-form">
+                                <input type="text" id="input-\${ticket._id}" placeholder="Write brief operational update...">
+                                <button onclick="addComment('\${ticket._id}')">Post Note</button>
+                            </div>
+                        </div>
+                    </div>
+                \`;
+            });
+        }
+
+        async function addComment(id) {
+            const textInput = document.getElementById(\`input-\${id}\`);
+            const text = textInput.value.trim();
+            if(!text) return;
+
+            await fetch(\`/tickets/\${id}/comment\`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ text })
+            });
+
+            textInput.value = '';
+            loadTickets();
+        }
+
+        async function resolveTicket(id) {
+            const response = await fetch(\`/tickets/\${id}/resolve\`, { method: 'POST' });
+            if (response.ok) loadTickets();
+        }
+
+        loadTickets();
+    </script>
+</body>
+</html>`);
 });
 
 // DATABASE ACTIONS WITH DIRECT ALLOCATION & EMAIL PIPELINE
