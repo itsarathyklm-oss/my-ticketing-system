@@ -57,6 +57,7 @@ const IT_STAFF = [
     { id: 'IT001', name: 'SADIQ', password: 'sadiq123', email: 'itsarathy01@gmail.com' },
     { id: 'IT002', name: 'ABHIMANYU', password: 'abhi123', email: 'abhimanyu@example.com' },
     { id: 'IT003', name: 'ANANDHU', password: 'anandhu123', email: 'anuachu052@gmail.com' }
+    { id: 'IT004', name: 'sabari', password: 'sabari123', email: 'sabari@example.com' }
 ];
 
 // Configure Email Transporter (Uses environment variables for security)
