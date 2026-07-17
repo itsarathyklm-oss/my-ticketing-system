@@ -99,6 +99,14 @@ function checkUserLogin(req, res, next) {
     }
 }
 
+function checkAdminLogin(req, res, next) {
+    if (req.session && req.session.isAdmin) {
+        next();
+    } else {
+        res.status(403).json({ error: 'Access Denied' });
+    }
+}
+
 // User Ticket Submission Page
 app.get('/', (req, res) => {
     res.send(`<!DOCTYPE html><html><head><title>IT Helpdesk Support Ticket</title><style>body { font-family: Arial, sans-serif; max-width: 500px; margin: 0 auto; padding: 20px; }.company-header { display: flex; align-items: center; gap: 15px; margin-bottom: 30px; padding-bottom: 15px; border-bottom: 2px solid #eee; }.company-logo { height: 50px; width: auto; object-fit: contain; }.company-name { font-size: 24px; font-weight: bold; color: #333; }label { display: block; margin-top: 12px; font-weight: bold; }input, textarea, select { width: 100%; padding: 10px; margin-top: 5px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; }button { margin-top: 20px; padding: 12px; background: #007bff; color: white; border: none; cursor: pointer; width: 100%; font-size: 16px; border-radius: 4px; }button:hover { background: #0056b3; }</style></head><body><div class="company-header"><img src="/logo.png" alt="Company Logo" class="company-logo" onerror="this.style.display='none'"><span class="company-name">IT HELPDESK</span></div><h2>Submit a New Ticket</h2><form id="ticketForm" enctype="multipart/form-data"><label>Issue Title:</label><input type="text" id="title" required><label>Select Branch Location:</label><select id="branch" required><option value="" disabled selected>Loading branches...</option></select><label>Mobile Number:</label><input type="tel" id="mobile" placeholder="Enter your 10-digit mobile number" pattern="[0-9]{10}" required><label>Priority Level:</label><select id="priority"><option value="Low">Low</option><option value="Medium" selected>Medium</option><option value="High">High</option></select><label>Description:</label><textarea id="description" rows="4" required></textarea><label>Upload Screenshot (Optional):</label><input type="file" id="screenshot" accept="image/*"><button type="submit">Submit Ticket</button></form><script>
@@ -173,6 +181,7 @@ app.get('/logout', (req, res) => {
 app.get('/admin', checkUserLogin, (req, res) => {
     const dynamicUsername = req.session.username || 'User';
     const dynamicIsAdmin = req.session.isAdmin ? 'true' : 'false';
+    const isAdminUser = !!req.session.isAdmin;
 
     let html = '<!DOCTYPE html>' +
 '<html lang="en">' +
@@ -251,8 +260,8 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            <div class="menu-category">Navigation</div>' +
 '            <ul class="sidebar-menu">' +
 '                <li class="menu-item active" id="tabTicketsLink" onclick="switchView(\'tickets\')">Tickets System</li>' +
-'                <li class="menu-item" id="tabBranchesLink" onclick="switchView(\'branches\')">Manage Branches</li>' +
-'                <li class="menu-item" id="tabStaffLink" onclick="switchView(\'staff\')">Manage IT Staff</li>' +
+(isAdminUser ? '                <li class="menu-item" id="tabBranchesLink" onclick="switchView(\'branches\')">Manage Branches</li>' : '') +
+(isAdminUser ? '                <li class="menu-item" id="tabStaffLink" onclick="switchView(\'staff\')">Manage IT Staff</li>' : '') +
 '            </ul>' +
 '        </div>' +
 '        <div class="sidebar-footer">' +
@@ -280,7 +289,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                <div class="branch-panel-card">' +
 '                    <h2>Create New Branch Location</h2>' +
 '                    <div class="branch-input-group">' +
-'                        <input type="text" id="newBranchName" placeholder="Enter Branch Details">' +
+'                        <input type="text" id="newBranchName" placeholder="Bajaj, Pallimukk">' +
 '                        <button class="branch-add-btn" onclick="addNewBranch()">Add Branch</button>' +
 '                    </div>' +
 '                    <table class="branch-table">' +
@@ -305,6 +314,10 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '        const isAdmin = ' + dynamicIsAdmin + ';' +
 '        document.getElementById("displayUserLabel").innerText = currentUser;' +
 '        function switchView(target) {' +
+'            if ((target === "branches" || target === "staff") && !isAdmin) {' +
+'                alert("Access Denied: Admins only.");' +
+'                return;' +
+'            }' +
 '            document.querySelectorAll(".dashboard-view").forEach(el => el.classList.remove("active"));' +
 '            document.querySelectorAll(".menu-item").forEach(el => el.classList.remove("active"));' +
 '            if (target === "tickets") {' +
@@ -461,7 +474,7 @@ app.get('/public-branches', async (req, res) => {
     }
 });
 
-app.post('/tickets/branches', checkUserLogin, async (req, res) => {
+app.post('/tickets/branches', checkAdminLogin, async (req, res) => {
     try {
         const newBranch = new Branch({ name: req.body.name });
         await newBranch.save();
@@ -471,7 +484,7 @@ app.post('/tickets/branches', checkUserLogin, async (req, res) => {
     }
 });
 
-app.delete('/tickets/branches/:id', checkUserLogin, async (req, res) => {
+app.delete('/tickets/branches/:id', checkAdminLogin, async (req, res) => {
     const branch = await Branch.findById(req.params.id);
     await Branch.findByIdAndDelete(req.params.id);
     if (branch) {
@@ -480,12 +493,12 @@ app.delete('/tickets/branches/:id', checkUserLogin, async (req, res) => {
     res.json({ success: true });
 });
 
-app.get('/tickets/staff-list', checkUserLogin, (req, res) => {
+app.get('/tickets/staff-list', checkAdminLogin, (req, res) => {
     res.json(IT_STAFF.map(s => ({ id: s.id, name: s.name, email: s.email })));
 });
 
 // Get branch coverage for all staff, as a { staffId: [branchNames] } map
-app.get('/tickets/staff-branches', checkUserLogin, async (req, res) => {
+app.get('/tickets/staff-branches', checkAdminLogin, async (req, res) => {
     try {
         const assignments = await StaffBranch.find();
         const map = {};
@@ -497,7 +510,7 @@ app.get('/tickets/staff-branches', checkUserLogin, async (req, res) => {
 });
 
 // Set which branches one staff member covers
-app.post('/tickets/staff-branches', checkUserLogin, async (req, res) => {
+app.post('/tickets/staff-branches', checkAdminLogin, async (req, res) => {
     try {
         const { staffId, branches } = req.body;
         await StaffBranch.findOneAndUpdate(
