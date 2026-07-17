@@ -26,7 +26,7 @@ const branchSchema = new mongoose.Schema({
 });
 const Branch = mongoose.model('Branch', branchSchema);
 
-// Staff-Branch Assignment Schema (which branches each staff member covers)
+// Staff-Branch Assignment Schema
 const staffBranchSchema = new mongoose.Schema({
     staffId: { type: String, required: true, unique: true },
     branches: [{ type: String }]
@@ -107,51 +107,256 @@ function checkAdminLogin(req, res, next) {
     }
 }
 
-// User Ticket Submission Page
+// User Ticket Submission Page (MODERN UI)
 app.get('/', (req, res) => {
-    res.send(`<!DOCTYPE html><html><head><title>IT Helpdesk Support Ticket</title><style>body { font-family: Arial, sans-serif; max-width: 500px; margin: 0 auto; padding: 20px; }.company-header { display: flex; align-items: center; gap: 15px; margin-bottom: 30px; padding-bottom: 15px; border-bottom: 2px solid #eee; }.company-logo { height: 50px; width: auto; object-fit: contain; }.company-name { font-size: 24px; font-weight: bold; color: #333; }label { display: block; margin-top: 12px; font-weight: bold; }input, textarea, select { width: 100%; padding: 10px; margin-top: 5px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; }button { margin-top: 20px; padding: 12px; background: #007bff; color: white; border: none; cursor: pointer; width: 100%; font-size: 16px; border-radius: 4px; }button:hover { background: #0056b3; }</style></head><body><div class="company-header"><img src="/logo.png" alt="Company Logo" class="company-logo" onerror="this.style.display='none'"><span class="company-name">IT HELPDESK</span></div><h2>Submit a New Ticket</h2><form id="ticketForm" enctype="multipart/form-data"><label>Issue Title:</label><input type="text" id="title" required><label>Select Branch Location:</label><select id="branch" required><option value="" disabled selected>Loading branches...</option></select><label>Mobile Number:</label><input type="tel" id="mobile" placeholder="Enter your 10-digit mobile number" pattern="[0-9]{10}" required><label>Priority Level:</label><select id="priority"><option value="Low">Low</option><option value="Medium" selected>Medium</option><option value="High">High</option></select><label>Description:</label><textarea id="description" rows="4" required></textarea><label>Upload Screenshot (Optional):</label><input type="file" id="screenshot" accept="image/*"><button type="submit">Submit Ticket</button></form><script>
-    async function loadFormBranches() {
-        try {
-            const res = await fetch('/public-branches');
-            const branches = await res.json();
-            const select = document.getElementById('branch');
-            if (branches.length === 0) {
-                select.innerHTML = '<option value="General">No specific branches configured</option>';
-                return;
-            }
-            select.innerHTML = '<option value="" disabled selected>Choose branch location</option>';
-            branches.forEach(b => {
-                select.innerHTML += '<option value="' + b.name + '">' + b.name + '</option>';
-            });
-        } catch(e) {
-            document.getElementById('branch').innerHTML = '<option value="General">General/Headquarters</option>';
+    res.send(`<!DOCTYPE html>
+<html>
+<head>
+    <title>IT Helpdesk Support Ticket</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body { 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+            margin: 0; 
+            padding: 0; 
+            height: 100vh;
+            background-color: #111; 
+            background-image: url('background.png'); 
+            background-size: cover; 
+            background-position: center; 
+            background-attachment: fixed;
+            display: flex;
+            align-items: center;
         }
-    }
-    loadFormBranches();
+        .page-wrapper {
+            display: flex;
+            width: 100%;
+            max-width: 1500px;
+            margin: 0 auto;
+            padding: 20px;
+            box-sizing: border-box;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .form-container {
+            width: 100%;
+            max-width: 480px; 
+            padding: 40px; 
+            background-color: rgba(245, 245, 245, 0.98); 
+            border-radius: 6px;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.6);
+            margin-left: 5%;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+        .side-logo-container {
+            flex: 1;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        .side-logo {
+            max-width: 300px;
+            width: 100%;
+            filter: drop-shadow(0 10px 15px rgba(0,0,0,0.5));
+        }
+        @media (max-width: 900px) {
+            .side-logo-container { display: none; }
+            .page-wrapper { justify-content: center; }
+            .form-container { margin-left: 0; }
+        }
+        .company-header { display: flex; align-items: center; gap: 15px; margin-bottom: 25px; padding-bottom: 15px; border-bottom: 2px solid #ddd; }
+        .company-logo { height: 40px; width: auto; object-fit: contain; }
+        .company-name { font-size: 20px; font-weight: 700; color: #222; }
+        h2 { margin-top: 0; color: #111; font-size: 24px; margin-bottom: 25px; }
+        label { display: block; margin-top: 15px; font-weight: 700; color: #000; font-size: 14px; }
+        input, textarea, select { width: 100%; padding: 12px; margin-top: 6px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; background: #fff; color: #333;}
+        input:focus, textarea:focus, select:focus { outline: none; border-color: #d9232d; box-shadow: 0 0 5px rgba(217,35,45,0.2); }
+        button { margin-top: 25px; padding: 14px; background: #222; color: white; border: none; cursor: pointer; width: 100%; font-size: 16px; font-weight: bold; border-radius: 4px; transition: background 0.3s; }
+        button:hover { background: #d9232d; }
+        .form-container::-webkit-scrollbar { width: 8px; }
+        .form-container::-webkit-scrollbar-thumb { background: #ccc; border-radius: 4px; }
+    </style>
+</head>
+<body>
+    <div class="page-wrapper">
+        <div class="form-container">
+            <div class="company-header">
+                <img src="/logo.png" alt="Logo" class="company-logo" onerror="this.style.display='none'">
+                <span class="company-name">IT HELPDESK</span>
+            </div>
+            <h2>Submit a New Ticket</h2>
+            <form id="ticketForm" enctype="multipart/form-data">
+                <label>Issue Title:</label>
+                <input type="text" id="title" required>
+                
+                <label>Select Branch Location:</label>
+                <select id="branch" required><option value="" disabled selected>Loading branches...</option></select>
+                
+                <label>Mobile Number:</label>
+                <input type="tel" id="mobile" placeholder="Enter your 10-digit mobile number" pattern="[0-9]{10}" required>
+                
+                <label>Priority Level:</label>
+                <select id="priority">
+                    <option value="Low">Low</option>
+                    <option value="Medium" selected>Medium</option>
+                    <option value="High">High</option>
+                </select>
+                
+                <label>Description:</label>
+                <textarea id="description" rows="4" required></textarea>
+                
+                <label>Upload Screenshot (Optional):</label>
+                <input type="file" id="screenshot" accept="image/*">
+                
+                <button type="submit">Submit Ticket</button>
+            </form>
+        </div>
+        <div class="side-logo-container">
+            <!-- This logo will float on the right side over the dark background -->
+            <img src="/logo.png" alt="Company Branding" class="side-logo" onerror="this.style.display='none'">
+        </div>
+    </div>
+    <script>
+        async function loadFormBranches() {
+            try {
+                const res = await fetch('/public-branches');
+                const branches = await res.json();
+                const select = document.getElementById('branch');
+                if (branches.length === 0) {
+                    select.innerHTML = '<option value="General">No specific branches configured</option>';
+                    return;
+                }
+                select.innerHTML = '<option value="" disabled selected>Choose branch location</option>';
+                branches.forEach(b => {
+                    select.innerHTML += '<option value="' + b.name + '">' + b.name + '</option>';
+                });
+            } catch(e) {
+                document.getElementById('branch').innerHTML = '<option value="General">General/Headquarters</option>';
+            }
+        }
+        loadFormBranches();
 
-    document.getElementById('ticketForm').addEventListener('submit', async (e) => { 
-        e.preventDefault(); 
-        const formData = new FormData(); 
-        formData.append('title', document.getElementById('title').value); 
-        formData.append('branch', document.getElementById('branch').value); 
-        formData.append('mobile', document.getElementById('mobile').value); 
-        formData.append('priority', document.getElementById('priority').value); 
-        formData.append('description', document.getElementById('description').value); 
-        const fileInput = document.getElementById('screenshot'); 
-        if (fileInput.files[0]) formData.append('screenshot', fileInput.files[0]); 
-        const response = await fetch('/tickets', { method: 'POST', body: formData }); 
-        if (response.ok) { 
-            alert('Ticket submitted to IT cloud database!'); 
-            document.getElementById('ticketForm').reset(); 
-            loadFormBranches();
-        } 
-    });
-    </script></body></html>`);
+        document.getElementById('ticketForm').addEventListener('submit', async (e) => { 
+            e.preventDefault(); 
+            const formData = new FormData(); 
+            formData.append('title', document.getElementById('title').value); 
+            formData.append('branch', document.getElementById('branch').value); 
+            formData.append('mobile', document.getElementById('mobile').value); 
+            formData.append('priority', document.getElementById('priority').value); 
+            formData.append('description', document.getElementById('description').value); 
+            const fileInput = document.getElementById('screenshot'); 
+            if (fileInput.files[0]) formData.append('screenshot', fileInput.files[0]); 
+            
+            const btn = e.target.querySelector('button');
+            btn.innerText = "Submitting...";
+            btn.disabled = true;
+
+            const response = await fetch('/tickets', { method: 'POST', body: formData }); 
+            if (response.ok) { 
+                alert('Ticket submitted to IT cloud database!'); 
+                document.getElementById('ticketForm').reset(); 
+                loadFormBranches();
+            } else {
+                alert('Error submitting ticket.');
+            }
+            btn.innerText = "Submit Ticket";
+            btn.disabled = false;
+        });
+    </script>
+</body>
+</html>`);
 });
 
-// Login Page
+// Login Page (MODERN UI)
 app.get('/login', (req, res) => {
-    res.send(`<!DOCTYPE html><html><head><title>Login</title><style>body { font-family: Arial, sans-serif; max-width: 350px; margin: 80px auto; padding: 25px; border: 1px solid #ddd; border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }.company-brand { text-align: center; margin-bottom: 25px; padding-bottom: 15px; border-bottom: 1px solid #eee; }.company-logo { height: 50px; width: auto; object-fit: contain; margin-bottom: 10px; }.company-name { font-size: 20px; font-weight: bold; color: #333; display: block; }label { display: block; margin-top: 12px; font-weight: bold; }input { width: 100%; padding: 10px; margin-top: 5px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; }button { margin-top: 25px; padding: 12px; background: #28a745; color: white; border: none; cursor: pointer; width: 100%; font-size: 16px; border-radius: 4px; }</style></head><body><div class="company-brand"><img src="/logo.png" alt="Company Logo" class="company-logo" onerror="this.style.display='none'"><span class="company-name">IT HELPDESK</span></div><form action="/login" method="POST"><label>Username / Staff Name:</label> <input type="text" name="username" required><label>Password:</label> <input type="password" name="password" required><button type="submit">Login</button></form></body></html>`);
+    res.send(`<!DOCTYPE html>
+<html>
+<head>
+    <title>Login | IT Helpdesk</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body { 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+            margin: 0; 
+            padding: 0; 
+            height: 100vh;
+            background-color: #111; 
+            background-image: url('background.png'); 
+            background-size: cover; 
+            background-position: center; 
+            background-attachment: fixed;
+            display: flex;
+            align-items: center;
+        }
+        .page-wrapper {
+            display: flex;
+            width: 100%;
+            max-width: 1500px;
+            margin: 0 auto;
+            padding: 20px;
+            box-sizing: border-box;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .login-container { 
+            width: 100%;
+            max-width: 400px; 
+            padding: 40px; 
+            background-color: rgba(245, 245, 245, 0.98); 
+            border-radius: 6px; 
+            box-shadow: 0 20px 50px rgba(0,0,0,0.6); 
+            margin-left: 5%;
+        }
+        .side-logo-container {
+            flex: 1;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        .side-logo {
+            max-width: 300px;
+            width: 100%;
+            filter: drop-shadow(0 10px 15px rgba(0,0,0,0.5));
+        }
+        @media (max-width: 900px) {
+            .side-logo-container { display: none; }
+            .page-wrapper { justify-content: center; }
+            .login-container { margin-left: 0; }
+        }
+        .company-brand { text-align: center; margin-bottom: 25px; padding-bottom: 15px; border-bottom: 2px solid #ddd; }
+        .company-logo { height: 50px; width: auto; object-fit: contain; margin-bottom: 10px; }
+        .company-name { font-size: 20px; font-weight: 700; color: #222; display: block; }
+        label { display: block; margin-top: 15px; font-weight: 700; color: #000; font-size: 14px; }
+        input { width: 100%; padding: 12px; margin-top: 6px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; }
+        input:focus { outline: none; border-color: #d9232d; box-shadow: 0 0 5px rgba(217,35,45,0.2); }
+        button { margin-top: 25px; padding: 14px; background: #222; color: white; border: none; cursor: pointer; width: 100%; font-size: 16px; font-weight: bold; border-radius: 4px; transition: background 0.3s; }
+        button:hover { background: #d9232d; }
+    </style>
+</head>
+<body>
+    <div class="page-wrapper">
+        <div class="login-container">
+            <div class="company-brand">
+                <img src="/logo.png" alt="Company Logo" class="company-logo" onerror="this.style.display='none'">
+                <span class="company-name">IT HELPDESK LOGIN</span>
+            </div>
+            <form action="/login" method="POST">
+                <label>Username / Staff Name:</label> 
+                <input type="text" name="username" required>
+                <label>Password:</label> 
+                <input type="password" name="password" required>
+                <button type="submit">Access Dashboard</button>
+            </form>
+        </div>
+        <div class="side-logo-container">
+            <img src="/logo.png" alt="Company Branding" class="side-logo" onerror="this.style.display='none'">
+        </div>
+    </div>
+</body>
+</html>`);
 });
 
 app.post('/login', (req, res) => {
@@ -497,7 +702,6 @@ app.get('/tickets/staff-list', checkAdminLogin, (req, res) => {
     res.json(IT_STAFF.map(s => ({ id: s.id, name: s.name, email: s.email })));
 });
 
-// Get branch coverage for all staff, as a { staffId: [branchNames] } map
 app.get('/tickets/staff-branches', checkAdminLogin, async (req, res) => {
     try {
         const assignments = await StaffBranch.find();
@@ -509,7 +713,6 @@ app.get('/tickets/staff-branches', checkAdminLogin, async (req, res) => {
     }
 });
 
-// Set which branches one staff member covers
 app.post('/tickets/staff-branches', checkAdminLogin, async (req, res) => {
     try {
         const { staffId, branches } = req.body;
@@ -528,18 +731,15 @@ app.post('/tickets', upload.single('screenshot'), async (req, res) => {
     try {
         const branchName = req.body.branch || 'N/A';
 
-        // Find which staff explicitly cover this branch
         const coveringAssignments = await StaffBranch.find({ branches: branchName });
         let eligibleStaff = coveringAssignments
             .map(a => IT_STAFF.find(s => s.id === a.staffId))
             .filter(Boolean);
 
-        // Nobody assigned to this branch yet -> fall back to round-robin across everyone
         if (eligibleStaff.length === 0) {
             eligibleStaff = IT_STAFF;
         }
 
-        // Round-robin among eligible staff, based on tickets already logged for this branch
         const branchTicketCount = await Ticket.countDocuments({ branch: branchName });
         const staffIndex = branchTicketCount % eligibleStaff.length;
         const assignedStaff = eligibleStaff[staffIndex];
@@ -551,28 +751,24 @@ app.post('/tickets', upload.single('screenshot'), async (req, res) => {
             priority: req.body.priority,
             description: req.body.description,
             screenshot: req.file ? req.file.path : null,
-            assignedTo: assignedStaff.name 
+            assignedTo: assignedStaff.name
         });
 
         await newTicket.save();
 
-        const mailOptions = {
-            from: process.env.EMAIL_USER,
-            to: assignedStaff.email,
-            subject: `[New Ticket] - ${newTicket.title}`,
-            text: `Hello ${assignedStaff.name},\n\nTicket Assigned:\nTitle: ${newTicket.title}\nBranch: ${newTicket.branch}\nMobile: ${newTicket.mobile}`
-        };
+        if (assignedStaff.email) {
+            transporter.sendMail({
+                from: process.env.EMAIL_USER,
+                to: assignedStaff.email,
+                subject: `New Ticket Assigned: ${newTicket.title}`,
+                text: `You have been assigned a new ticket from ${branchName}. Priority: ${newTicket.priority}. Description: ${newTicket.description}`
+            }).catch(console.error);
+        }
 
-        transporter.sendMail(mailOptions, (err, info) => {
-            if (err) console.error(err);
-        });
-
-        res.status(201).json(newTicket);
+        res.status(201).json({ success: true });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
 });
 
-app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Server configuration active on port ${PORT}`);
-});
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
