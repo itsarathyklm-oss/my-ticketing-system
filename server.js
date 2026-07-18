@@ -47,6 +47,7 @@ const ticketSchema = new mongoose.Schema({
     screenshot: String, 
     status: { type: String, default: 'Open' },
     assignedTo: { type: String, default: 'Unassigned' },
+    escalated: { type: Boolean, default: false },
     comments: [{
         author: String,
         text: String,
@@ -155,7 +156,38 @@ function checkAdminLogin(req, res, next) {
 
 // User Ticket Submission Page
 app.get('/', (req, res) => {
-    res.send(`<!DOCTYPE html><html><head><title>IT Helpdesk Support Ticket</title><style>body { font-family: Arial, sans-serif; max-width: 500px; margin: 0 auto; padding: 20px; }.company-header { display: flex; align-items: center; gap: 15px; margin-bottom: 30px; padding-bottom: 15px; border-bottom: 2px solid #eee; }.company-logo { height: 50px; width: auto; object-fit: contain; }.company-name { font-size: 24px; font-weight: bold; color: #333; }label { display: block; margin-top: 12px; font-weight: bold; }input, textarea, select { width: 100%; padding: 10px; margin-top: 5px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; }button { margin-top: 20px; padding: 12px; background: #007bff; color: white; border: none; cursor: pointer; width: 100%; font-size: 16px; border-radius: 4px; }button:hover { background: #0056b3; }</style></head><body><div class="company-header"><img src="/logo.png" alt="Company Logo" class="company-logo" onerror="this.style.display='none'"><span class="company-name">IT HELPDESK</span></div><h2>Submit a New Ticket</h2><form id="ticketForm" enctype="multipart/form-data"><label>Issue Title:</label><input type="text" id="title" required><label>Select Branch Location:</label><select id="branch" required><option value="" disabled selected>Loading branches...</option></select><label>Mobile Number:</label><input type="tel" id="mobile" placeholder="Enter your 10-digit mobile number" pattern="[0-9]{10}" required><label>Priority Level:</label><select id="priority"><option value="Low">Low</option><option value="Medium" selected>Medium</option><option value="High">High</option></select><label>Description:</label><textarea id="description" rows="4" required></textarea><label>Upload Screenshot (Optional):</label><input type="file" id="screenshot" accept="image/*"><button type="submit">Submit Ticket</button></form><script>
+    res.send(`<!DOCTYPE html><html><head><title>Submit a Ticket | SARATHY IT</title><link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"><style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+    font-family: 'Inter', 'Segoe UI', Arial, sans-serif;
+    min-height: 100vh; display: flex; align-items: center; justify-content: center;
+    background:
+        radial-gradient(circle at 18% 20%, rgba(229,62,62,0.32), transparent 42%),
+        radial-gradient(circle at 85% 18%, rgba(229,62,62,0.14), transparent 40%),
+        radial-gradient(circle at 60% 92%, rgba(229,62,62,0.2), transparent 45%),
+        linear-gradient(160deg, #12141a 0%, #1e2229 55%, #2a1518 100%);
+    background-attachment: fixed;
+    padding: 48px 20px;
+}
+.ticket-card { width: 100%; max-width: 500px; background: #fdfcfb; border-radius: 14px; box-shadow: 0 24px 70px rgba(0,0,0,0.45); overflow: hidden; }
+.ticket-ribbon { background: #1e2229; padding: 22px 32px; display: flex; align-items: center; gap: 14px; }
+.ticket-ribbon img { height: 36px; width: auto; object-fit: contain; }
+.ticket-ribbon-text { font-family: 'Barlow Condensed', sans-serif; font-weight: 700; font-size: 20px; letter-spacing: 1px; color: #fff; text-transform: uppercase; }
+.ticket-body { padding: 32px 40px 40px; }
+h2.form-title { font-family: 'Barlow Condensed', sans-serif; font-weight: 600; font-size: 26px; letter-spacing: .3px; color: #1e2229; }
+.form-subtitle { font-size: 13px; color: #8a8f98; margin-top: 4px; }
+.ticket-perforation { position: relative; height: 0; border-top: 2px dashed #e2ded9; margin: 24px -40px 20px -40px; }
+.ticket-perforation::before, .ticket-perforation::after { content: ''; position: absolute; top: -9px; width: 18px; height: 18px; border-radius: 50%; background: #f1f0ee; box-shadow: inset 0 1px 3px rgba(0,0,0,0.15); }
+.ticket-perforation::before { left: -9px; }
+.ticket-perforation::after { right: -9px; }
+label { display: block; margin-top: 16px; font-weight: 600; font-size: 12px; color: #6b7280; text-transform: uppercase; letter-spacing: .5px; }
+input, textarea, select { width: 100%; padding: 12px 14px; margin-top: 7px; border: 1.5px solid #e5e1de; border-radius: 9px; font-size: 14px; font-family: 'Inter', sans-serif; background: #faf9f7; color: #1e2229; transition: border-color .18s, box-shadow .18s; }
+input:focus, textarea:focus, select:focus { outline: none; border-color: #e53e3e; box-shadow: 0 0 0 3px rgba(229,62,62,.14); background: #fff; }
+textarea { resize: vertical; }
+button[type="submit"] { margin-top: 26px; padding: 14px; width: 100%; background: linear-gradient(120deg, #e53e3e, #c53030); color: #fff; border: none; border-radius: 9px; cursor: pointer; font-family: 'Barlow Condensed', sans-serif; font-weight: 700; font-size: 16px; letter-spacing: 1px; text-transform: uppercase; box-shadow: 0 8px 20px rgba(197,48,48,.4); transition: transform .15s, box-shadow .15s; }
+button[type="submit"]:hover { transform: translateY(-2px); box-shadow: 0 12px 28px rgba(197,48,48,.5); }
+button[type="submit"]:active { transform: translateY(0); }
+</style></head><body><div class="ticket-card"><div class="ticket-ribbon"><img src="/logo.png" alt="Company Logo" onerror="this.style.display='none'"><span class="ticket-ribbon-text">Sarathy IT Helpdesk</span></div><div class="ticket-body"><h2 class="form-title">Submit a New Ticket</h2><div class="form-subtitle">We'll route it to the right person and keep you posted.</div><div class="ticket-perforation"></div><form id="ticketForm" enctype="multipart/form-data"><label>Issue Title</label><input type="text" id="title" required><label>Select Branch Location</label><select id="branch" required><option value="" disabled selected>Loading branches...</option></select><label>Mobile Number</label><input type="tel" id="mobile" placeholder="Enter your 10-digit mobile number" pattern="[0-9]{10}" required><label>Priority Level</label><select id="priority"><option value="Low">Low</option><option value="Medium" selected>Medium</option><option value="High">High</option></select><label>Description</label><textarea id="description" rows="4" required></textarea><label>Upload Screenshot (Optional)</label><input type="file" id="screenshot" accept="image/*"><button type="submit">Submit Ticket</button></form></div></div><script>
     async function loadFormBranches() {
         try {
             const res = await fetch('/public-branches');
@@ -198,7 +230,32 @@ app.get('/', (req, res) => {
 
 // Login Page
 app.get('/login', (req, res) => {
-    res.send(`<!DOCTYPE html><html><head><title>Login</title><style>body { font-family: Arial, sans-serif; max-width: 350px; margin: 80px auto; padding: 25px; border: 1px solid #ddd; border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }.company-brand { text-align: center; margin-bottom: 25px; padding-bottom: 15px; border-bottom: 1px solid #eee; }.company-logo { height: 50px; width: auto; object-fit: contain; margin-bottom: 10px; }.company-name { font-size: 20px; font-weight: bold; color: #333; display: block; }label { display: block; margin-top: 12px; font-weight: bold; }input { width: 100%; padding: 10px; margin-top: 5px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; }button { margin-top: 25px; padding: 12px; background: #28a745; color: white; border: none; cursor: pointer; width: 100%; font-size: 16px; border-radius: 4px; }</style></head><body><div class="company-brand"><img src="/logo.png" alt="Company Logo" class="company-logo" onerror="this.style.display='none'"><span class="company-name">IT HELPDESK</span></div><form action="/login" method="POST"><label>Username / Staff Name:</label> <input type="text" name="username" required><label>Password:</label> <input type="password" name="password" required><button type="submit">Login</button></form></body></html>`);
+    res.send(`<!DOCTYPE html><html><head><title>Login | SARATHY IT</title><link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"><style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+    font-family: 'Inter', 'Segoe UI', Arial, sans-serif;
+    min-height: 100vh; display: flex; align-items: center; justify-content: center;
+    background:
+        radial-gradient(circle at 20% 20%, rgba(229,62,62,0.32), transparent 42%),
+        radial-gradient(circle at 82% 78%, rgba(229,62,62,0.18), transparent 45%),
+        linear-gradient(160deg, #12141a 0%, #1e2229 55%, #2a1518 100%);
+    background-attachment: fixed;
+    padding: 20px;
+}
+.login-card { position: relative; width: 100%; max-width: 380px; background: #ffffff; border-radius: 14px; box-shadow: 0 24px 70px rgba(0,0,0,.45); margin-top: 14px; }
+.badge-hole { width: 26px; height: 26px; border-radius: 50%; background: #e9edf1; box-shadow: inset 0 2px 5px rgba(0,0,0,.2); position: absolute; top: -13px; left: 50%; transform: translateX(-50%); }
+.login-ribbon { background: #1e2229; border-radius: 14px 14px 0 0; padding: 26px 32px 20px; text-align: center; }
+.login-ribbon img { height: 38px; width: auto; object-fit: contain; margin-bottom: 8px; }
+.login-ribbon-text { display: block; font-family: 'Barlow Condensed', sans-serif; font-weight: 700; font-size: 20px; letter-spacing: 1px; color: #fff; text-transform: uppercase; }
+.login-ribbon-sub { display: block; font-size: 11px; color: #a0aec0; letter-spacing: .6px; text-transform: uppercase; margin-top: 3px; }
+.login-body { padding: 30px 32px 34px; }
+label { display: block; margin-top: 16px; font-weight: 600; font-size: 12px; color: #6b7280; text-transform: uppercase; letter-spacing: .5px; }
+input { width: 100%; padding: 12px 14px; margin-top: 7px; border: 1.5px solid #e2e8f0; border-radius: 9px; font-size: 14px; font-family: 'Inter', sans-serif; background: #f8f9fa; color: #1e2229; transition: border-color .18s, box-shadow .18s; }
+input:focus { outline: none; border-color: #e53e3e; box-shadow: 0 0 0 3px rgba(229,62,62,.14); background: #fff; }
+button { margin-top: 24px; padding: 13px; width: 100%; background: linear-gradient(120deg, #e53e3e, #c53030); color: #fff; border: none; border-radius: 9px; cursor: pointer; font-family: 'Barlow Condensed', sans-serif; font-weight: 700; font-size: 16px; letter-spacing: 1px; text-transform: uppercase; box-shadow: 0 8px 20px rgba(197,48,48,.4); transition: transform .15s, box-shadow .15s; }
+button:hover { transform: translateY(-2px); box-shadow: 0 12px 28px rgba(197,48,48,.5); }
+button:active { transform: translateY(0); }
+</style></head><body><div class="login-card"><div class="badge-hole"></div><div class="login-ribbon"><img src="/logo.png" alt="Company Logo" onerror="this.style.display='none'"><span class="login-ribbon-text">Sarathy IT</span><span class="login-ribbon-sub">Staff &amp; Admin Access</span></div><div class="login-body"><form action="/login" method="POST"><label>Username / Staff Name</label> <input type="text" name="username" required><label>Password</label> <input type="password" name="password" required><button type="submit">Login</button></form></div></div></body></html>`);
 });
 
 app.post('/login', async (req, res) => {
@@ -277,6 +334,9 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '        .status-resolved { background-color: #c6f6d5; color: #22543d; }' +
 '        .resolve-btn { background-color: #38a169; color: white; border: none; padding: 8px 16px; font-size: 13px; font-weight: 600; border-radius: 6px; cursor: pointer; transition: background 0.2s; }' +
 '        .resolve-btn:hover { background-color: #2f855a; }' +
+'        .escalate-btn { background-color: #dd6b20; color: white; border: none; padding: 8px 16px; font-size: 13px; font-weight: 600; border-radius: 6px; cursor: pointer; transition: background 0.2s; margin-left: 8px; }' +
+'        .escalate-btn:hover { background-color: #c05621; }' +
+'        .badge-escalated { background-color: #fef3c7; color: #92400e; }' +
 '        .screenshot-preview { max-width: 100%; max-height: 180px; border-radius: 6px; border: 1px solid #e2e8f0; margin-top: 12px; display: block; object-fit: cover; }' +
 '        .assignment-info { margin-top: 16px; padding-top: 12px; border-top: 1px solid #edf2f7; font-size: 13px; color: #718096; }' +
 '        .assignment-info strong { color: #4a5568; }' +
@@ -411,6 +471,8 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            tickets.forEach(ticket => {' +
 '                const isResolved = ticket.status === "Resolved";' +
 '                const actionBtn = isResolved ? "" : \'<button class="resolve-btn" onclick="resolveTicket(\\\'\'+ticket._id+\'\\\')">Resolve Ticket</button>\';' +
+'                const escalateBtn = (!isAdmin && !isResolved && !ticket.escalated) ? \' <button class="escalate-btn" onclick="escalateTicket(\\\'\'+ticket._id+\'\\\')">Escalate to Admin</button>\' : "";' +
+'                const escalatedBadge = ticket.escalated ? \'<span class="badge badge-escalated">Escalated</span>\' : "";' +
 '                const imageHtml = ticket.screenshot ? \'<a href="\'+ticket.screenshot+\'" target="_blank"><img src="\'+ticket.screenshot+\'" class="screenshot-preview"></a>\' : "";' +
 '                let commentListHtml = "";' +
 '                if (ticket.comments) {' +
@@ -418,7 +480,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                        commentListHtml += \'<div class="comment-item"><strong>\'+c.author+\':</strong> \'+c.text+\'</div>\';' +
 '                    });' +
 '                }' +
-'                listDiv.innerHTML += \'<div class="ticket-card"><div class="ticket-header"><div><h3 class="ticket-title">#\'+String(ticket.ticketNumber).padStart(4,"0")+\' \'+ticket.title+\'</h3><div style="margin-top: 8px;"><span class="badge p-\'+ticket.priority+\'">\'+ticket.priority+\'</span><span class="badge status-\'+ticket.status.toLowerCase()+\'">\'+ticket.status+\'</span></div></div>\'+actionBtn+\'</div><p class="ticket-desc">\'+ticket.description+\'</p>\'+imageHtml+\'<div class="assignment-info"><span><strong>Branch:</strong> \'+ticket.branch+\'</span> | <span><strong>Mobile:</strong> \'+ticket.mobile+\'</span> | <span><strong>Assigned:</strong> \'+ticket.assignedTo+\'</span></div><div class="comments-section"><h4 class="comments-header">Internal Work Notes</h4><div>\'+(commentListHtml || "No updates.")+\'</div><div class="comment-form"><input type="text" id="input-\'+ticket._id+\'" placeholder="Write operational update..."><button onclick="addComment(\\\'\'+ticket._id+\'\\\')">Post</button></div></div></div>\';' +
+'                listDiv.innerHTML += \'<div class="ticket-card"><div class="ticket-header"><div><h3 class="ticket-title">#\'+String(ticket.ticketNumber).padStart(4,"0")+\' \'+ticket.title+\'</h3><div style="margin-top: 8px;"><span class="badge p-\'+ticket.priority+\'">\'+ticket.priority+\'</span><span class="badge status-\'+ticket.status.toLowerCase()+\'">\'+ticket.status+\'</span>\'+escalatedBadge+\'</div></div>\'+actionBtn+escalateBtn+\'</div><p class="ticket-desc">\'+ticket.description+\'</p>\'+imageHtml+\'<div class="assignment-info"><span><strong>Branch:</strong> \'+ticket.branch+\'</span> | <span><strong>Mobile:</strong> \'+ticket.mobile+\'</span> | <span><strong>Assigned:</strong> \'+ticket.assignedTo+\'</span></div><div class="comments-section"><h4 class="comments-header">Internal Work Notes</h4><div>\'+(commentListHtml || "No updates.")+\'</div><div class="comment-form"><input type="text" id="input-\'+ticket._id+\'" placeholder="Write operational update..."><button onclick="addComment(\\\'\'+ticket._id+\'\\\')">Post</button></div></div></div>\';' +
 '            });' +
 '        }' +
 '        async function loadBranchesList() {' +
@@ -513,6 +575,11 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            const response = await fetch("/tickets/" + id + "/resolve", { method: "POST" });' +
 '            if (response.ok) loadTickets();' +
 '        }' +
+'        async function escalateTicket(id) {' +
+'            if (!confirm("Escalate this ticket to Admin (Level 2)?")) return;' +
+'            const response = await fetch("/tickets/" + id + "/escalate", { method: "POST" });' +
+'            if (response.ok) loadTickets();' +
+'        }' +
 '        loadTickets();' +
 '    </script>' +
 '</body>' +
@@ -529,6 +596,12 @@ app.get('/tickets', checkUserLogin, async (req, res) => {
 
 app.post('/tickets/:id/resolve', checkUserLogin, async (req, res) => {
     await Ticket.findByIdAndUpdate(req.params.id, { status: 'Resolved' });
+    res.json({ success: true });
+});
+
+// Escalate a ticket to Level 2 (Admin) — reassigns it and flags it as escalated
+app.post('/tickets/:id/escalate', checkUserLogin, async (req, res) => {
+    await Ticket.findByIdAndUpdate(req.params.id, { escalated: true, assignedTo: 'Admin' });
     res.json({ success: true });
 });
 
