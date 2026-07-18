@@ -161,11 +161,15 @@ app.get('/', (req, res) => {
 body {
     font-family: 'Inter', 'Segoe UI', Arial, sans-serif;
     min-height: 100vh; display: flex; align-items: center; justify-content: center;
-    background-image: url('background.png');
+    background-image:
         radial-gradient(circle at 18% 20%, rgba(229,62,62,0.32), transparent 42%),
         radial-gradient(circle at 85% 18%, rgba(229,62,62,0.14), transparent 40%),
         radial-gradient(circle at 60% 92%, rgba(229,62,62,0.2), transparent 45%),
-        linear-gradient(160deg, #12141a 0%, #1e2229 55%, #2a1518 100%);
+        linear-gradient(160deg, rgba(18,20,26,0.72) 0%, rgba(30,34,41,0.72) 55%, rgba(42,21,24,0.72) 100%),
+        url('/background.png');
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
     background-attachment: fixed;
     padding: 48px 20px;
 }
@@ -187,7 +191,20 @@ textarea { resize: vertical; }
 button[type="submit"] { margin-top: 26px; padding: 14px; width: 100%; background: linear-gradient(120deg, #e53e3e, #c53030); color: #fff; border: none; border-radius: 9px; cursor: pointer; font-family: 'Barlow Condensed', sans-serif; font-weight: 700; font-size: 16px; letter-spacing: 1px; text-transform: uppercase; box-shadow: 0 8px 20px rgba(197,48,48,.4); transition: transform .15s, box-shadow .15s; }
 button[type="submit"]:hover { transform: translateY(-2px); box-shadow: 0 12px 28px rgba(197,48,48,.5); }
 button[type="submit"]:active { transform: translateY(0); }
-</style></head><body><div class="ticket-card"><div class="ticket-ribbon"><img src="/logo.png" alt="Company Logo" onerror="this.style.display='none'"><span class="ticket-ribbon-text">Sarathy IT Helpdesk</span></div><div class="ticket-body"><h2 class="form-title">Submit a New Ticket</h2><div class="form-subtitle">We'll route it to the right person and keep you posted.</div><div class="ticket-perforation"></div><form id="ticketForm" enctype="multipart/form-data"><label>Issue Title</label><input type="text" id="title" required><label>Select Branch Location</label><select id="branch" required><option value="" disabled selected>Loading branches...</option></select><label>Mobile Number</label><input type="tel" id="mobile" placeholder="Enter your 10-digit mobile number" pattern="[0-9]{10}" required><label>Priority Level</label><select id="priority"><option value="Low">Low</option><option value="Medium" selected>Medium</option><option value="High">High</option></select><label>Description</label><textarea id="description" rows="4" required></textarea><label>Upload Screenshot (Optional)</label><input type="file" id="screenshot" accept="image/*"><button type="submit">Submit Ticket</button></form></div></div><script>
+.tab-switch { display: flex; background: #f1f0ee; }
+.tab-btn { flex: 1; padding: 15px; border: none; background: transparent; cursor: pointer; font-family: 'Barlow Condensed', sans-serif; font-weight: 600; font-size: 14px; letter-spacing: .5px; text-transform: uppercase; color: #8a8f98; transition: all .2s; }
+.tab-btn.active { background: #fdfcfb; color: #e53e3e; box-shadow: inset 0 -2px 0 #e53e3e; }
+.check-status-btn { margin-top: 20px; padding: 13px; width: 100%; background: #1e2229; color: #fff; border: none; border-radius: 9px; cursor: pointer; font-family: 'Barlow Condensed', sans-serif; font-weight: 700; font-size: 15px; letter-spacing: 1px; text-transform: uppercase; transition: background .2s; }
+.check-status-btn:hover { background: #2d323e; }
+.badge { padding: 4px 10px; border-radius: 50px; font-size: 11px; font-weight: 700; text-transform: uppercase; display: inline-block; }
+.status-open { background-color: #ebf8ff; color: #2b6cb0; }
+.status-resolved { background-color: #c6f6d5; color: #22543d; }
+.status-result-card { border: 1px solid #e5e1de; border-radius: 10px; padding: 14px 16px; margin-top: 12px; background: #faf9f7; }
+.status-result-top { display: flex; justify-content: space-between; align-items: center; }
+.status-result-number { font-family: 'Barlow Condensed', sans-serif; font-weight: 700; font-size: 16px; color: #1e2229; letter-spacing: .5px; }
+.status-result-title { font-size: 14px; color: #1e2229; font-weight: 600; margin-top: 6px; }
+.status-result-meta { font-size: 12px; color: #8a8f98; margin-top: 4px; }
+</style></head><body><div class="ticket-card"><div class="ticket-ribbon"><img src="/logo.png" alt="Company Logo" onerror="this.style.display='none'"><span class="ticket-ribbon-text">Sarathy IT Helpdesk</span></div><div class="tab-switch"><button type="button" class="tab-btn active" id="tabSubmitBtn" onclick="showTab('submit')">Submit Ticket</button><button type="button" class="tab-btn" id="tabStatusBtn" onclick="showTab('status')">Check Status</button></div><div class="ticket-body"><div id="submitPane"><h2 class="form-title">Submit a New Ticket</h2><div class="form-subtitle">We'll route it to the right person and keep you posted.</div><div class="ticket-perforation"></div><form id="ticketForm" enctype="multipart/form-data"><label>Issue Title</label><input type="text" id="title" required><label>Select Branch Location</label><select id="branch" required><option value="" disabled selected>Loading branches...</option></select><label>Mobile Number</label><input type="tel" id="mobile" placeholder="Enter your 10-digit mobile number" pattern="[0-9]{10}" required><label>Priority Level</label><select id="priority"><option value="Low">Low</option><option value="Medium" selected>Medium</option><option value="High">High</option></select><label>Description</label><textarea id="description" rows="4" required></textarea><label>Upload Screenshot (Optional)</label><input type="file" id="screenshot" accept="image/*"><button type="submit">Submit Ticket</button></form></div><div id="statusPane" style="display:none;"><h2 class="form-title">Check Ticket Status</h2><div class="form-subtitle">Enter the mobile number you used when submitting.</div><label>Mobile Number</label><input type="tel" id="statusMobile" placeholder="Enter your 10-digit mobile number" pattern="[0-9]{10}"><button type="button" class="check-status-btn" onclick="checkTicketStatus()">Check Status</button><div id="statusResults"></div></div></div></div><script>
     async function loadFormBranches() {
         try {
             const res = await fetch('/public-branches');
@@ -225,6 +242,40 @@ button[type="submit"]:active { transform: translateY(0); }
             loadFormBranches();
         } 
     });
+
+    function showTab(tab) {
+        document.getElementById('submitPane').style.display = tab === 'submit' ? 'block' : 'none';
+        document.getElementById('statusPane').style.display = tab === 'status' ? 'block' : 'none';
+        document.getElementById('tabSubmitBtn').classList.toggle('active', tab === 'submit');
+        document.getElementById('tabStatusBtn').classList.toggle('active', tab === 'status');
+    }
+
+    async function checkTicketStatus() {
+        const mobile = document.getElementById('statusMobile').value.trim();
+        if (!mobile) { alert('Please enter your mobile number.'); return; }
+        const res = await fetch('/tickets/lookup?mobile=' + encodeURIComponent(mobile));
+        const tickets = await res.json();
+        renderStatusResults(tickets);
+    }
+
+    function renderStatusResults(tickets) {
+        const container = document.getElementById('statusResults');
+        if (tickets.length === 0) {
+            container.innerHTML = '<p style="text-align:center;color:#8a8f98;padding:16px 0;font-size:13px;">No tickets found for that mobile number.</p>';
+            return;
+        }
+        let html = '';
+        tickets.forEach(t => {
+            const statusClass = t.status === 'Resolved' ? 'status-resolved' : 'status-open';
+            html += '<div class="status-result-card">' +
+                '<div class="status-result-top"><span class="status-result-number">#' + String(t.ticketNumber).padStart(4, '0') + '</span>' +
+                '<span class="badge ' + statusClass + '">' + t.status + '</span></div>' +
+                '<div class="status-result-title">' + t.title + '</div>' +
+                '<div class="status-result-meta">' + t.branch + ' &middot; ' + t.priority + ' priority</div>' +
+                '</div>';
+        });
+        container.innerHTML = html;
+    }
     </script></body></html>`);
 });
 
@@ -235,10 +286,14 @@ app.get('/login', (req, res) => {
 body {
     font-family: 'Inter', 'Segoe UI', Arial, sans-serif;
     min-height: 100vh; display: flex; align-items: center; justify-content: center;
-    background-image: url('background.png');
+    background-image:
         radial-gradient(circle at 20% 20%, rgba(229,62,62,0.32), transparent 42%),
         radial-gradient(circle at 82% 78%, rgba(229,62,62,0.18), transparent 45%),
-        linear-gradient(160deg, #12141a 0%, #1e2229 55%, #2a1518 100%);
+        linear-gradient(160deg, rgba(18,20,26,0.72) 0%, rgba(30,34,41,0.72) 55%, rgba(42,21,24,0.72) 100%),
+        url('/background.png');
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
     background-attachment: fixed;
     padding: 20px;
 }
@@ -397,7 +452,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                <div class="branch-panel-card">' +
 '                    <h2>Create New Branch Location</h2>' +
 '                    <div class="branch-input-group">' +
-'                        <input type="text" id="newBranchName" placeholder="Enter Branch Details">' +
+'                        <input type="text" id="newBranchName" placeholder="Bajaj, Pallimukk">' +
 '                        <button class="branch-add-btn" onclick="addNewBranch()">Add Branch</button>' +
 '                    </div>' +
 '                    <table class="branch-table">' +
@@ -620,6 +675,20 @@ app.get('/public-branches', async (req, res) => {
         res.json(branches);
     } catch(err) {
         res.status(500).json([]);
+    }
+});
+
+// Public lookup so ticket submitters can check status without logging in
+app.get('/tickets/lookup', async (req, res) => {
+    try {
+        const mobile = req.query.mobile;
+        if (!mobile) return res.status(400).json({ error: 'Mobile number required' });
+        const tickets = await Ticket.find({ mobile })
+            .sort({ _id: -1 })
+            .select('ticketNumber title branch priority status');
+        res.json(tickets);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
     }
 });
 
