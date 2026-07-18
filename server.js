@@ -132,6 +132,15 @@ const transporter = nodemailer.createTransport({
     }
 });
 
+// Verify mailer credentials at startup so misconfiguration shows up immediately in the logs
+transporter.verify((err, success) => {
+    if (err) {
+        console.error('MAILER NOT WORKING — assignment emails will fail. Reason:', err.message);
+    } else {
+        console.log('Mailer verified OK — ready to send assignment emails.');
+    }
+});
+
 app.use(session({
     secret: process.env.SESSION_SECRET || 'my-super-secret-key-123',
     resave: false,
@@ -175,7 +184,7 @@ body {
     padding: 16px;
     overflow: hidden;
 }
-.ticket-card { width: 100%; max-width: 460px; max-height: 96vh; background: #fdfcfb; border-radius: 14px; box-shadow: 0 24px 70px rgba(0,0,0,0.45); overflow-y: auto; }
+.ticket-card { width: 100%; max-width: 460px; max-height: 96vh; background: #fdfcfb; border-radius: 14px; box-shadow: 0 24px 70px rgba(0,0,0,0.45); overflow-y: auto; overflow-x: hidden; }
 .ticket-ribbon { background: #1e2229; padding: 12px 26px; display: flex; align-items: center; gap: 12px; }
 .ticket-ribbon img { height: 28px; width: auto; object-fit: contain; }
 .ticket-ribbon-text { font-family: 'Barlow Condensed', sans-serif; font-weight: 700; font-size: 16px; letter-spacing: 1px; color: #fff; text-transform: uppercase; }
@@ -187,7 +196,7 @@ h2.form-title { font-family: 'Barlow Condensed', sans-serif; font-weight: 600; f
 .ticket-perforation::before { left: -8px; }
 .ticket-perforation::after { right: -8px; }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; column-gap: 12px; }
-.form-field { margin-top: 8px; }
+.form-field { margin-top: 8px; min-width: 0; }
 .full-width { grid-column: 1 / -1; }
 label { display: block; margin-bottom: 3px; font-weight: 600; font-size: 10.5px; color: #6b7280; text-transform: uppercase; letter-spacing: .4px; }
 input, textarea, select { width: 100%; padding: 8px 11px; border: 1.5px solid #e5e1de; border-radius: 7px; font-size: 13px; font-family: 'Inter', sans-serif; background: #faf9f7; color: #1e2229; transition: border-color .18s, box-shadow .18s; }
@@ -809,7 +818,11 @@ app.post('/tickets', upload.single('screenshot'), async (req, res) => {
         };
 
         transporter.sendMail(mailOptions, (err, info) => {
-            if (err) console.error(err);
+            if (err) {
+                console.error(`Assignment email FAILED for ticket #${String(ticketNumber).padStart(4, '0')} (to ${assignedStaff.email}):`, err.message);
+            } else {
+                console.log(`Assignment email sent for ticket #${String(ticketNumber).padStart(4, '0')} (to ${assignedStaff.email}):`, info.response);
+            }
         });
 
         res.status(201).json(newTicket);
