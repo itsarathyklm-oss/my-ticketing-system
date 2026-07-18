@@ -161,7 +161,7 @@ app.get('/', (req, res) => {
 body {
     font-family: 'Inter', 'Segoe UI', Arial, sans-serif;
     min-height: 100vh; display: flex; align-items: center; justify-content: center;
-    background:
+    background-image: url('background.png');
         radial-gradient(circle at 18% 20%, rgba(229,62,62,0.32), transparent 42%),
         radial-gradient(circle at 85% 18%, rgba(229,62,62,0.14), transparent 40%),
         radial-gradient(circle at 60% 92%, rgba(229,62,62,0.2), transparent 45%),
@@ -235,7 +235,7 @@ app.get('/login', (req, res) => {
 body {
     font-family: 'Inter', 'Segoe UI', Arial, sans-serif;
     min-height: 100vh; display: flex; align-items: center; justify-content: center;
-    background:
+    background-image: url('background.png');
         radial-gradient(circle at 20% 20%, rgba(229,62,62,0.32), transparent 42%),
         radial-gradient(circle at 82% 78%, rgba(229,62,62,0.18), transparent 45%),
         linear-gradient(160deg, #12141a 0%, #1e2229 55%, #2a1518 100%);
@@ -397,7 +397,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                <div class="branch-panel-card">' +
 '                    <h2>Create New Branch Location</h2>' +
 '                    <div class="branch-input-group">' +
-'                        <input type="text" id="newBranchName" placeholder="Bajaj, Pallimukk">' +
+'                        <input type="text" id="newBranchName" placeholder="Enter Branch Details">' +
 '                        <button class="branch-add-btn" onclick="addNewBranch()">Add Branch</button>' +
 '                    </div>' +
 '                    <table class="branch-table">' +
