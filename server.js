@@ -17,7 +17,10 @@ app.use(express.static(__dirname));
 // 1. CONNECT TO MONGOOSE DB
 const MONGO_URI = process.env.MONGO_URI || "mongodb://localhost:27017/helpdesk"; 
 mongoose.connect(MONGO_URI)
-    .then(() => console.log("Connected permanently to MongoDB Cloud"))
+    .then(() => {
+        console.log("Connected permanently to MongoDB Cloud");
+        seedInitialStaff();
+    })
     .catch(err => console.error("Database connection error:", err));
 
 // Branch Schema
@@ -26,7 +29,7 @@ const branchSchema = new mongoose.Schema({
 });
 const Branch = mongoose.model('Branch', branchSchema);
 
-// Staff-Branch Assignment Schema
+// Staff-Branch Assignment Schema (which branches each staff member covers)
 const staffBranchSchema = new mongoose.Schema({
     staffId: { type: String, required: true, unique: true },
     branches: [{ type: String }]
@@ -35,6 +38,7 @@ const StaffBranch = mongoose.model('StaffBranch', staffBranchSchema);
 
 // Ticket Schema
 const ticketSchema = new mongoose.Schema({
+    ticketNumber: { type: Number, unique: true, sparse: true },
     title: String,
     branch: { type: String, default: 'N/A' },
     priority: { type: String, default: 'Medium' },
@@ -50,6 +54,22 @@ const ticketSchema = new mongoose.Schema({
     }]
 });
 const Ticket = mongoose.model('Ticket', ticketSchema);
+
+// Counter Schema, used to hand out sequential, human-friendly ticket numbers
+const counterSchema = new mongoose.Schema({
+    name: { type: String, required: true, unique: true },
+    value: { type: Number, default: 0 }
+});
+const Counter = mongoose.model('Counter', counterSchema);
+
+async function getNextTicketNumber() {
+    const counter = await Counter.findOneAndUpdate(
+        { name: 'ticketNumber' },
+        { $inc: { value: 1 } },
+        { upsert: true, new: true }
+    );
+    return counter.value;
+}
 
 // 2. CONFIGURE CLOUDINARY PERMANENT STORAGE
 cloudinary.config({
@@ -67,13 +87,39 @@ const storage = new CloudinaryStorage({
 });
 const upload = multer({ storage: storage });
 
-// Staff list
-const IT_STAFF = [
-    { id: 'IT001', name: 'SADIQ', password: 'sadiq123', email: 'itsarathy@gmail.com' },
-    { id: 'IT002', name: 'ABHIMANYU', password: 'abhi123', email: 'abhimanyu@gmail.com' },
-    { id: 'IT003', name: 'ANANDHU', password: 'anandhu123', email: 'anandhu@gmail.com' },
-    { id: 'IT004', name: 'sabari', password: 'sabari123', email: 'sabari@gmail.com' }
-];
+// Staff Schema (persisted so staff can be added via the admin panel)
+const staffSchema = new mongoose.Schema({
+    staffId: { type: String, required: true, unique: true },
+    name: { type: String, required: true },
+    password: { type: String, required: true },
+    email: { type: String, required: true }
+});
+const Staff = mongoose.model('Staff', staffSchema);
+
+// One-time seed of the original IT staff accounts, only if the collection is empty
+async function seedInitialStaff() {
+    const existingCount = await Staff.countDocuments();
+    if (existingCount === 0) {
+        await Staff.insertMany([
+            { staffId: 'IT001', name: 'SADIQ', password: 'sadiq123', email: 'itsarathy@gmail.com' },
+            { staffId: 'IT002', name: 'ABHIMANYU', password: 'abhi123', email: 'abhimanyu@gmail.com' },
+            { staffId: 'IT003', name: 'ANANDHU', password: 'anandhu123', email: 'anandhu@gmail.com' },
+            { staffId: 'IT004', name: 'sabari', password: 'sabari123', email: 'sabari@gmail.com' }
+        ]);
+        console.log('Seeded initial IT staff accounts');
+    }
+}
+
+// Generates the next sequential staff ID, e.g. IT005
+async function getNextStaffId() {
+    const allStaff = await Staff.find();
+    let maxNum = 0;
+    allStaff.forEach(s => {
+        const match = s.staffId.match(/(\d+)$/);
+        if (match) maxNum = Math.max(maxNum, parseInt(match[1], 10));
+    });
+    return 'IT' + String(maxNum + 1).padStart(3, '0');
+}
 
 // Configure Email Transporter
 const transporter = nodemailer.createTransport({
@@ -107,259 +153,55 @@ function checkAdminLogin(req, res, next) {
     }
 }
 
-// User Ticket Submission Page (MODERN UI)
+// User Ticket Submission Page
 app.get('/', (req, res) => {
-    res.send(`<!DOCTYPE html>
-<html>
-<head>
-    <title>IT Helpdesk Support Ticket</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <style>
-        body { 
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
-            margin: 0; 
-            padding: 0; 
-            height: 100vh;
-            background-color: #111; 
-            background-image: url('background.png'); 
-            background-size: cover; 
-            background-position: center; 
-            background-attachment: fixed;
-            display: flex;
-            align-items: center;
-        }
-        .page-wrapper {
-            display: flex;
-            width: 100%;
-            max-width: 1500px;
-            margin: 0 auto;
-            padding: 20px;
-            box-sizing: border-box;
-            align-items: center;
-            justify-content: space-between;
-        }
-        .form-container {
-            width: 100%;
-            max-width: 480px; 
-            padding: 40px; 
-            background-color: rgba(245, 245, 245, 0.98); 
-            border-radius: 6px;
-            box-shadow: 0 20px 50px rgba(0,0,0,0.6);
-            margin-left: 5%;
-            max-height: 80vh;
-            overflow-y: auto;
-        }
-        .side-logo-container {
-            flex: 1;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            padding: 20px;
-        }
-        .side-logo {
-            max-width: 300px;
-            width: 100%;
-            filter: drop-shadow(0 10px 15px rgba(0,0,0,0.5));
-        }
-        @media (max-width: 900px) {
-            .side-logo-container { display: none; }
-            .page-wrapper { justify-content: center; }
-            .form-container { margin-left: 0; }
-        }
-        .company-header { display: flex; align-items: center; gap: 15px; margin-bottom: 25px; padding-bottom: 15px; border-bottom: 2px solid #ddd; }
-        .company-logo { height: 40px; width: auto; object-fit: contain; }
-        .company-name { font-size: 20px; font-weight: 700; color: #222; }
-        h2 { margin-top: 0; color: #111; font-size: 24px; margin-bottom: 25px; }
-        label { display: block; margin-top: 15px; font-weight: 700; color: #000; font-size: 14px; }
-        input, textarea, select { width: 100%; padding: 12px; margin-top: 6px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; background: #fff; color: #333;}
-        input:focus, textarea:focus, select:focus { outline: none; border-color: #d9232d; box-shadow: 0 0 5px rgba(217,35,45,0.2); }
-        button { margin-top: 25px; padding: 14px; background: #222; color: white; border: none; cursor: pointer; width: 100%; font-size: 16px; font-weight: bold; border-radius: 4px; transition: background 0.3s; }
-        button:hover { background: #d9232d; }
-        .form-container::-webkit-scrollbar { width: 8px; }
-        .form-container::-webkit-scrollbar-thumb { background: #ccc; border-radius: 4px; }
-    </style>
-</head>
-<body>
-    <div class="page-wrapper">
-        <div class="form-container">
-            <div class="company-header">
-                <img src="/logo.png" alt="Logo" class="company-logo" onerror="this.style.display='none'">
-                <span class="company-name">IT HELPDESK</span>
-            </div>
-            <h2>Submit a New Ticket</h2>
-            <form id="ticketForm" enctype="multipart/form-data">
-                <label>Issue Title:</label>
-                <input type="text" id="title" required>
-                
-                <label>Select Branch Location:</label>
-                <select id="branch" required><option value="" disabled selected>Loading branches...</option></select>
-                
-                <label>Mobile Number:</label>
-                <input type="tel" id="mobile" placeholder="Enter your 10-digit mobile number" pattern="[0-9]{10}" required>
-                
-                <label>Priority Level:</label>
-                <select id="priority">
-                    <option value="Low">Low</option>
-                    <option value="Medium" selected>Medium</option>
-                    <option value="High">High</option>
-                </select>
-                
-                <label>Description:</label>
-                <textarea id="description" rows="4" required></textarea>
-                
-                <label>Upload Screenshot (Optional):</label>
-                <input type="file" id="screenshot" accept="image/*">
-                
-                <button type="submit">Submit Ticket</button>
-            </form>
-        </div>
-        <div class="side-logo-container">
-            <!-- This logo will float on the right side over the dark background -->
-            <img src="/logo.png" alt="Company Branding" class="side-logo" onerror="this.style.display='none'">
-        </div>
-    </div>
-    <script>
-        async function loadFormBranches() {
-            try {
-                const res = await fetch('/public-branches');
-                const branches = await res.json();
-                const select = document.getElementById('branch');
-                if (branches.length === 0) {
-                    select.innerHTML = '<option value="General">No specific branches configured</option>';
-                    return;
-                }
-                select.innerHTML = '<option value="" disabled selected>Choose branch location</option>';
-                branches.forEach(b => {
-                    select.innerHTML += '<option value="' + b.name + '">' + b.name + '</option>';
-                });
-            } catch(e) {
-                document.getElementById('branch').innerHTML = '<option value="General">General/Headquarters</option>';
+    res.send(`<!DOCTYPE html><html><head><title>IT Helpdesk Support Ticket</title><style>body { font-family: Arial, sans-serif; max-width: 500px; margin: 0 auto; padding: 20px; }.company-header { display: flex; align-items: center; gap: 15px; margin-bottom: 30px; padding-bottom: 15px; border-bottom: 2px solid #eee; }.company-logo { height: 50px; width: auto; object-fit: contain; }.company-name { font-size: 24px; font-weight: bold; color: #333; }label { display: block; margin-top: 12px; font-weight: bold; }input, textarea, select { width: 100%; padding: 10px; margin-top: 5px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; }button { margin-top: 20px; padding: 12px; background: #007bff; color: white; border: none; cursor: pointer; width: 100%; font-size: 16px; border-radius: 4px; }button:hover { background: #0056b3; }</style></head><body><div class="company-header"><img src="/logo.png" alt="Company Logo" class="company-logo" onerror="this.style.display='none'"><span class="company-name">IT HELPDESK</span></div><h2>Submit a New Ticket</h2><form id="ticketForm" enctype="multipart/form-data"><label>Issue Title:</label><input type="text" id="title" required><label>Select Branch Location:</label><select id="branch" required><option value="" disabled selected>Loading branches...</option></select><label>Mobile Number:</label><input type="tel" id="mobile" placeholder="Enter your 10-digit mobile number" pattern="[0-9]{10}" required><label>Priority Level:</label><select id="priority"><option value="Low">Low</option><option value="Medium" selected>Medium</option><option value="High">High</option></select><label>Description:</label><textarea id="description" rows="4" required></textarea><label>Upload Screenshot (Optional):</label><input type="file" id="screenshot" accept="image/*"><button type="submit">Submit Ticket</button></form><script>
+    async function loadFormBranches() {
+        try {
+            const res = await fetch('/public-branches');
+            const branches = await res.json();
+            const select = document.getElementById('branch');
+            if (branches.length === 0) {
+                select.innerHTML = '<option value="General">No specific branches configured</option>';
+                return;
             }
+            select.innerHTML = '<option value="" disabled selected>Choose branch location</option>';
+            branches.forEach(b => {
+                select.innerHTML += '<option value="' + b.name + '">' + b.name + '</option>';
+            });
+        } catch(e) {
+            document.getElementById('branch').innerHTML = '<option value="General">General/Headquarters</option>';
         }
-        loadFormBranches();
+    }
+    loadFormBranches();
 
-        document.getElementById('ticketForm').addEventListener('submit', async (e) => { 
-            e.preventDefault(); 
-            const formData = new FormData(); 
-            formData.append('title', document.getElementById('title').value); 
-            formData.append('branch', document.getElementById('branch').value); 
-            formData.append('mobile', document.getElementById('mobile').value); 
-            formData.append('priority', document.getElementById('priority').value); 
-            formData.append('description', document.getElementById('description').value); 
-            const fileInput = document.getElementById('screenshot'); 
-            if (fileInput.files[0]) formData.append('screenshot', fileInput.files[0]); 
-            
-            const btn = e.target.querySelector('button');
-            btn.innerText = "Submitting...";
-            btn.disabled = true;
-
-            const response = await fetch('/tickets', { method: 'POST', body: formData }); 
-            if (response.ok) { 
-                alert('Ticket submitted to IT cloud database!'); 
-                document.getElementById('ticketForm').reset(); 
-                loadFormBranches();
-            } else {
-                alert('Error submitting ticket.');
-            }
-            btn.innerText = "Submit Ticket";
-            btn.disabled = false;
-        });
-    </script>
-</body>
-</html>`);
+    document.getElementById('ticketForm').addEventListener('submit', async (e) => { 
+        e.preventDefault(); 
+        const formData = new FormData(); 
+        formData.append('title', document.getElementById('title').value); 
+        formData.append('branch', document.getElementById('branch').value); 
+        formData.append('mobile', document.getElementById('mobile').value); 
+        formData.append('priority', document.getElementById('priority').value); 
+        formData.append('description', document.getElementById('description').value); 
+        const fileInput = document.getElementById('screenshot'); 
+        if (fileInput.files[0]) formData.append('screenshot', fileInput.files[0]); 
+        const response = await fetch('/tickets', { method: 'POST', body: formData }); 
+        if (response.ok) { 
+            const result = await response.json();
+            alert('Ticket #' + String(result.ticketNumber).padStart(4, '0') + ' submitted successfully!'); 
+            document.getElementById('ticketForm').reset(); 
+            loadFormBranches();
+        } 
+    });
+    </script></body></html>`);
 });
 
-// Login Page (MODERN UI)
+// Login Page
 app.get('/login', (req, res) => {
-    res.send(`<!DOCTYPE html>
-<html>
-<head>
-    <title>Login | IT Helpdesk</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <style>
-        body { 
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
-            margin: 0; 
-            padding: 0; 
-            height: 100vh;
-            background-color: #111; 
-            background-image: url('background.png'); 
-            background-size: cover; 
-            background-position: center; 
-            background-attachment: fixed;
-            display: flex;
-            align-items: center;
-        }
-        .page-wrapper {
-            display: flex;
-            width: 100%;
-            max-width: 1500px;
-            margin: 0 auto;
-            padding: 20px;
-            box-sizing: border-box;
-            align-items: center;
-            justify-content: space-between;
-        }
-        .login-container { 
-            width: 100%;
-            max-width: 400px; 
-            padding: 40px; 
-            background-color: rgba(245, 245, 245, 0.98); 
-            border-radius: 6px; 
-            box-shadow: 0 20px 50px rgba(0,0,0,0.6); 
-            margin-left: 5%;
-        }
-        .side-logo-container {
-            flex: 1;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            padding: 20px;
-        }
-        .side-logo {
-            max-width: 300px;
-            width: 100%;
-            filter: drop-shadow(0 10px 15px rgba(0,0,0,0.5));
-        }
-        @media (max-width: 900px) {
-            .side-logo-container { display: none; }
-            .page-wrapper { justify-content: center; }
-            .login-container { margin-left: 0; }
-        }
-        .company-brand { text-align: center; margin-bottom: 25px; padding-bottom: 15px; border-bottom: 2px solid #ddd; }
-        .company-logo { height: 50px; width: auto; object-fit: contain; margin-bottom: 10px; }
-        .company-name { font-size: 20px; font-weight: 700; color: #222; display: block; }
-        label { display: block; margin-top: 15px; font-weight: 700; color: #000; font-size: 14px; }
-        input { width: 100%; padding: 12px; margin-top: 6px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; }
-        input:focus { outline: none; border-color: #d9232d; box-shadow: 0 0 5px rgba(217,35,45,0.2); }
-        button { margin-top: 25px; padding: 14px; background: #222; color: white; border: none; cursor: pointer; width: 100%; font-size: 16px; font-weight: bold; border-radius: 4px; transition: background 0.3s; }
-        button:hover { background: #d9232d; }
-    </style>
-</head>
-<body>
-    <div class="page-wrapper">
-        <div class="login-container">
-            <div class="company-brand">
-                <img src="/logo.png" alt="Company Logo" class="company-logo" onerror="this.style.display='none'">
-                <span class="company-name">IT HELPDESK LOGIN</span>
-            </div>
-            <form action="/login" method="POST">
-                <label>Username / Staff Name:</label> 
-                <input type="text" name="username" required>
-                <label>Password:</label> 
-                <input type="password" name="password" required>
-                <button type="submit">Access Dashboard</button>
-            </form>
-        </div>
-        <div class="side-logo-container">
-            <img src="/logo.png" alt="Company Branding" class="side-logo" onerror="this.style.display='none'">
-        </div>
-    </div>
-</body>
-</html>`);
+    res.send(`<!DOCTYPE html><html><head><title>Login</title><style>body { font-family: Arial, sans-serif; max-width: 350px; margin: 80px auto; padding: 25px; border: 1px solid #ddd; border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }.company-brand { text-align: center; margin-bottom: 25px; padding-bottom: 15px; border-bottom: 1px solid #eee; }.company-logo { height: 50px; width: auto; object-fit: contain; margin-bottom: 10px; }.company-name { font-size: 20px; font-weight: bold; color: #333; display: block; }label { display: block; margin-top: 12px; font-weight: bold; }input { width: 100%; padding: 10px; margin-top: 5px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; }button { margin-top: 25px; padding: 12px; background: #28a745; color: white; border: none; cursor: pointer; width: 100%; font-size: 16px; border-radius: 4px; }</style></head><body><div class="company-brand"><img src="/logo.png" alt="Company Logo" class="company-logo" onerror="this.style.display='none'"><span class="company-name">IT HELPDESK</span></div><form action="/login" method="POST"><label>Username / Staff Name:</label> <input type="text" name="username" required><label>Password:</label> <input type="password" name="password" required><button type="submit">Login</button></form></body></html>`);
 });
 
-app.post('/login', (req, res) => {
+app.post('/login', async (req, res) => {
     const { username, password } = req.body;
     if (username === 'admin' && password === '123') {
         req.session.isAdmin = true;
@@ -367,7 +209,8 @@ app.post('/login', (req, res) => {
         req.session.username = 'Admin';
         return res.redirect('/admin');
     }
-    const staffUser = IT_STAFF.find(s => s.name.toLowerCase() === username.toLowerCase() && s.password === password);
+    const allStaff = await Staff.find();
+    const staffUser = allStaff.find(s => s.name.toLowerCase() === username.toLowerCase() && s.password === password);
     if (staffUser) {
         req.session.isAdmin = false;
         req.session.isStaff = true;
@@ -494,7 +337,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                <div class="branch-panel-card">' +
 '                    <h2>Create New Branch Location</h2>' +
 '                    <div class="branch-input-group">' +
-'                        <input type="text" id="newBranchName" placeholder="Enter Branch details">' +
+'                        <input type="text" id="newBranchName" placeholder="Bajaj, Pallimukk">' +
 '                        <button class="branch-add-btn" onclick="addNewBranch()">Add Branch</button>' +
 '                    </div>' +
 '                    <table class="branch-table">' +
@@ -504,6 +347,15 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                    </div>' +
 '            </div>' +
 '            <div id="viewStaff" class="dashboard-view">' +
+'                <div class="branch-panel-card" style="margin-bottom: 20px;">' +
+'                    <h2>Add New Staff Member</h2>' +
+'                    <div class="branch-input-group">' +
+'                        <input type="text" id="newStaffName" placeholder="Full Name">' +
+'                        <input type="text" id="newStaffPassword" placeholder="Password">' +
+'                        <input type="email" id="newStaffEmail" placeholder="Email">' +
+'                        <button class="branch-add-btn" onclick="addNewStaff()">Add Staff</button>' +
+'                    </div>' +
+'                </div>' +
 '                <div class="branch-panel-card">' +
 '                    <h2>Active Helpdesk Personnel</h2>' +
 '                    <table class="branch-table">' +
@@ -566,7 +418,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                        commentListHtml += \'<div class="comment-item"><strong>\'+c.author+\':</strong> \'+c.text+\'</div>\';' +
 '                    });' +
 '                }' +
-'                listDiv.innerHTML += \'<div class="ticket-card"><div class="ticket-header"><div><h3 class="ticket-title">\'+ticket.title+\'</h3><div style="margin-top: 8px;"><span class="badge p-\'+ticket.priority+\'">\'+ticket.priority+\'</span><span class="badge status-\'+ticket.status.toLowerCase()+\'">\'+ticket.status+\'</span></div></div>\'+actionBtn+\'</div><p class="ticket-desc">\'+ticket.description+\'</p>\'+imageHtml+\'<div class="assignment-info"><span><strong>Branch:</strong> \'+ticket.branch+\'</span> | <span><strong>Mobile:</strong> \'+ticket.mobile+\'</span> | <span><strong>Assigned:</strong> \'+ticket.assignedTo+\'</span></div><div class="comments-section"><h4 class="comments-header">Internal Work Notes</h4><div>\'+(commentListHtml || "No updates.")+\'</div><div class="comment-form"><input type="text" id="input-\'+ticket._id+\'" placeholder="Write operational update..."><button onclick="addComment(\\\'\'+ticket._id+\'\\\')">Post</button></div></div></div>\';' +
+'                listDiv.innerHTML += \'<div class="ticket-card"><div class="ticket-header"><div><h3 class="ticket-title">#\'+String(ticket.ticketNumber).padStart(4,"0")+\' \'+ticket.title+\'</h3><div style="margin-top: 8px;"><span class="badge p-\'+ticket.priority+\'">\'+ticket.priority+\'</span><span class="badge status-\'+ticket.status.toLowerCase()+\'">\'+ticket.status+\'</span></div></div>\'+actionBtn+\'</div><p class="ticket-desc">\'+ticket.description+\'</p>\'+imageHtml+\'<div class="assignment-info"><span><strong>Branch:</strong> \'+ticket.branch+\'</span> | <span><strong>Mobile:</strong> \'+ticket.mobile+\'</span> | <span><strong>Assigned:</strong> \'+ticket.assignedTo+\'</span></div><div class="comments-section"><h4 class="comments-header">Internal Work Notes</h4><div>\'+(commentListHtml || "No updates.")+\'</div><div class="comment-form"><input type="text" id="input-\'+ticket._id+\'" placeholder="Write operational update..."><button onclick="addComment(\\\'\'+ticket._id+\'\\\')">Post</button></div></div></div>\';' +
 '            });' +
 '        }' +
 '        async function loadBranchesList() {' +
@@ -625,6 +477,25 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                headers: { "Content-Type": "application/json" },' +
 '                body: JSON.stringify({ staffId, branches })' +
 '            });' +
+'        }' +
+'        async function addNewStaff() {' +
+'            const name = document.getElementById("newStaffName").value.trim();' +
+'            const password = document.getElementById("newStaffPassword").value.trim();' +
+'            const email = document.getElementById("newStaffEmail").value.trim();' +
+'            if (!name || !password || !email) { alert("Please fill in name, password, and email."); return; }' +
+'            const response = await fetch("/tickets/staff", {' +
+'                method: "POST",' +
+'                headers: { "Content-Type": "application/json" },' +
+'                body: JSON.stringify({ name, password, email })' +
+'            });' +
+'            if (response.ok) {' +
+'                document.getElementById("newStaffName").value = "";' +
+'                document.getElementById("newStaffPassword").value = "";' +
+'                document.getElementById("newStaffEmail").value = "";' +
+'                loadStaffList();' +
+'            } else {' +
+'                alert("Could not add staff member.");' +
+'            }' +
 '        }' +
 '        async function addComment(id) {' +
 '            const textInput = document.getElementById("input-" + id);' +
@@ -698,10 +569,28 @@ app.delete('/tickets/branches/:id', checkAdminLogin, async (req, res) => {
     res.json({ success: true });
 });
 
-app.get('/tickets/staff-list', checkAdminLogin, (req, res) => {
-    res.json(IT_STAFF.map(s => ({ id: s.id, name: s.name, email: s.email })));
+app.get('/tickets/staff-list', checkAdminLogin, async (req, res) => {
+    const staff = await Staff.find().sort({ staffId: 1 });
+    res.json(staff.map(s => ({ id: s.staffId, name: s.name, email: s.email })));
 });
 
+// Add a new staff member (auto-generates the next sequential staff ID)
+app.post('/tickets/staff', checkAdminLogin, async (req, res) => {
+    try {
+        const { name, password, email } = req.body;
+        if (!name || !password || !email) {
+            return res.status(400).json({ error: 'Name, password, and email are all required' });
+        }
+        const staffId = await getNextStaffId();
+        const newStaff = new Staff({ staffId, name, password, email });
+        await newStaff.save();
+        res.status(201).json({ success: true, staffId });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Get branch coverage for all staff, as a { staffId: [branchNames] } map
 app.get('/tickets/staff-branches', checkAdminLogin, async (req, res) => {
     try {
         const assignments = await StaffBranch.find();
@@ -713,6 +602,7 @@ app.get('/tickets/staff-branches', checkAdminLogin, async (req, res) => {
     }
 });
 
+// Set which branches one staff member covers
 app.post('/tickets/staff-branches', checkAdminLogin, async (req, res) => {
     try {
         const { staffId, branches } = req.body;
@@ -730,45 +620,55 @@ app.post('/tickets/staff-branches', checkAdminLogin, async (req, res) => {
 app.post('/tickets', upload.single('screenshot'), async (req, res) => {
     try {
         const branchName = req.body.branch || 'N/A';
+        const allStaff = await Staff.find();
 
+        // Find which staff explicitly cover this branch
         const coveringAssignments = await StaffBranch.find({ branches: branchName });
         let eligibleStaff = coveringAssignments
-            .map(a => IT_STAFF.find(s => s.id === a.staffId))
+            .map(a => allStaff.find(s => s.staffId === a.staffId))
             .filter(Boolean);
 
+        // Nobody assigned to this branch yet -> fall back to round-robin across everyone
         if (eligibleStaff.length === 0) {
-            eligibleStaff = IT_STAFF;
+            eligibleStaff = allStaff;
         }
 
+        // Round-robin among eligible staff, based on tickets already logged for this branch
         const branchTicketCount = await Ticket.countDocuments({ branch: branchName });
         const staffIndex = branchTicketCount % eligibleStaff.length;
         const assignedStaff = eligibleStaff[staffIndex];
+        const ticketNumber = await getNextTicketNumber();
 
         const newTicket = new Ticket({
+            ticketNumber,
             title: req.body.title,
             branch: branchName,
             mobile: req.body.mobile,
             priority: req.body.priority,
             description: req.body.description,
             screenshot: req.file ? req.file.path : null,
-            assignedTo: assignedStaff.name
+            assignedTo: assignedStaff.name 
         });
 
         await newTicket.save();
 
-        if (assignedStaff.email) {
-            transporter.sendMail({
-                from: process.env.EMAIL_USER,
-                to: assignedStaff.email,
-                subject: `New Ticket Assigned: ${newTicket.title}`,
-                text: `You have been assigned a new ticket from ${branchName}. Priority: ${newTicket.priority}. Description: ${newTicket.description}`
-            }).catch(console.error);
-        }
+        const mailOptions = {
+            from: process.env.EMAIL_USER,
+            to: assignedStaff.email,
+            subject: `[Ticket #${String(ticketNumber).padStart(4, '0')}] - ${newTicket.title}`,
+            text: `Hello ${assignedStaff.name},\n\nTicket Assigned:\nTicket #: ${String(ticketNumber).padStart(4, '0')}\nTitle: ${newTicket.title}\nBranch: ${newTicket.branch}\nMobile: ${newTicket.mobile}`
+        };
 
-        res.status(201).json({ success: true });
+        transporter.sendMail(mailOptions, (err, info) => {
+            if (err) console.error(err);
+        });
+
+        res.status(201).json(newTicket);
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
 });
 
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Server configuration active on port ${PORT}`);
+});
