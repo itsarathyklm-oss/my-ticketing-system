@@ -1,5 +1,10 @@
 const express = require('express');
 const path = require('path');
+const dns = require('dns');
+// Render's outbound network doesn't reliably support IPv6 — without this, Node tries
+// Gmail's IPv6 address first and the connection dies with ENETUNREACH before it ever
+// reaches Google. Forcing IPv4 first fixes that.
+dns.setDefaultResultOrder('ipv4first');
 const session = require('express-session');
 const mongoose = require('mongoose');
 const multer = require('multer');
@@ -125,7 +130,10 @@ async function getNextStaffId() {
 
 // Configure Email Transporter
 const transporter = nodemailer.createTransport({
-    service: 'gmail',
+    host: 'smtp.gmail.com',
+    port: 465,
+    secure: true,
+    family: 4, // force IPv4 — avoids the ENETUNREACH-on-IPv6 issue seen on Render
     auth: {
         user: process.env.EMAIL_USER,
         pass: process.env.EMAIL_PASS
