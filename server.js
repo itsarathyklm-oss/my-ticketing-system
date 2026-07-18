@@ -40,6 +40,7 @@ const StaffBranch = mongoose.model('StaffBranch', staffBranchSchema);
 const ticketSchema = new mongoose.Schema({
     ticketNumber: { type: Number, unique: true, sparse: true },
     title: String,
+    submittedBy: { type: String, default: 'Unknown' },
     branch: { type: String, default: 'N/A' },
     priority: { type: String, default: 'Medium' },
     description: String,
@@ -160,7 +161,7 @@ app.get('/', (req, res) => {
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body {
     font-family: 'Inter', 'Segoe UI', Arial, sans-serif;
-    min-height: 100vh; display: flex; align-items: center; justify-content: center;
+    height: 100vh; display: flex; align-items: center; justify-content: center;
     background-image:
         radial-gradient(circle at 18% 20%, rgba(229,62,62,0.32), transparent 42%),
         radial-gradient(circle at 85% 18%, rgba(229,62,62,0.14), transparent 40%),
@@ -171,40 +172,44 @@ body {
     background-position: center;
     background-repeat: no-repeat;
     background-attachment: fixed;
-    padding: 48px 20px;
+    padding: 16px;
+    overflow: hidden;
 }
-.ticket-card { width: 100%; max-width: 500px; background: #fdfcfb; border-radius: 14px; box-shadow: 0 24px 70px rgba(0,0,0,0.45); overflow: hidden; }
-.ticket-ribbon { background: #1e2229; padding: 22px 32px; display: flex; align-items: center; gap: 14px; }
-.ticket-ribbon img { height: 36px; width: auto; object-fit: contain; }
-.ticket-ribbon-text { font-family: 'Barlow Condensed', sans-serif; font-weight: 700; font-size: 20px; letter-spacing: 1px; color: #fff; text-transform: uppercase; }
-.ticket-body { padding: 32px 40px 40px; }
-h2.form-title { font-family: 'Barlow Condensed', sans-serif; font-weight: 600; font-size: 26px; letter-spacing: .3px; color: #1e2229; }
-.form-subtitle { font-size: 13px; color: #8a8f98; margin-top: 4px; }
-.ticket-perforation { position: relative; height: 0; border-top: 2px dashed #e2ded9; margin: 24px -40px 20px -40px; }
-.ticket-perforation::before, .ticket-perforation::after { content: ''; position: absolute; top: -9px; width: 18px; height: 18px; border-radius: 50%; background: #f1f0ee; box-shadow: inset 0 1px 3px rgba(0,0,0,0.15); }
-.ticket-perforation::before { left: -9px; }
-.ticket-perforation::after { right: -9px; }
-label { display: block; margin-top: 16px; font-weight: 600; font-size: 12px; color: #6b7280; text-transform: uppercase; letter-spacing: .5px; }
-input, textarea, select { width: 100%; padding: 12px 14px; margin-top: 7px; border: 1.5px solid #e5e1de; border-radius: 9px; font-size: 14px; font-family: 'Inter', sans-serif; background: #faf9f7; color: #1e2229; transition: border-color .18s, box-shadow .18s; }
+.ticket-card { width: 100%; max-width: 460px; max-height: 96vh; background: #fdfcfb; border-radius: 14px; box-shadow: 0 24px 70px rgba(0,0,0,0.45); overflow-y: auto; }
+.ticket-ribbon { background: #1e2229; padding: 12px 26px; display: flex; align-items: center; gap: 12px; }
+.ticket-ribbon img { height: 28px; width: auto; object-fit: contain; }
+.ticket-ribbon-text { font-family: 'Barlow Condensed', sans-serif; font-weight: 700; font-size: 16px; letter-spacing: 1px; color: #fff; text-transform: uppercase; }
+.ticket-body { padding: 16px 26px 20px; }
+h2.form-title { font-family: 'Barlow Condensed', sans-serif; font-weight: 600; font-size: 19px; letter-spacing: .3px; color: #1e2229; }
+.form-subtitle { font-size: 11px; color: #8a8f98; margin-top: 2px; }
+.ticket-perforation { position: relative; height: 0; border-top: 2px dashed #e2ded9; margin: 12px -26px 10px -26px; }
+.ticket-perforation::before, .ticket-perforation::after { content: ''; position: absolute; top: -8px; width: 16px; height: 16px; border-radius: 50%; background: #f1f0ee; box-shadow: inset 0 1px 3px rgba(0,0,0,0.15); }
+.ticket-perforation::before { left: -8px; }
+.ticket-perforation::after { right: -8px; }
+.form-grid { display: grid; grid-template-columns: 1fr 1fr; column-gap: 12px; }
+.form-field { margin-top: 8px; }
+.full-width { grid-column: 1 / -1; }
+label { display: block; margin-bottom: 3px; font-weight: 600; font-size: 10.5px; color: #6b7280; text-transform: uppercase; letter-spacing: .4px; }
+input, textarea, select { width: 100%; padding: 8px 11px; border: 1.5px solid #e5e1de; border-radius: 7px; font-size: 13px; font-family: 'Inter', sans-serif; background: #faf9f7; color: #1e2229; transition: border-color .18s, box-shadow .18s; }
 input:focus, textarea:focus, select:focus { outline: none; border-color: #e53e3e; box-shadow: 0 0 0 3px rgba(229,62,62,.14); background: #fff; }
-textarea { resize: vertical; }
-button[type="submit"] { margin-top: 26px; padding: 14px; width: 100%; background: linear-gradient(120deg, #e53e3e, #c53030); color: #fff; border: none; border-radius: 9px; cursor: pointer; font-family: 'Barlow Condensed', sans-serif; font-weight: 700; font-size: 16px; letter-spacing: 1px; text-transform: uppercase; box-shadow: 0 8px 20px rgba(197,48,48,.4); transition: transform .15s, box-shadow .15s; }
+textarea { resize: none; height: 44px; }
+button[type="submit"] { grid-column: 1 / -1; margin-top: 12px; padding: 11px; width: 100%; background: linear-gradient(120deg, #e53e3e, #c53030); color: #fff; border: none; border-radius: 8px; cursor: pointer; font-family: 'Barlow Condensed', sans-serif; font-weight: 700; font-size: 14px; letter-spacing: 1px; text-transform: uppercase; box-shadow: 0 8px 20px rgba(197,48,48,.4); transition: transform .15s, box-shadow .15s; }
 button[type="submit"]:hover { transform: translateY(-2px); box-shadow: 0 12px 28px rgba(197,48,48,.5); }
 button[type="submit"]:active { transform: translateY(0); }
 .tab-switch { display: flex; background: #f1f0ee; }
-.tab-btn { flex: 1; padding: 15px; border: none; background: transparent; cursor: pointer; font-family: 'Barlow Condensed', sans-serif; font-weight: 600; font-size: 14px; letter-spacing: .5px; text-transform: uppercase; color: #8a8f98; transition: all .2s; }
+.tab-btn { flex: 1; padding: 10px; border: none; background: transparent; cursor: pointer; font-family: 'Barlow Condensed', sans-serif; font-weight: 600; font-size: 12px; letter-spacing: .5px; text-transform: uppercase; color: #8a8f98; transition: all .2s; }
 .tab-btn.active { background: #fdfcfb; color: #e53e3e; box-shadow: inset 0 -2px 0 #e53e3e; }
-.check-status-btn { margin-top: 20px; padding: 13px; width: 100%; background: #1e2229; color: #fff; border: none; border-radius: 9px; cursor: pointer; font-family: 'Barlow Condensed', sans-serif; font-weight: 700; font-size: 15px; letter-spacing: 1px; text-transform: uppercase; transition: background .2s; }
+.check-status-btn { margin-top: 12px; padding: 11px; width: 100%; background: #1e2229; color: #fff; border: none; border-radius: 8px; cursor: pointer; font-family: 'Barlow Condensed', sans-serif; font-weight: 700; font-size: 13px; letter-spacing: 1px; text-transform: uppercase; transition: background .2s; }
 .check-status-btn:hover { background: #2d323e; }
 .badge { padding: 4px 10px; border-radius: 50px; font-size: 11px; font-weight: 700; text-transform: uppercase; display: inline-block; }
 .status-open { background-color: #ebf8ff; color: #2b6cb0; }
 .status-resolved { background-color: #c6f6d5; color: #22543d; }
-.status-result-card { border: 1px solid #e5e1de; border-radius: 10px; padding: 14px 16px; margin-top: 12px; background: #faf9f7; }
+.status-result-card { border: 1px solid #e5e1de; border-radius: 10px; padding: 12px 14px; margin-top: 10px; background: #faf9f7; }
 .status-result-top { display: flex; justify-content: space-between; align-items: center; }
-.status-result-number { font-family: 'Barlow Condensed', sans-serif; font-weight: 700; font-size: 16px; color: #1e2229; letter-spacing: .5px; }
-.status-result-title { font-size: 14px; color: #1e2229; font-weight: 600; margin-top: 6px; }
-.status-result-meta { font-size: 12px; color: #8a8f98; margin-top: 4px; }
-</style></head><body><div class="ticket-card"><div class="ticket-ribbon"><img src="/logo.png" alt="Company Logo" onerror="this.style.display='none'"><span class="ticket-ribbon-text">Sarathy IT Helpdesk</span></div><div class="tab-switch"><button type="button" class="tab-btn active" id="tabSubmitBtn" onclick="showTab('submit')">Submit Ticket</button><button type="button" class="tab-btn" id="tabStatusBtn" onclick="showTab('status')">Check Status</button></div><div class="ticket-body"><div id="submitPane"><h2 class="form-title">Submit a New Ticket</h2><div class="form-subtitle">We'll route it to the right person and keep you posted.</div><div class="ticket-perforation"></div><form id="ticketForm" enctype="multipart/form-data"><label>Issue Title</label><input type="text" id="title" required><label>Select Branch Location</label><select id="branch" required><option value="" disabled selected>Loading branches...</option></select><label>Mobile Number</label><input type="tel" id="mobile" placeholder="Enter your 10-digit mobile number" pattern="[0-9]{10}" required><label>Priority Level</label><select id="priority"><option value="Low">Low</option><option value="Medium" selected>Medium</option><option value="High">High</option></select><label>Description</label><textarea id="description" rows="4" required></textarea><label>Upload Screenshot (Optional)</label><input type="file" id="screenshot" accept="image/*"><button type="submit">Submit Ticket</button></form></div><div id="statusPane" style="display:none;"><h2 class="form-title">Check Ticket Status</h2><div class="form-subtitle">Enter the mobile number you used when submitting.</div><label>Mobile Number</label><input type="tel" id="statusMobile" placeholder="Enter your 10-digit mobile number" pattern="[0-9]{10}"><button type="button" class="check-status-btn" onclick="checkTicketStatus()">Check Status</button><div id="statusResults"></div></div></div></div><script>
+.status-result-number { font-family: 'Barlow Condensed', sans-serif; font-weight: 700; font-size: 15px; color: #1e2229; letter-spacing: .5px; }
+.status-result-title { font-size: 13px; color: #1e2229; font-weight: 600; margin-top: 5px; }
+.status-result-meta { font-size: 11px; color: #8a8f98; margin-top: 3px; }
+</head><body><div class="ticket-card"><div class="ticket-ribbon"><img src="/logo.png" alt="Company Logo" onerror="this.style.display='none'"><span class="ticket-ribbon-text">Sarathy IT Helpdesk</span></div><div class="tab-switch"><button type="button" class="tab-btn active" id="tabSubmitBtn" onclick="showTab('submit')">Submit Ticket</button><button type="button" class="tab-btn" id="tabStatusBtn" onclick="showTab('status')">Check Status</button></div><div class="ticket-body"><div id="submitPane"><h2 class="form-title">Submit a New Ticket</h2><div class="form-subtitle">We'll route it to the right person and keep you posted.</div><div class="ticket-perforation"></div><form id="ticketForm" enctype="multipart/form-data" class="form-grid"><div class="form-field"><label>Your Name</label><input type="text" id="submitterName" required></div><div class="form-field"><label>Mobile Number</label><input type="tel" id="mobile" placeholder="10-digit mobile number" pattern="[0-9]{10}" required></div><div class="form-field full-width"><label>Issue Title</label><input type="text" id="title" required></div><div class="form-field"><label>Branch Location</label><select id="branch" required><option value="" disabled selected>Loading...</option></select></div><div class="form-field"><label>Priority Level</label><select id="priority"><option value="Low">Low</option><option value="Medium" selected>Medium</option><option value="High">High</option></select></div><div class="form-field full-width"><label>Description</label><textarea id="description" required></textarea></div><div class="form-field full-width"><label>Upload Screenshot (Optional)</label><input type="file" id="screenshot" accept="image/*"></div><button type="submit">Submit Ticket</button></form></div><div id="statusPane" style="display:none;"><h2 class="form-title">Check Ticket Status</h2><div class="form-subtitle">Enter the mobile number you used when submitting.</div><label>Mobile Number</label><input type="tel" id="statusMobile" placeholder="Enter your 10-digit mobile number" pattern="[0-9]{10}"><button type="button" class="check-status-btn" onclick="checkTicketStatus()">Check Status</button><div id="statusResults"></div></div></div></div><script>
     async function loadFormBranches() {
         try {
             const res = await fetch('/public-branches');
@@ -228,6 +233,7 @@ button[type="submit"]:active { transform: translateY(0); }
         e.preventDefault(); 
         const formData = new FormData(); 
         formData.append('title', document.getElementById('title').value); 
+        formData.append('submittedBy', document.getElementById('submitterName').value);
         formData.append('branch', document.getElementById('branch').value); 
         formData.append('mobile', document.getElementById('mobile').value); 
         formData.append('priority', document.getElementById('priority').value); 
@@ -334,7 +340,7 @@ app.post('/login', async (req, res) => {
 
 app.get('/logout', (req, res) => {
     req.session.destroy();
-    res.redirect('/');
+    res.redirect('/login');
 });
 
 // Admin Panel
@@ -452,7 +458,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                <div class="branch-panel-card">' +
 '                    <h2>Create New Branch Location</h2>' +
 '                    <div class="branch-input-group">' +
-'                        <input type="text" id="newBranchName" placeholder="Bajaj, Pallimukk">' +
+'                        <input type="text" id="newBranchName" placeholder="Enter Branch Details">' +
 '                        <button class="branch-add-btn" onclick="addNewBranch()">Add Branch</button>' +
 '                    </div>' +
 '                    <table class="branch-table">' +
@@ -535,7 +541,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                        commentListHtml += \'<div class="comment-item"><strong>\'+c.author+\':</strong> \'+c.text+\'</div>\';' +
 '                    });' +
 '                }' +
-'                listDiv.innerHTML += \'<div class="ticket-card"><div class="ticket-header"><div><h3 class="ticket-title">#\'+String(ticket.ticketNumber).padStart(4,"0")+\' \'+ticket.title+\'</h3><div style="margin-top: 8px;"><span class="badge p-\'+ticket.priority+\'">\'+ticket.priority+\'</span><span class="badge status-\'+ticket.status.toLowerCase()+\'">\'+ticket.status+\'</span>\'+escalatedBadge+\'</div></div>\'+actionBtn+escalateBtn+\'</div><p class="ticket-desc">\'+ticket.description+\'</p>\'+imageHtml+\'<div class="assignment-info"><span><strong>Branch:</strong> \'+ticket.branch+\'</span> | <span><strong>Mobile:</strong> \'+ticket.mobile+\'</span> | <span><strong>Assigned:</strong> \'+ticket.assignedTo+\'</span></div><div class="comments-section"><h4 class="comments-header">Internal Work Notes</h4><div>\'+(commentListHtml || "No updates.")+\'</div><div class="comment-form"><input type="text" id="input-\'+ticket._id+\'" placeholder="Write operational update..."><button onclick="addComment(\\\'\'+ticket._id+\'\\\')">Post</button></div></div></div>\';' +
+'                listDiv.innerHTML += \'<div class="ticket-card"><div class="ticket-header"><div><h3 class="ticket-title">#\'+String(ticket.ticketNumber).padStart(4,"0")+\' \'+ticket.title+\'</h3><div style="margin-top: 8px;"><span class="badge p-\'+ticket.priority+\'">\'+ticket.priority+\'</span><span class="badge status-\'+ticket.status.toLowerCase()+\'">\'+ticket.status+\'</span>\'+escalatedBadge+\'</div></div>\'+actionBtn+escalateBtn+\'</div><p class="ticket-desc">\'+ticket.description+\'</p>\'+imageHtml+\'<div class="assignment-info"><span><strong>Submitted By:</strong> \'+(ticket.submittedBy || "Unknown")+\'</span> | <span><strong>Branch:</strong> \'+ticket.branch+\'</span> | <span><strong>Mobile:</strong> \'+ticket.mobile+\'</span> | <span><strong>Assigned:</strong> \'+ticket.assignedTo+\'</span></div><div class="comments-section"><h4 class="comments-header">Internal Work Notes</h4><div>\'+(commentListHtml || "No updates.")+\'</div><div class="comment-form"><input type="text" id="input-\'+ticket._id+\'" placeholder="Write operational update..."><button onclick="addComment(\\\'\'+ticket._id+\'\\\')">Post</button></div></div></div>\';' +
 '            });' +
 '        }' +
 '        async function loadBranchesList() {' +
@@ -784,6 +790,7 @@ app.post('/tickets', upload.single('screenshot'), async (req, res) => {
         const newTicket = new Ticket({
             ticketNumber,
             title: req.body.title,
+            submittedBy: req.body.submittedBy || 'Unknown',
             branch: branchName,
             mobile: req.body.mobile,
             priority: req.body.priority,
@@ -798,7 +805,7 @@ app.post('/tickets', upload.single('screenshot'), async (req, res) => {
             from: process.env.EMAIL_USER,
             to: assignedStaff.email,
             subject: `[Ticket #${String(ticketNumber).padStart(4, '0')}] - ${newTicket.title}`,
-            text: `Hello ${assignedStaff.name},\n\nTicket Assigned:\nTicket #: ${String(ticketNumber).padStart(4, '0')}\nTitle: ${newTicket.title}\nBranch: ${newTicket.branch}\nMobile: ${newTicket.mobile}`
+            text: `Hello ${assignedStaff.name},\n\nTicket Assigned:\nTicket #: ${String(ticketNumber).padStart(4, '0')}\nTitle: ${newTicket.title}\nSubmitted By: ${newTicket.submittedBy}\nBranch: ${newTicket.branch}\nMobile: ${newTicket.mobile}`
         };
 
         transporter.sendMail(mailOptions, (err, info) => {
