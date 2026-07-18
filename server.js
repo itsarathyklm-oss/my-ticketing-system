@@ -129,25 +129,52 @@ async function getNextStaffId() {
 }
 
 // Configure Email Transporter
-const transporter = nodemailer.createTransport({
+// Start with a hostname-based transporter as a fallback in case IPv4 resolution below fails.
+let transporter = nodemailer.createTransport({
     host: 'smtp.gmail.com',
     port: 465,
     secure: true,
-    family: 4, // force IPv4 — avoids the ENETUNREACH-on-IPv6 issue seen on Render
+    family: 4,
     auth: {
         user: process.env.EMAIL_USER,
         pass: process.env.EMAIL_PASS
     }
 });
 
-// Verify mailer credentials at startup so misconfiguration shows up immediately in the logs
-transporter.verify((err, success) => {
-    if (err) {
-        console.error('MAILER NOT WORKING — assignment emails will fail. Reason:', err.message);
-    } else {
-        console.log('Mailer verified OK — ready to send assignment emails.');
-    }
-});
+function verifyMailer() {
+    transporter.verify((err, success) => {
+        if (err) {
+            console.error('MAILER NOT WORKING — assignment emails will fail. Reason:', err.message);
+        } else {
+            console.log('Mailer verified OK — ready to send assignment emails.');
+        }
+    });
+}
+
+// Gmail's hostname can resolve to an IPv6 address that Render's free tier can't route to,
+// which breaks the connection (ENETUNREACH / timeout) even with the `family: 4` option above,
+// since that option isn't consistently honored by the underlying SMTP connection layer.
+// Resolving to a literal IPv4 address ourselves and connecting to that IP directly sidesteps
+// the issue completely — there's no hostname left for anything to re-resolve to IPv6.
+dns.promises.resolve4('smtp.gmail.com')
+    .then(addresses => {
+        transporter = nodemailer.createTransport({
+            host: addresses[0],
+            port: 465,
+            secure: true,
+            tls: { servername: 'smtp.gmail.com' }, // keeps TLS cert validation matching the real hostname
+            auth: {
+                user: process.env.EMAIL_USER,
+                pass: process.env.EMAIL_PASS
+            }
+        });
+        console.log('Mailer configured to use Gmail IPv4 address:', addresses[0]);
+        verifyMailer();
+    })
+    .catch(err => {
+        console.error('Could not resolve an IPv4 address for smtp.gmail.com, using hostname instead:', err.message);
+        verifyMailer();
+    });
 
 app.use(session({
     secret: process.env.SESSION_SECRET || 'my-super-secret-key-123',
