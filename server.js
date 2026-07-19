@@ -11,6 +11,7 @@ const multer = require('multer');
 const cloudinary = require('cloudinary').v2;
 const { CloudinaryStorage } = require('multer-storage-cloudinary');
 const nodemailer = require('nodemailer');
+const bcrypt = require('bcryptjs');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -54,6 +55,7 @@ const ticketSchema = new mongoose.Schema({
     status: { type: String, default: 'Open' },
     assignedTo: { type: String, default: 'Unassigned' },
     escalated: { type: Boolean, default: false },
+    createdAt: { type: Date, default: Date.now },
     comments: [{
         author: String,
         text: String,
@@ -107,12 +109,16 @@ const Staff = mongoose.model('Staff', staffSchema);
 async function seedInitialStaff() {
     const existingCount = await Staff.countDocuments();
     if (existingCount === 0) {
-        await Staff.insertMany([
+        const defaults = [
             { staffId: 'IT001', name: 'SADIQ', password: 'sadiq123', email: 'itsarathy@gmail.com' },
             { staffId: 'IT002', name: 'ABHIMANYU', password: 'abhi123', email: 'abhimanyu@gmail.com' },
             { staffId: 'IT003', name: 'ANANDHU', password: 'anandhu123', email: 'anandhu@gmail.com' },
             { staffId: 'IT004', name: 'sabari', password: 'sabari123', email: 'sabari@gmail.com' }
-        ]);
+        ];
+        for (const s of defaults) {
+            s.password = await bcrypt.hash(s.password, 10);
+        }
+        await Staff.insertMany(defaults);
         console.log('Seeded initial IT staff accounts');
     }
 }
@@ -176,12 +182,43 @@ dns.promises.resolve4('smtp.gmail.com')
         verifyMailer();
     });
 
+// Needed so req.ip and secure cookies work correctly behind Render's reverse proxy
+app.set('trust proxy', 1);
+
+if (!process.env.SESSION_SECRET) {
+    console.warn('WARNING: SESSION_SECRET is not set — using an insecure default. Set SESSION_SECRET in your environment variables.');
+}
+
 app.use(session({
     secret: process.env.SESSION_SECRET || 'my-super-secret-key-123',
     resave: false,
     saveUninitialized: true,
-    cookie: { maxAge: 1800000 }
+    cookie: {
+        maxAge: 1800000,
+        httpOnly: true,
+        sameSite: 'lax',
+        secure: process.env.NODE_ENV === 'production'
+    }
 }));
+
+// Basic brute-force protection on login: max 8 attempts per IP per 15 minutes
+const loginAttempts = new Map();
+const LOGIN_WINDOW_MS = 15 * 60 * 1000;
+const LOGIN_MAX_ATTEMPTS = 8;
+function loginRateLimiter(req, res, next) {
+    const ip = req.ip;
+    const now = Date.now();
+    const entry = loginAttempts.get(ip);
+    if (!entry || now - entry.firstAttempt > LOGIN_WINDOW_MS) {
+        loginAttempts.set(ip, { count: 1, firstAttempt: now });
+        return next();
+    }
+    if (entry.count >= LOGIN_MAX_ATTEMPTS) {
+        return res.send('<h3>Too many login attempts. Please wait a few minutes and try again.</h3>');
+    }
+    entry.count++;
+    next();
+}
 
 function checkUserLogin(req, res, next) {
     if (req.session && (req.session.isAdmin || req.session.isStaff)) {
@@ -201,7 +238,7 @@ function checkAdminLogin(req, res, next) {
 
 // User Ticket Submission Page
 app.get('/', (req, res) => {
-    res.send(`<!DOCTYPE html><html><head><title>Submit a Ticket | SARATHY IT</title><link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"><style>
+    res.send(`<!DOCTYPE html><html><head><title>Submit a Ticket | SARATHY IT</title><link rel="icon" type="image/png" href="/logo.png"><link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"><style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body {
     font-family: 'Inter', 'Segoe UI', Arial, sans-serif;
@@ -322,6 +359,7 @@ button[type="submit"]:active { transform: translateY(0); }
                 '<span class="badge ' + statusClass + '">' + t.status + '</span></div>' +
                 '<div class="status-result-title">' + t.title + '</div>' +
                 '<div class="status-result-meta">' + t.branch + ' &middot; ' + t.priority + ' priority</div>' +
+                '<div class="status-result-meta">' + (t.createdAt ? new Date(t.createdAt).toLocaleString() : '') + '</div>' +
                 '</div>';
         });
         container.innerHTML = html;
@@ -331,7 +369,7 @@ button[type="submit"]:active { transform: translateY(0); }
 
 // Login Page
 app.get('/login', (req, res) => {
-    res.send(`<!DOCTYPE html><html><head><title>Login | SARATHY IT</title><link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"><style>
+    res.send(`<!DOCTYPE html><html><head><title>Login | SARATHY IT</title><link rel="icon" type="image/png" href="/logo.png"><link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"><style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body {
     font-family: 'Inter', 'Segoe UI', Arial, sans-serif;
@@ -363,17 +401,36 @@ button:active { transform: translateY(0); }
 </style></head><body><div class="login-card"><div class="badge-hole"></div><div class="login-ribbon"><img src="/logo.png" alt="Company Logo" onerror="this.style.display='none'"><span class="login-ribbon-text">Sarathy IT</span><span class="login-ribbon-sub">Staff &amp; Admin Access</span></div><div class="login-body"><form action="/login" method="POST"><label>Username / Staff Name</label> <input type="text" name="username" required><label>Password</label> <input type="password" name="password" required><button type="submit">Login</button></form></div></div></body></html>`);
 });
 
-app.post('/login', async (req, res) => {
+// Compares a submitted password against a stored one. Handles both bcrypt-hashed
+// passwords and legacy plaintext ones (so existing accounts keep working).
+async function verifyPassword(plainInput, storedValue) {
+    if (storedValue && storedValue.startsWith('$2')) {
+        return bcrypt.compare(plainInput, storedValue);
+    }
+    return plainInput === storedValue;
+}
+
+app.post('/login', loginRateLimiter, async (req, res) => {
     const { username, password } = req.body;
-    if (username === 'admin' && password === '123') {
+    const adminUser = process.env.ADMIN_USERNAME || 'admin';
+    const adminPass = process.env.ADMIN_PASSWORD || '123';
+    if (!process.env.ADMIN_USERNAME || !process.env.ADMIN_PASSWORD) {
+        console.warn('WARNING: ADMIN_USERNAME/ADMIN_PASSWORD not set — using insecure defaults. Set these in your environment variables.');
+    }
+    if (username === adminUser && password === adminPass) {
         req.session.isAdmin = true;
         req.session.isStaff = false;
         req.session.username = 'Admin';
         return res.redirect('/admin');
     }
     const allStaff = await Staff.find();
-    const staffUser = allStaff.find(s => s.name.toLowerCase() === username.toLowerCase() && s.password === password);
-    if (staffUser) {
+    const staffUser = allStaff.find(s => s.name.toLowerCase() === username.toLowerCase());
+    if (staffUser && await verifyPassword(password, staffUser.password)) {
+        // Lazily upgrade legacy plaintext passwords to a bcrypt hash on successful login
+        if (!staffUser.password.startsWith('$2')) {
+            staffUser.password = await bcrypt.hash(password, 10);
+            await staffUser.save();
+        }
         req.session.isAdmin = false;
         req.session.isStaff = true;
         req.session.username = staffUser.name;
@@ -399,6 +456,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '    <meta charset="UTF-8">' +
 '    <meta name="viewport" content="width=device-width, initial-scale=1.0">' +
 '    <title>IT Helpdesk | Dashboard</title>' +
+'    <link rel="icon" type="image/png" href="/logo.png">' +
 '    <style>' +
 '        * { box-sizing: border-box; margin: 0; padding: 0; font-family: \'Segoe UI\', Tahoma, Geneva, Verdana, sans-serif; }' +
 '        body { display: flex; height: 100vh; background-color: #f8f9fa; color: #333; overflow: hidden; }' +
@@ -524,7 +582,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                <div class="branch-panel-card">' +
 '                    <h2>Active Helpdesk Personnel</h2>' +
 '                    <table class="branch-table">' +
-'                        <thead><tr><th>Staff ID</th><th>Name Tag</th><th>Operational Route Email</th><th>Assigned Branches</th></tr></thead>' +
+'                        <thead><tr><th>Staff ID</th><th>Name Tag</th><th>Operational Route Email</th><th>Assigned Branches</th><th>Actions</th></tr></thead>' +
 '                        <tbody id="staffTableBody"></tbody>' +
 '                    </table>' +
 '                </div>' +
@@ -585,7 +643,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                        commentListHtml += \'<div class="comment-item"><strong>\'+c.author+\':</strong> \'+c.text+\'</div>\';' +
 '                    });' +
 '                }' +
-'                listDiv.innerHTML += \'<div class="ticket-card"><div class="ticket-header"><div><h3 class="ticket-title">#\'+String(ticket.ticketNumber).padStart(4,"0")+\' \'+ticket.title+\'</h3><div style="margin-top: 8px;"><span class="badge p-\'+ticket.priority+\'">\'+ticket.priority+\'</span><span class="badge status-\'+ticket.status.toLowerCase()+\'">\'+ticket.status+\'</span>\'+escalatedBadge+\'</div></div>\'+actionBtn+escalateBtn+\'</div><p class="ticket-desc">\'+ticket.description+\'</p>\'+imageHtml+\'<div class="assignment-info"><span><strong>Submitted By:</strong> \'+(ticket.submittedBy || "Unknown")+\'</span> | <span><strong>Branch:</strong> \'+ticket.branch+\'</span> | <span><strong>Mobile:</strong> \'+ticket.mobile+\'</span> | <span><strong>Assigned:</strong> \'+ticket.assignedTo+\'</span></div><div class="comments-section"><h4 class="comments-header">Internal Work Notes</h4><div>\'+(commentListHtml || "No updates.")+\'</div><div class="comment-form"><input type="text" id="input-\'+ticket._id+\'" placeholder="Write operational update..."><button onclick="addComment(\\\'\'+ticket._id+\'\\\')">Post</button></div></div></div>\';' +
+'                listDiv.innerHTML += \'<div class="ticket-card"><div class="ticket-header"><div><h3 class="ticket-title">#\'+String(ticket.ticketNumber).padStart(4,"0")+\' \'+ticket.title+\'</h3><div style="margin-top: 8px;"><span class="badge p-\'+ticket.priority+\'">\'+ticket.priority+\'</span><span class="badge status-\'+ticket.status.toLowerCase()+\'">\'+ticket.status+\'</span>\'+escalatedBadge+\'</div></div>\'+actionBtn+escalateBtn+\'</div><p class="ticket-desc">\'+ticket.description+\'</p>\'+imageHtml+\'<div class="assignment-info"><span><strong>Submitted By:</strong> \'+(ticket.submittedBy || "Unknown")+\'</span> | <span><strong>Branch:</strong> \'+ticket.branch+\'</span> | <span><strong>Mobile:</strong> \'+ticket.mobile+\'</span> | <span><strong>Assigned:</strong> \'+ticket.assignedTo+\'</span> | <span><strong>Submitted:</strong> \'+(ticket.createdAt ? new Date(ticket.createdAt).toLocaleString() : "N/A")+\'</span></div><div class="comments-section"><h4 class="comments-header">Internal Work Notes</h4><div>\'+(commentListHtml || "No updates.")+\'</div><div class="comment-form"><input type="text" id="input-\'+ticket._id+\'" placeholder="Write operational update..."><button onclick="addComment(\\\'\'+ticket._id+\'\\\')">Post</button></div></div></div>\';' +
 '            });' +
 '        }' +
 '        async function loadBranchesList() {' +
@@ -598,7 +656,8 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                return;' +
 '            }' +
 '            branches.forEach(b => {' +
-'                tbody.innerHTML += \'<tr><td>\'+b.name+\'</td><td><button class="branch-delete-btn" onclick="deleteBranch(\\\'\'+b._id+\'\\\')">Delete</button></td></tr>\';' +
+'                const safeName = b.name.replace(/\'/g, "\\\\\'");' +
+'                tbody.innerHTML += \'<tr><td>\'+b.name+\'</td><td><button class="branch-delete-btn" onclick="editBranch(\\\'\'+b._id+\'\\\', \\\'\'+safeName+\'\\\')">Edit</button> <button class="branch-delete-btn" onclick="deleteBranch(\\\'\'+b._id+\'\\\')">Delete</button></td></tr>\';' +
 '            });' +
 '        }' +
 '        async function addNewBranch() {' +
@@ -611,6 +670,17 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                body: JSON.stringify({ name })' +
 '            });' +
 '            if(response.ok) { input.value = ""; loadBranchesList(); }' +
+'        }' +
+'        async function editBranch(id, currentName) {' +
+'            const newName = prompt("Edit branch name:", currentName);' +
+'            if (!newName || !newName.trim() || newName === currentName) return;' +
+'            const response = await fetch("/tickets/branches/" + id, {' +
+'                method: "PUT",' +
+'                headers: { "Content-Type": "application/json" },' +
+'                body: JSON.stringify({ name: newName.trim() })' +
+'            });' +
+'            if (response.ok) loadBranchesList();' +
+'            else alert("Could not update branch.");' +
 '        }' +
 '        async function deleteBranch(id) {' +
 '            if(!confirm("Remove this branch option?")) return;' +
@@ -633,8 +703,43 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                    return \'<label style="display:inline-flex;align-items:center;gap:4px;margin-right:12px;font-weight:normal;font-size:13px;"><input type="checkbox" value="\'+b.name+\'" \'+checked+\' onchange="updateStaffBranches(\\\'\'+s.id+\'\\\')" class="branch-check-\'+s.id+\'"> \'+b.name+\'</label>\';' +
 '                }).join("");' +
 '                if (branches.length === 0) checkboxesHtml = \'<span style="color:#a0aec0;">No branches added yet</span>\';' +
-'                tbody.innerHTML += \'<tr><td>\'+s.id+\'</td><td>\'+s.name+\'</td><td>\'+s.email+\'</td><td>\'+checkboxesHtml+\'</td></tr>\';' +
+'                let nameCell, emailCell, actionCell;' +
+'                if (editingStaffIds.has(s.id)) {' +
+'                    nameCell = \'<input type="text" id="editName-\'+s.id+\'" value="\'+s.name+\'" style="width:100%;padding:6px;border:1px solid #cbd5e0;border-radius:4px;">\';' +
+'                    emailCell = \'<input type="email" id="editEmail-\'+s.id+\'" value="\'+s.email+\'" style="width:100%;padding:6px;border:1px solid #cbd5e0;border-radius:4px;margin-bottom:4px;"><input type="text" id="editPassword-\'+s.id+\'" placeholder="New password (optional)" style="width:100%;padding:6px;border:1px solid #cbd5e0;border-radius:4px;">\';' +
+'                    actionCell = \'<button class="resolve-btn" onclick="saveStaffEdit(\\\'\'+s.id+\'\\\')">Save</button> <button class="branch-delete-btn" onclick="toggleEditStaff(\\\'\'+s.id+\'\\\')">Cancel</button>\';' +
+'                } else {' +
+'                    nameCell = s.name;' +
+'                    emailCell = s.email;' +
+'                    actionCell = \'<button class="branch-delete-btn" onclick="toggleEditStaff(\\\'\'+s.id+\'\\\')">Edit</button>\';' +
+'                }' +
+'                tbody.innerHTML += \'<tr><td>\'+s.id+\'</td><td>\'+nameCell+\'</td><td>\'+emailCell+\'</td><td>\'+checkboxesHtml+\'</td><td>\'+actionCell+\'</td></tr>\';' +
 '            });' +
+'        }' +
+'        let editingStaffIds = new Set();' +
+'        function toggleEditStaff(staffId) {' +
+'            if (editingStaffIds.has(staffId)) editingStaffIds.delete(staffId);' +
+'            else editingStaffIds.add(staffId);' +
+'            loadStaffList();' +
+'        }' +
+'        async function saveStaffEdit(staffId) {' +
+'            const name = document.getElementById("editName-" + staffId).value.trim();' +
+'            const email = document.getElementById("editEmail-" + staffId).value.trim();' +
+'            const password = document.getElementById("editPassword-" + staffId).value.trim();' +
+'            if (!name || !email) { alert("Name and email are required."); return; }' +
+'            const body = { name, email };' +
+'            if (password) body.password = password;' +
+'            const response = await fetch("/tickets/staff/" + staffId, {' +
+'                method: "PUT",' +
+'                headers: { "Content-Type": "application/json" },' +
+'                body: JSON.stringify(body)' +
+'            });' +
+'            if (response.ok) {' +
+'                editingStaffIds.delete(staffId);' +
+'                loadStaffList();' +
+'            } else {' +
+'                alert("Could not update staff member.");' +
+'            }' +
 '        }' +
 '        async function updateStaffBranches(staffId) {' +
 '            const checks = document.querySelectorAll(".branch-check-" + staffId);' +
@@ -735,7 +840,7 @@ app.get('/tickets/lookup', async (req, res) => {
         if (!mobile) return res.status(400).json({ error: 'Mobile number required' });
         const tickets = await Ticket.find({ mobile })
             .sort({ _id: -1 })
-            .select('ticketNumber title branch priority status');
+            .select('ticketNumber title branch priority status createdAt');
         res.json(tickets);
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -761,6 +866,31 @@ app.delete('/tickets/branches/:id', checkAdminLogin, async (req, res) => {
     res.json({ success: true });
 });
 
+// Rename a branch, and update any staff assignments that reference the old name
+app.put('/tickets/branches/:id', checkAdminLogin, async (req, res) => {
+    try {
+        const { name } = req.body;
+        if (!name || !name.trim()) {
+            return res.status(400).json({ error: 'Branch name is required' });
+        }
+        const branch = await Branch.findById(req.params.id);
+        if (!branch) return res.status(404).json({ error: 'Branch not found' });
+        const oldName = branch.name;
+        branch.name = name.trim();
+        await branch.save();
+        if (oldName !== branch.name) {
+            await StaffBranch.updateMany(
+                { branches: oldName },
+                { $set: { 'branches.$[elem]': branch.name } },
+                { arrayFilters: [{ elem: oldName }] }
+            );
+        }
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 app.get('/tickets/staff-list', checkAdminLogin, async (req, res) => {
     const staff = await Staff.find().sort({ staffId: 1 });
     res.json(staff.map(s => ({ id: s.staffId, name: s.name, email: s.email })));
@@ -774,9 +904,28 @@ app.post('/tickets/staff', checkAdminLogin, async (req, res) => {
             return res.status(400).json({ error: 'Name, password, and email are all required' });
         }
         const staffId = await getNextStaffId();
-        const newStaff = new Staff({ staffId, name, password, email });
+        const hashedPassword = await bcrypt.hash(password, 10);
+        const newStaff = new Staff({ staffId, name, password: hashedPassword, email });
         await newStaff.save();
         res.status(201).json({ success: true, staffId });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Edit an existing staff member's name/email, and optionally reset their password
+app.put('/tickets/staff/:staffId', checkAdminLogin, async (req, res) => {
+    try {
+        const { name, email, password } = req.body;
+        if (!name || !email) {
+            return res.status(400).json({ error: 'Name and email are required' });
+        }
+        const update = { name, email };
+        if (password) {
+            update.password = await bcrypt.hash(password, 10);
+        }
+        await Staff.findOneAndUpdate({ staffId: req.params.staffId }, update);
+        res.json({ success: true });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
