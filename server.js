@@ -535,9 +535,9 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            <div class="menu-category">Navigation</div>' +
 '            <ul class="sidebar-menu">' +
 '                <li class="menu-item active" id="tabTicketsLink" onclick="switchView(\'tickets\')">Tickets System</li>' +
-'                <li class="menu-item" id="tabReportsLink" onclick="switchView(\'reports\')">Reports</li>' +
 (isAdminUser ? '                <li class="menu-item" id="tabBranchesLink" onclick="switchView(\'branches\')">Manage Branches</li>' : '') +
 (isAdminUser ? '                <li class="menu-item" id="tabStaffLink" onclick="switchView(\'staff\')">Manage IT Staff</li>' : '') +
+'                <li class="menu-item" id="tabReportsLink" onclick="switchView(\'reports\')">Reports</li>' +
 '            </ul>' +
 '        </div>' +
 '        <div class="sidebar-footer">' +
@@ -554,6 +554,11 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '        </header>' +
 '        <section class="content-body">' +
 '            <div id="viewTickets" class="dashboard-view active">' +
+'                <div class="metrics-grid">' +
+'                    <div class="metric-card" style="cursor:pointer;" onclick="filterByStatus(\'Open\')"><div class="metric-label">Open Issues</div><div class="metric-value" id="statOpen">0</div></div>' +
+'                    <div class="metric-card resolved" style="cursor:pointer;" onclick="filterByStatus(\'Resolved\')"><div class="metric-label">Resolved Issues</div><div class="metric-value" id="statResolved">0</div></div>' +
+'                    <div class="metric-card assigned" style="cursor:pointer;" onclick="filterByStatus(\'all\')"><div class="metric-label">Total Tickets</div><div class="metric-value" id="statMine">0</div></div>' +
+'                </div>' +
 '                <div class="branch-panel-card" style="margin-bottom: 20px; display: flex; align-items: flex-end; gap: 14px; flex-wrap: wrap;">' +
 '                    <div><label style="display:block;font-size:12px;font-weight:600;color:#4a5568;margin-bottom:4px;">From Date</label><input type="date" id="filterFromDate" style="padding: 8px 10px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 14px;"></div>' +
 '                    <div><label style="display:block;font-size:12px;font-weight:600;color:#4a5568;margin-bottom:4px;">To Date</label><input type="date" id="filterToDate" style="padding: 8px 10px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 14px;"></div>' +
@@ -561,18 +566,19 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                    <button class="branch-add-btn" onclick="applyTicketFilters()">Search</button>' +
 '                    <button class="branch-delete-btn" onclick="clearTicketFilters()">Clear</button>' +
 '                </div>' +
-'                <div class="metrics-grid">' +
-'                    <div class="metric-card" style="cursor:pointer;" onclick="filterByStatus(\'Open\')"><div class="metric-label">Open Issues</div><div class="metric-value" id="statOpen">0</div></div>' +
-'                    <div class="metric-card resolved" style="cursor:pointer;" onclick="filterByStatus(\'Resolved\')"><div class="metric-label">Resolved Issues</div><div class="metric-value" id="statResolved">0</div></div>' +
-'                    <div class="metric-card assigned" style="cursor:pointer;" onclick="filterByStatus(\'all\')"><div class="metric-label">Total Tickets</div><div class="metric-value" id="statMine">0</div></div>' +
-'                </div>' +
 '                <div id="ticketList">Loading active queue...</div>' +
 '            </div>' +
 '            <div id="viewReports" class="dashboard-view">' +
-'                <div class="branch-panel-card" style="display: flex; align-items: center; gap: 14px; flex-wrap: wrap;">' +
+'                <div class="branch-panel-card" style="display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 20px;">' +
 '                    <strong style="font-size: 14px; color: #2d3748;">Monthly Report:</strong>' +
 '                    <input type="month" id="reportMonth" style="padding: 8px 10px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 14px;">' +
 '                    <button class="branch-add-btn" onclick="downloadReport()">Download Excel Report</button>' +
+'                </div>' +
+'                <div class="branch-panel-card" style="display: flex; align-items: flex-end; gap: 14px; flex-wrap: wrap;">' +
+'                    <div><strong style="font-size: 14px; color: #2d3748; display:block; margin-bottom: 8px;">Date Range Report:</strong></div>' +
+'                    <div><label style="display:block;font-size:12px;font-weight:600;color:#4a5568;margin-bottom:4px;">From Date</label><input type="date" id="reportFromDate" style="padding: 8px 10px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 14px;"></div>' +
+'                    <div><label style="display:block;font-size:12px;font-weight:600;color:#4a5568;margin-bottom:4px;">To Date</label><input type="date" id="reportToDate" style="padding: 8px 10px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 14px;"></div>' +
+'                    <button class="branch-add-btn" onclick="downloadReportByRange()">Download Excel Report</button>' +
 '                </div>' +
 '            </div>' +
 '            <div id="viewBranches" class="dashboard-view">' +
@@ -862,6 +868,12 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            if (!month) { alert("Please select a month."); return; }' +
 '            window.location.href = "/tickets/report?month=" + month;' +
 '        }' +
+'        function downloadReportByRange() {' +
+'            const from = document.getElementById("reportFromDate").value;' +
+'            const to = document.getElementById("reportToDate").value;' +
+'            if (!from || !to) { alert("Please select both a From and To date."); return; }' +
+'            window.location.href = "/tickets/report?from=" + from + "&to=" + to;' +
+'        }' +
 '        document.getElementById("reportMonth").value = new Date().toISOString().slice(0, 7);' +
 '        loadStaffFilterOptions();' +
 '        loadTickets();' +
@@ -881,15 +893,28 @@ app.get('/tickets', checkUserLogin, async (req, res) => {
 // Download a monthly Excel report — staff get only their own tickets, admin gets everyone's
 app.get('/tickets/report', checkUserLogin, async (req, res) => {
     try {
-        const monthParam = req.query.month; // expected format: YYYY-MM
-        if (!monthParam || !/^\d{4}-\d{2}$/.test(monthParam)) {
-            return res.status(400).send('Please provide a valid month in YYYY-MM format.');
+        let startDate, endDate, rangeLabel;
+        if (req.query.month) {
+            const monthParam = req.query.month; // expected format: YYYY-MM
+            if (!/^\d{4}-\d{2}$/.test(monthParam)) {
+                return res.status(400).send('Please provide a valid month in YYYY-MM format.');
+            }
+            const [year, month] = monthParam.split('-').map(Number);
+            startDate = new Date(year, month - 1, 1, 0, 0, 0);
+            endDate = new Date(year, month, 0, 23, 59, 59);
+            rangeLabel = monthParam;
+        } else if (req.query.from && req.query.to) {
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(req.query.from) || !/^\d{4}-\d{2}-\d{2}$/.test(req.query.to)) {
+                return res.status(400).send('Please provide valid From/To dates in YYYY-MM-DD format.');
+            }
+            startDate = new Date(req.query.from + 'T00:00:00');
+            endDate = new Date(req.query.to + 'T23:59:59');
+            rangeLabel = req.query.from + '_to_' + req.query.to;
+        } else {
+            return res.status(400).send('Please provide either a month, or both a From and To date.');
         }
-        const [year, month] = monthParam.split('-').map(Number);
-        const startDate = new Date(year, month - 1, 1);
-        const endDate = new Date(year, month, 1);
 
-        const query = { createdAt: { $gte: startDate, $lt: endDate } };
+        const query = { createdAt: { $gte: startDate, $lte: endDate } };
         if (!req.session.isAdmin) {
             query.assignedTo = req.session.username;
         }
@@ -925,7 +950,7 @@ app.get('/tickets/report', checkUserLogin, async (req, res) => {
 
         const nameLabel = req.session.isAdmin ? 'All-Staff' : req.session.username.replace(/\s+/g, '-');
         res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-        res.setHeader('Content-Disposition', `attachment; filename="Ticket-Report-${nameLabel}-${monthParam}.xlsx"`);
+        res.setHeader('Content-Disposition', `attachment; filename="Ticket-Report-${nameLabel}-${rangeLabel}.xlsx"`);
         await workbook.xlsx.write(res);
         res.end();
     } catch (err) {
