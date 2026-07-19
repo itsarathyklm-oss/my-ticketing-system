@@ -12,6 +12,7 @@ const cloudinary = require('cloudinary').v2;
 const { CloudinaryStorage } = require('multer-storage-cloudinary');
 const nodemailer = require('nodemailer');
 const bcrypt = require('bcryptjs');
+const ExcelJS = require('exceljs');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -56,6 +57,7 @@ const ticketSchema = new mongoose.Schema({
     assignedTo: { type: String, default: 'Unassigned' },
     escalated: { type: Boolean, default: false },
     createdAt: { type: Date, default: Date.now },
+    resolvedAt: { type: Date },
     comments: [{
         author: String,
         text: String,
@@ -256,7 +258,7 @@ body {
     padding: 16px;
     overflow: hidden;
 }
-.ticket-card { width: 100%; max-width: 460px; max-height: 96vh; background: #fdfcfb; border-radius: 14px; box-shadow: 0 24px 70px rgba(0,0,0,0.45); overflow-y: auto; overflow-x: hidden; }
+.ticket-card { width: 100%; max-width: 460px; max-height: 92vh; background: #fdfcfb; border-radius: 14px; box-shadow: 0 24px 70px rgba(0,0,0,0.45); overflow-y: auto; overflow-x: hidden; }
 .ticket-ribbon { background: #1e2229; padding: 12px 26px; display: flex; align-items: center; gap: 12px; }
 .ticket-ribbon img { height: 28px; width: auto; object-fit: contain; }
 .ticket-ribbon-text { font-family: 'Barlow Condensed', sans-serif; font-weight: 700; font-size: 16px; letter-spacing: 1px; color: #fff; text-transform: uppercase; }
@@ -290,7 +292,8 @@ button[type="submit"]:active { transform: translateY(0); }
 .status-result-number { font-family: 'Barlow Condensed', sans-serif; font-weight: 700; font-size: 15px; color: #1e2229; letter-spacing: .5px; }
 .status-result-title { font-size: 13px; color: #1e2229; font-weight: 600; margin-top: 5px; }
 .status-result-meta { font-size: 11px; color: #8a8f98; margin-top: 3px; }
-</style></head><body><div class="ticket-card"><div class="ticket-ribbon"><img src="/logo.png" alt="Company Logo" onerror="this.style.display='none'"><span class="ticket-ribbon-text">Sarathy IT Helpdesk</span></div><div class="tab-switch"><button type="button" class="tab-btn active" id="tabSubmitBtn" onclick="showTab('submit')">Submit Ticket</button><button type="button" class="tab-btn" id="tabStatusBtn" onclick="showTab('status')">Check Status</button></div><div class="ticket-body"><div id="submitPane"><h2 class="form-title">Submit a New Ticket</h2><div class="form-subtitle">We'll route it to the right person and keep you posted.</div><div class="ticket-perforation"></div><form id="ticketForm" enctype="multipart/form-data" class="form-grid"><div class="form-field"><label>Your Name</label><input type="text" id="submitterName" required></div><div class="form-field"><label>Mobile Number</label><input type="tel" id="mobile" placeholder="10-digit mobile number" pattern="[0-9]{10}" required></div><div class="form-field full-width"><label>Issue Title</label><input type="text" id="title" required></div><div class="form-field"><label>Branch Location</label><select id="branch" required><option value="" disabled selected>Loading...</option></select></div><div class="form-field"><label>Priority Level</label><select id="priority"><option value="Low">Low</option><option value="Medium" selected>Medium</option><option value="High">High</option></select></div><div class="form-field full-width"><label>Description</label><textarea id="description" required></textarea></div><div class="form-field full-width"><label>Upload Screenshot (Optional)</label><input type="file" id="screenshot" accept="image/*"></div><button type="submit">Submit Ticket</button></form></div><div id="statusPane" style="display:none;"><h2 class="form-title">Check Ticket Status</h2><div class="form-subtitle">Enter the mobile number you used when submitting.</div><label>Mobile Number</label><input type="tel" id="statusMobile" placeholder="Enter your 10-digit mobile number" pattern="[0-9]{10}"><button type="button" class="check-status-btn" onclick="checkTicketStatus()">Check Status</button><div id="statusResults"></div></div></div></div><script>
+.page-footer { position: fixed; bottom: 8px; left: 0; width: 100%; text-align: center; font-size: 11px; color: rgba(255,255,255,0.55); letter-spacing: .3px; }
+</style></head><body><div class="ticket-card"><div class="ticket-ribbon"><img src="/logo.png" alt="Company Logo" onerror="this.style.display='none'"><span class="ticket-ribbon-text">Sarathy IT Helpdesk</span></div><div class="tab-switch"><button type="button" class="tab-btn active" id="tabSubmitBtn" onclick="showTab('submit')">Submit Ticket</button><button type="button" class="tab-btn" id="tabStatusBtn" onclick="showTab('status')">Check Status</button></div><div class="ticket-body"><div id="submitPane"><h2 class="form-title">Submit a New Ticket</h2><div class="form-subtitle">We'll route it to the right person and keep you posted.</div><div class="ticket-perforation"></div><form id="ticketForm" enctype="multipart/form-data" class="form-grid"><div class="form-field"><label>Your Name</label><input type="text" id="submitterName" required></div><div class="form-field"><label>Mobile Number</label><input type="tel" id="mobile" placeholder="10-digit mobile number" pattern="[0-9]{10}" required></div><div class="form-field full-width"><label>Issue Title</label><input type="text" id="title" required></div><div class="form-field"><label>Branch Location</label><select id="branch" required><option value="" disabled selected>Loading...</option></select></div><div class="form-field"><label>Priority Level</label><select id="priority"><option value="Low">Low</option><option value="Medium" selected>Medium</option><option value="High">High</option></select></div><div class="form-field full-width"><label>Description</label><textarea id="description" required></textarea></div><div class="form-field full-width"><label>Upload Screenshot (Optional)</label><input type="file" id="screenshot" accept="image/*"></div><button type="submit">Submit Ticket</button></form></div><div id="statusPane" style="display:none;"><h2 class="form-title">Check Ticket Status</h2><div class="form-subtitle">Enter the mobile number you used when submitting.</div><label>Mobile Number</label><input type="tel" id="statusMobile" placeholder="Enter your 10-digit mobile number" pattern="[0-9]{10}"><button type="button" class="check-status-btn" onclick="checkTicketStatus()">Check Status</button><div id="statusResults"></div></div></div></div><div class="page-footer">&copy; 2026 Sarathy Pvt Ltd</div><script>
     async function loadFormBranches() {
         try {
             const res = await fetch('/public-branches');
@@ -398,7 +401,8 @@ input:focus { outline: none; border-color: #e53e3e; box-shadow: 0 0 0 3px rgba(2
 button { margin-top: 24px; padding: 13px; width: 100%; background: linear-gradient(120deg, #e53e3e, #c53030); color: #fff; border: none; border-radius: 9px; cursor: pointer; font-family: 'Barlow Condensed', sans-serif; font-weight: 700; font-size: 16px; letter-spacing: 1px; text-transform: uppercase; box-shadow: 0 8px 20px rgba(197,48,48,.4); transition: transform .15s, box-shadow .15s; }
 button:hover { transform: translateY(-2px); box-shadow: 0 12px 28px rgba(197,48,48,.5); }
 button:active { transform: translateY(0); }
-</style></head><body><div class="login-card"><div class="badge-hole"></div><div class="login-ribbon"><img src="/logo.png" alt="Company Logo" onerror="this.style.display='none'"><span class="login-ribbon-text">Sarathy IT</span><span class="login-ribbon-sub">Staff &amp; Admin Access</span></div><div class="login-body"><form action="/login" method="POST"><label>Username / Staff Name</label> <input type="text" name="username" required><label>Password</label> <input type="password" name="password" required><button type="submit">Login</button></form></div></div></body></html>`);
+.page-footer { position: fixed; bottom: 8px; left: 0; width: 100%; text-align: center; font-size: 11px; color: rgba(255,255,255,0.55); letter-spacing: .3px; }
+</style></head><body><div class="login-card"><div class="badge-hole"></div><div class="login-ribbon"><img src="/logo.png" alt="Company Logo" onerror="this.style.display='none'"><span class="login-ribbon-text">Sarathy IT</span><span class="login-ribbon-sub">Staff &amp; Admin Access</span></div><div class="login-body"><form action="/login" method="POST"><label>Username / Staff Name</label> <input type="text" name="username" required><label>Password</label> <input type="password" name="password" required><button type="submit">Login</button></form></div></div><div class="page-footer">&copy; 2026 Sarathy Pvt Ltd</div></body></html>`);
 });
 
 // Compares a submitted password against a stored one. Handles both bcrypt-hashed
@@ -549,6 +553,11 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '        </header>' +
 '        <section class="content-body">' +
 '            <div id="viewTickets" class="dashboard-view active">' +
+'                <div class="branch-panel-card" style="margin-bottom: 20px; display: flex; align-items: center; gap: 14px; flex-wrap: wrap;">' +
+'                    <strong style="font-size: 14px; color: #2d3748;">Monthly Report:</strong>' +
+'                    <input type="month" id="reportMonth" style="padding: 8px 10px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 14px;">' +
+'                    <button class="branch-add-btn" onclick="downloadReport()">Download Excel Report</button>' +
+'                </div>' +
 '                <div class="metrics-grid">' +
 '                    <div class="metric-card"><div class="metric-label">Open Issues</div><div class="metric-value" id="statOpen">0</div></div>' +
 '                    <div class="metric-card resolved"><div class="metric-label">Resolved Issues</div><div class="metric-value" id="statResolved">0</div></div>' +
@@ -564,7 +573,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                        <button class="branch-add-btn" onclick="addNewBranch()">Add Branch</button>' +
 '                    </div>' +
 '                    <table class="branch-table">' +
-'                        <thead><tr><th>Branch Name</th><th>Action</th></tr></thead>' +
+'                        <thead><tr><th>Branch Name</th><th>Edit</th><th>Delete</th></tr></thead>' +
 '                        <tbody id="branchTableBody"></tbody>' +
 '                    </table>' +
 '                    </div>' +
@@ -582,7 +591,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                <div class="branch-panel-card">' +
 '                    <h2>Active Helpdesk Personnel</h2>' +
 '                    <table class="branch-table">' +
-'                        <thead><tr><th>Staff ID</th><th>Name Tag</th><th>Operational Route Email</th><th>Assigned Branches</th><th>Actions</th></tr></thead>' +
+'                        <thead><tr><th>Staff ID</th><th>Name Tag</th><th>Operational Route Email</th><th>Assigned Branches</th><th>Edit</th><th>Delete</th></tr></thead>' +
 '                        <tbody id="staffTableBody"></tbody>' +
 '                    </table>' +
 '                </div>' +
@@ -636,6 +645,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                const actionBtn = isResolved ? "" : \'<button class="resolve-btn" onclick="resolveTicket(\\\'\'+ticket._id+\'\\\')">Resolve Ticket</button>\';' +
 '                const escalateBtn = (!isAdmin && !isResolved && !ticket.escalated) ? \' <button class="escalate-btn" onclick="escalateTicket(\\\'\'+ticket._id+\'\\\')">Escalate to Admin</button>\' : "";' +
 '                const escalatedBadge = ticket.escalated ? \'<span class="badge badge-escalated">Escalated</span>\' : "";' +
+'                const resolvedLine = (ticket.status === "Resolved" && ticket.resolvedAt) ? \' | <span><strong>Resolved:</strong> \'+new Date(ticket.resolvedAt).toLocaleString()+\'</span>\' : "";' +
 '                const imageHtml = ticket.screenshot ? \'<a href="\'+ticket.screenshot+\'" target="_blank"><img src="\'+ticket.screenshot+\'" class="screenshot-preview"></a>\' : "";' +
 '                let commentListHtml = "";' +
 '                if (ticket.comments) {' +
@@ -643,7 +653,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                        commentListHtml += \'<div class="comment-item"><strong>\'+c.author+\':</strong> \'+c.text+\'</div>\';' +
 '                    });' +
 '                }' +
-'                listDiv.innerHTML += \'<div class="ticket-card"><div class="ticket-header"><div><h3 class="ticket-title">#\'+String(ticket.ticketNumber).padStart(4,"0")+\' \'+ticket.title+\'</h3><div style="margin-top: 8px;"><span class="badge p-\'+ticket.priority+\'">\'+ticket.priority+\'</span><span class="badge status-\'+ticket.status.toLowerCase()+\'">\'+ticket.status+\'</span>\'+escalatedBadge+\'</div></div>\'+actionBtn+escalateBtn+\'</div><p class="ticket-desc">\'+ticket.description+\'</p>\'+imageHtml+\'<div class="assignment-info"><span><strong>Submitted By:</strong> \'+(ticket.submittedBy || "Unknown")+\'</span> | <span><strong>Branch:</strong> \'+ticket.branch+\'</span> | <span><strong>Mobile:</strong> \'+ticket.mobile+\'</span> | <span><strong>Assigned:</strong> \'+ticket.assignedTo+\'</span> | <span><strong>Submitted:</strong> \'+(ticket.createdAt ? new Date(ticket.createdAt).toLocaleString() : "N/A")+\'</span></div><div class="comments-section"><h4 class="comments-header">Internal Work Notes</h4><div>\'+(commentListHtml || "No updates.")+\'</div><div class="comment-form"><input type="text" id="input-\'+ticket._id+\'" placeholder="Write operational update..."><button onclick="addComment(\\\'\'+ticket._id+\'\\\')">Post</button></div></div></div>\';' +
+'                listDiv.innerHTML += \'<div class="ticket-card"><div class="ticket-header"><div><h3 class="ticket-title">#\'+String(ticket.ticketNumber).padStart(4,"0")+\' \'+ticket.title+\'</h3><div style="margin-top: 8px;"><span class="badge p-\'+ticket.priority+\'">\'+ticket.priority+\'</span><span class="badge status-\'+ticket.status.toLowerCase()+\'">\'+ticket.status+\'</span>\'+escalatedBadge+\'</div></div>\'+actionBtn+escalateBtn+\'</div><p class="ticket-desc">\'+ticket.description+\'</p>\'+imageHtml+\'<div class="assignment-info"><span><strong>Submitted By:</strong> \'+(ticket.submittedBy || "Unknown")+\'</span> | <span><strong>Branch:</strong> \'+ticket.branch+\'</span> | <span><strong>Mobile:</strong> \'+ticket.mobile+\'</span> | <span><strong>Assigned:</strong> \'+ticket.assignedTo+\'</span> | <span><strong>Submitted:</strong> \'+(ticket.createdAt ? new Date(ticket.createdAt).toLocaleString() : "N/A")+\'</span>\'+resolvedLine+\'</div><div class="comments-section"><h4 class="comments-header">Internal Work Notes</h4><div>\'+(commentListHtml || "No updates.")+\'</div><div class="comment-form"><input type="text" id="input-\'+ticket._id+\'" placeholder="Write operational update..."><button onclick="addComment(\\\'\'+ticket._id+\'\\\')">Post</button></div></div></div>\';' +
 '            });' +
 '        }' +
 '        async function loadBranchesList() {' +
@@ -652,12 +662,12 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            const tbody = document.getElementById("branchTableBody");' +
 '            tbody.innerHTML = "";' +
 '            if (branches.length === 0) {' +
-'                tbody.innerHTML = \'<tr><td colspan="2" style="text-align: center; color: #a0aec0; padding: 20px;">No branch locations added yet.</td></tr>\';' +
+'                tbody.innerHTML = \'<tr><td colspan="3" style="text-align: center; color: #a0aec0; padding: 20px;">No branch locations added yet.</td></tr>\';' +
 '                return;' +
 '            }' +
 '            branches.forEach(b => {' +
 '                const safeName = b.name.replace(/\'/g, "\\\\\'");' +
-'                tbody.innerHTML += \'<tr><td>\'+b.name+\'</td><td><button class="branch-delete-btn" onclick="editBranch(\\\'\'+b._id+\'\\\', \\\'\'+safeName+\'\\\')">Edit</button> <button class="branch-delete-btn" onclick="deleteBranch(\\\'\'+b._id+\'\\\')">Delete</button></td></tr>\';' +
+'                tbody.innerHTML += \'<tr><td>\'+b.name+\'</td><td><button class="branch-delete-btn" onclick="editBranch(\\\'\'+b._id+\'\\\', \\\'\'+safeName+\'\\\')">Edit</button></td><td><button class="branch-delete-btn" onclick="deleteBranch(\\\'\'+b._id+\'\\\')">Delete</button></td></tr>\';' +
 '            });' +
 '        }' +
 '        async function addNewBranch() {' +
@@ -703,17 +713,19 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                    return \'<label style="display:inline-flex;align-items:center;gap:4px;margin-right:12px;font-weight:normal;font-size:13px;"><input type="checkbox" value="\'+b.name+\'" \'+checked+\' onchange="updateStaffBranches(\\\'\'+s.id+\'\\\')" class="branch-check-\'+s.id+\'"> \'+b.name+\'</label>\';' +
 '                }).join("");' +
 '                if (branches.length === 0) checkboxesHtml = \'<span style="color:#a0aec0;">No branches added yet</span>\';' +
-'                let nameCell, emailCell, actionCell;' +
+'                let nameCell, emailCell, editCell, deleteCell;' +
 '                if (editingStaffIds.has(s.id)) {' +
 '                    nameCell = \'<input type="text" id="editName-\'+s.id+\'" value="\'+s.name+\'" style="width:100%;padding:6px;border:1px solid #cbd5e0;border-radius:4px;">\';' +
 '                    emailCell = \'<input type="email" id="editEmail-\'+s.id+\'" value="\'+s.email+\'" style="width:100%;padding:6px;border:1px solid #cbd5e0;border-radius:4px;margin-bottom:4px;"><input type="text" id="editPassword-\'+s.id+\'" placeholder="New password (optional)" style="width:100%;padding:6px;border:1px solid #cbd5e0;border-radius:4px;">\';' +
-'                    actionCell = \'<button class="resolve-btn" onclick="saveStaffEdit(\\\'\'+s.id+\'\\\')">Save</button> <button class="branch-delete-btn" onclick="toggleEditStaff(\\\'\'+s.id+\'\\\')">Cancel</button>\';' +
+'                    editCell = \'<button class="resolve-btn" onclick="saveStaffEdit(\\\'\'+s.id+\'\\\')">Save</button>\';' +
+'                    deleteCell = \'<button class="branch-delete-btn" onclick="toggleEditStaff(\\\'\'+s.id+\'\\\')">Cancel</button>\';' +
 '                } else {' +
 '                    nameCell = s.name;' +
 '                    emailCell = s.email;' +
-'                    actionCell = \'<button class="branch-delete-btn" onclick="toggleEditStaff(\\\'\'+s.id+\'\\\')">Edit</button>\';' +
+'                    editCell = \'<button class="branch-delete-btn" onclick="toggleEditStaff(\\\'\'+s.id+\'\\\')">Edit</button>\';' +
+'                    deleteCell = \'<button class="branch-delete-btn" onclick="deleteStaff(\\\'\'+s.id+\'\\\')">Delete</button>\';' +
 '                }' +
-'                tbody.innerHTML += \'<tr><td>\'+s.id+\'</td><td>\'+nameCell+\'</td><td>\'+emailCell+\'</td><td>\'+checkboxesHtml+\'</td><td>\'+actionCell+\'</td></tr>\';' +
+'                tbody.innerHTML += \'<tr><td>\'+s.id+\'</td><td>\'+nameCell+\'</td><td>\'+emailCell+\'</td><td>\'+checkboxesHtml+\'</td><td>\'+editCell+\'</td><td>\'+deleteCell+\'</td></tr>\';' +
 '            });' +
 '        }' +
 '        let editingStaffIds = new Set();' +
@@ -740,6 +752,12 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            } else {' +
 '                alert("Could not update staff member.");' +
 '            }' +
+'        }' +
+'        async function deleteStaff(staffId) {' +
+'            if (!confirm("Remove this staff member? This cannot be undone.")) return;' +
+'            const response = await fetch("/tickets/staff/" + staffId, { method: "DELETE" });' +
+'            if (response.ok) loadStaffList();' +
+'            else alert("Could not delete staff member.");' +
 '        }' +
 '        async function updateStaffBranches(staffId) {' +
 '            const checks = document.querySelectorAll(".branch-check-" + staffId);' +
@@ -790,6 +808,12 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            const response = await fetch("/tickets/" + id + "/escalate", { method: "POST" });' +
 '            if (response.ok) loadTickets();' +
 '        }' +
+'        function downloadReport() {' +
+'            const month = document.getElementById("reportMonth").value;' +
+'            if (!month) { alert("Please select a month."); return; }' +
+'            window.location.href = "/tickets/report?month=" + month;' +
+'        }' +
+'        document.getElementById("reportMonth").value = new Date().toISOString().slice(0, 7);' +
 '        loadTickets();' +
 '    </script>' +
 '</body>' +
@@ -804,8 +828,63 @@ app.get('/tickets', checkUserLogin, async (req, res) => {
     res.json(tickets);
 });
 
+// Download a monthly Excel report — staff get only their own tickets, admin gets everyone's
+app.get('/tickets/report', checkUserLogin, async (req, res) => {
+    try {
+        const monthParam = req.query.month; // expected format: YYYY-MM
+        if (!monthParam || !/^\d{4}-\d{2}$/.test(monthParam)) {
+            return res.status(400).send('Please provide a valid month in YYYY-MM format.');
+        }
+        const [year, month] = monthParam.split('-').map(Number);
+        const startDate = new Date(year, month - 1, 1);
+        const endDate = new Date(year, month, 1);
+
+        const query = { createdAt: { $gte: startDate, $lt: endDate } };
+        if (!req.session.isAdmin) {
+            query.assignedTo = req.session.username;
+        }
+        const tickets = await Ticket.find(query).sort({ ticketNumber: 1 });
+
+        const workbook = new ExcelJS.Workbook();
+        const sheet = workbook.addWorksheet('Report');
+        sheet.columns = [
+            { header: 'Ticket #', key: 'ticketNumber', width: 12 },
+            { header: 'Title', key: 'title', width: 30 },
+            { header: 'Submitted By', key: 'submittedBy', width: 20 },
+            { header: 'Branch', key: 'branch', width: 25 },
+            { header: 'Priority', key: 'priority', width: 12 },
+            { header: 'Status', key: 'status', width: 12 },
+            { header: 'Assigned To', key: 'assignedTo', width: 16 },
+            { header: 'Submitted At', key: 'createdAt', width: 22 },
+            { header: 'Resolved At', key: 'resolvedAt', width: 22 }
+        ];
+        sheet.getRow(1).font = { bold: true };
+        tickets.forEach(t => {
+            sheet.addRow({
+                ticketNumber: t.ticketNumber,
+                title: t.title,
+                submittedBy: t.submittedBy,
+                branch: t.branch,
+                priority: t.priority,
+                status: t.status,
+                assignedTo: t.assignedTo,
+                createdAt: t.createdAt ? t.createdAt.toLocaleString() : '',
+                resolvedAt: t.resolvedAt ? t.resolvedAt.toLocaleString() : ''
+            });
+        });
+
+        const nameLabel = req.session.isAdmin ? 'All-Staff' : req.session.username.replace(/\s+/g, '-');
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        res.setHeader('Content-Disposition', `attachment; filename="Ticket-Report-${nameLabel}-${monthParam}.xlsx"`);
+        await workbook.xlsx.write(res);
+        res.end();
+    } catch (err) {
+        res.status(500).send('Could not generate report: ' + err.message);
+    }
+});
+
 app.post('/tickets/:id/resolve', checkUserLogin, async (req, res) => {
-    await Ticket.findByIdAndUpdate(req.params.id, { status: 'Resolved' });
+    await Ticket.findByIdAndUpdate(req.params.id, { status: 'Resolved', resolvedAt: new Date() });
     res.json({ success: true });
 });
 
@@ -925,6 +1004,17 @@ app.put('/tickets/staff/:staffId', checkAdminLogin, async (req, res) => {
             update.password = await bcrypt.hash(password, 10);
         }
         await Staff.findOneAndUpdate({ staffId: req.params.staffId }, update);
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Remove a staff member (their existing tickets keep their historical assignedTo name)
+app.delete('/tickets/staff/:staffId', checkAdminLogin, async (req, res) => {
+    try {
+        await Staff.findOneAndDelete({ staffId: req.params.staffId });
+        await StaffBranch.findOneAndDelete({ staffId: req.params.staffId });
         res.json({ success: true });
     } catch (err) {
         res.status(500).json({ error: err.message });
