@@ -535,6 +535,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            <div class="menu-category">Navigation</div>' +
 '            <ul class="sidebar-menu">' +
 '                <li class="menu-item active" id="tabTicketsLink" onclick="switchView(\'tickets\')">Tickets System</li>' +
+'                <li class="menu-item" id="tabReportsLink" onclick="switchView(\'reports\')">Reports</li>' +
 (isAdminUser ? '                <li class="menu-item" id="tabBranchesLink" onclick="switchView(\'branches\')">Manage Branches</li>' : '') +
 (isAdminUser ? '                <li class="menu-item" id="tabStaffLink" onclick="switchView(\'staff\')">Manage IT Staff</li>' : '') +
 '            </ul>' +
@@ -553,17 +554,26 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '        </header>' +
 '        <section class="content-body">' +
 '            <div id="viewTickets" class="dashboard-view active">' +
-'                <div class="branch-panel-card" style="margin-bottom: 20px; display: flex; align-items: center; gap: 14px; flex-wrap: wrap;">' +
+'                <div class="branch-panel-card" style="margin-bottom: 20px; display: flex; align-items: flex-end; gap: 14px; flex-wrap: wrap;">' +
+'                    <div><label style="display:block;font-size:12px;font-weight:600;color:#4a5568;margin-bottom:4px;">From Date</label><input type="date" id="filterFromDate" style="padding: 8px 10px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 14px;"></div>' +
+'                    <div><label style="display:block;font-size:12px;font-weight:600;color:#4a5568;margin-bottom:4px;">To Date</label><input type="date" id="filterToDate" style="padding: 8px 10px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 14px;"></div>' +
+'                    <div id="staffFilterWrapper" style="display:none;"><label style="display:block;font-size:12px;font-weight:600;color:#4a5568;margin-bottom:4px;">Staff</label><select id="filterStaff" style="padding: 8px 10px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 14px;"><option value="">All Staff</option></select></div>' +
+'                    <button class="branch-add-btn" onclick="applyTicketFilters()">Search</button>' +
+'                    <button class="branch-delete-btn" onclick="clearTicketFilters()">Clear</button>' +
+'                </div>' +
+'                <div class="metrics-grid">' +
+'                    <div class="metric-card" style="cursor:pointer;" onclick="filterByStatus(\'Open\')"><div class="metric-label">Open Issues</div><div class="metric-value" id="statOpen">0</div></div>' +
+'                    <div class="metric-card resolved" style="cursor:pointer;" onclick="filterByStatus(\'Resolved\')"><div class="metric-label">Resolved Issues</div><div class="metric-value" id="statResolved">0</div></div>' +
+'                    <div class="metric-card assigned" style="cursor:pointer;" onclick="filterByStatus(\'all\')"><div class="metric-label">Total Tickets</div><div class="metric-value" id="statMine">0</div></div>' +
+'                </div>' +
+'                <div id="ticketList">Loading active queue...</div>' +
+'            </div>' +
+'            <div id="viewReports" class="dashboard-view">' +
+'                <div class="branch-panel-card" style="display: flex; align-items: center; gap: 14px; flex-wrap: wrap;">' +
 '                    <strong style="font-size: 14px; color: #2d3748;">Monthly Report:</strong>' +
 '                    <input type="month" id="reportMonth" style="padding: 8px 10px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 14px;">' +
 '                    <button class="branch-add-btn" onclick="downloadReport()">Download Excel Report</button>' +
 '                </div>' +
-'                <div class="metrics-grid">' +
-'                    <div class="metric-card"><div class="metric-label">Open Issues</div><div class="metric-value" id="statOpen">0</div></div>' +
-'                    <div class="metric-card resolved"><div class="metric-label">Resolved Issues</div><div class="metric-value" id="statResolved">0</div></div>' +
-'                    <div class="metric-card assigned"><div class="metric-label">Active Tickets</div><div class="metric-value" id="statMine">0</div></div>' +
-'                </div>' +
-'                <div id="ticketList">Loading active queue...</div>' +
 '            </div>' +
 '            <div id="viewBranches" class="dashboard-view">' +
 '                <div class="branch-panel-card">' +
@@ -614,6 +624,10 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                document.getElementById("tabTicketsLink").classList.add("active");' +
 '                document.getElementById("panelViewTitle").innerText = "Helpdesk Operations";' +
 '                loadTickets();' +
+'            } else if (target === "reports") {' +
+'                document.getElementById("viewReports").classList.add("active");' +
+'                document.getElementById("tabReportsLink").classList.add("active");' +
+'                document.getElementById("panelViewTitle").innerText = "Monthly Reports";' +
 '            } else if (target === "branches") {' +
 '                document.getElementById("viewBranches").classList.add("active");' +
 '                document.getElementById("tabBranchesLink").classList.add("active");' +
@@ -626,14 +640,49 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                loadStaffList();' +
 '            }' +
 '        }' +
+'        let currentStatusFilter = "all";' +
+'        function filterByStatus(status) {' +
+'            currentStatusFilter = status;' +
+'            loadTickets();' +
+'        }' +
+'        function applyTicketFilters() {' +
+'            loadTickets();' +
+'        }' +
+'        function clearTicketFilters() {' +
+'            document.getElementById("filterFromDate").value = "";' +
+'            document.getElementById("filterToDate").value = "";' +
+'            const sf = document.getElementById("filterStaff");' +
+'            if (sf) sf.value = "";' +
+'            currentStatusFilter = "all";' +
+'            loadTickets();' +
+'        }' +
+'        async function loadStaffFilterOptions() {' +
+'            if (!isAdmin) return;' +
+'            document.getElementById("staffFilterWrapper").style.display = "block";' +
+'            const res = await fetch("/tickets/staff-list");' +
+'            const staff = await res.json();' +
+'            const select = document.getElementById("filterStaff");' +
+'            select.innerHTML = \'<option value="">All Staff</option>\';' +
+'            staff.forEach(s => {' +
+'                select.innerHTML += \'<option value="\'+s.name+\'">\'+s.name+\'</option>\';' +
+'            });' +
+'        }' +
 '        async function loadTickets() {' +
 '            const response = await fetch("/tickets");' +
 '            if (response.status === 401) { window.location.href = "/login"; return; }' +
 '            let tickets = await response.json();' +
 '            if (!isAdmin) { tickets = tickets.filter(t => t.assignedTo === currentUser); }' +
+'            const staffFilterEl = document.getElementById("filterStaff");' +
+'            const staffFilterValue = staffFilterEl ? staffFilterEl.value : "";' +
+'            if (staffFilterValue) { tickets = tickets.filter(t => t.assignedTo === staffFilterValue); }' +
+'            const fromVal = document.getElementById("filterFromDate").value;' +
+'            const toVal = document.getElementById("filterToDate").value;' +
+'            if (fromVal) { const fromDate = new Date(fromVal + "T00:00:00"); tickets = tickets.filter(t => t.createdAt && new Date(t.createdAt) >= fromDate); }' +
+'            if (toVal) { const toDate = new Date(toVal + "T23:59:59"); tickets = tickets.filter(t => t.createdAt && new Date(t.createdAt) <= toDate); }' +
 '            document.getElementById("statOpen").innerText = tickets.filter(t => t.status === "Open").length;' +
 '            document.getElementById("statResolved").innerText = tickets.filter(t => t.status === "Resolved").length;' +
 '            document.getElementById("statMine").innerText = tickets.length;' +
+'            if (currentStatusFilter !== "all") { tickets = tickets.filter(t => t.status === currentStatusFilter); }' +
 '            const listDiv = document.getElementById("ticketList");' +
 '            if (tickets.length === 0) {' +
 '                listDiv.innerHTML = \'<p style="text-align: center; color: #718096; padding: 40px 0;">No support requests logs found.</p>\';' +
@@ -814,6 +863,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            window.location.href = "/tickets/report?month=" + month;' +
 '        }' +
 '        document.getElementById("reportMonth").value = new Date().toISOString().slice(0, 7);' +
+'        loadStaffFilterOptions();' +
 '        loadTickets();' +
 '    </script>' +
 '</body>' +
