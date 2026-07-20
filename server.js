@@ -465,6 +465,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '    <meta name="viewport" content="width=device-width, initial-scale=1.0">' +
 '    <title>IT Helpdesk | Dashboard</title>' +
 '    <link rel="icon" type="image/png" href="/logo.png">' +
+'    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>' +
 '    <style>' +
 '        * { box-sizing: border-box; margin: 0; padding: 0; font-family: \'Segoe UI\', Tahoma, Geneva, Verdana, sans-serif; }' +
 '        body { display: flex; height: 100vh; background-color: #f8f9fa; color: #333; overflow: hidden; }' +
@@ -527,6 +528,11 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '        .branch-table th { background-color: #f7fafc; color: #4a5568; font-size: 13px; font-weight: 600; padding: 12px 16px; border-bottom: 1px solid #e2e8f0; }' +
 '        .branch-table td { padding: 14px 16px; font-size: 14px; color: #2d3748; border-bottom: 1px solid #edf2f7; }' +
 '        .branch-delete-btn { color: #e53e3e; background: none; border: none; cursor: pointer; font-weight: 600; font-size: 13px; }' +
+'        .chart-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 20px; margin-top: 24px; }' +
+'        .chart-card { background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); position: relative; height: 300px; }' +
+'        .chart-card.wide { grid-column: 1 / -1; }' +
+'        .chart-card h3 { font-size: 14px; font-weight: 600; color: #2d3748; margin: 0 0 14px; }' +
+'        .section-heading { font-size: 16px; font-weight: 600; color: #2d3748; margin: 28px 0 0; }' +
 '    </style>' +
 '</head>' +
 '<body>' +
@@ -584,6 +590,14 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                    <div><label style="display:block;font-size:12px;font-weight:600;color:#4a5568;margin-bottom:4px;">To Date</label><input type="date" id="reportToDate" style="padding: 8px 10px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 14px;"></div>' +
 '                    <button class="branch-add-btn" onclick="downloadReportByRange()">Download Excel Report</button>' +
 '                </div>' +
+'                <h3 class="section-heading">Performance Overview</h3>' +
+'                <div class="chart-grid">' +
+'                    <div class="chart-card"><h3>Tickets by Status</h3><canvas id="chartStatus"></canvas></div>' +
+'                    <div class="chart-card"><h3>Tickets by Priority</h3><canvas id="chartPriority"></canvas></div>' +
+'                    <div class="chart-card wide"><h3>Ticket Volume \u2014 Last 30 Days</h3><canvas id="chartTrend"></canvas></div>' +
+(isAdminUser ? '                    <div class="chart-card"><h3>Tickets by Staff</h3><canvas id="chartStaff"></canvas></div>' : '') +
+(isAdminUser ? '                    <div class="chart-card"><h3>Tickets by Branch</h3><canvas id="chartBranch"></canvas></div>' : '') +
+'                </div>' +
 '            </div>' +
 '            <div id="viewBranches" class="dashboard-view">' +
 '                <div class="branch-panel-card">' +
@@ -638,6 +652,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                document.getElementById("viewReports").classList.add("active");' +
 '                document.getElementById("tabReportsLink").classList.add("active");' +
 '                document.getElementById("panelViewTitle").innerText = "Monthly Reports";' +
+'                loadReportCharts();' +
 '            } else if (target === "branches") {' +
 '                document.getElementById("viewBranches").classList.add("active");' +
 '                document.getElementById("tabBranchesLink").classList.add("active");' +
@@ -866,6 +881,73 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            if (!confirm("Escalate this ticket to Admin (Level 2)?")) return;' +
 '            const response = await fetch("/tickets/" + id + "/escalate", { method: "POST" });' +
 '            if (response.ok) loadTickets();' +
+'        }' +
+'        let chartInstances = {};' +
+'        function renderChart(canvasId, config) {' +
+'            const el = document.getElementById(canvasId);' +
+'            if (!el) return;' +
+'            if (chartInstances[canvasId]) chartInstances[canvasId].destroy();' +
+'            chartInstances[canvasId] = new Chart(el, config);' +
+'        }' +
+'        async function loadReportCharts() {' +
+'            const response = await fetch("/tickets");' +
+'            if (response.status === 401) { window.location.href = "/login"; return; }' +
+'            let tickets = await response.json();' +
+'            if (!isAdmin) { tickets = tickets.filter(t => t.assignedTo === currentUser); }' +
+'' +
+'            const openCount = tickets.filter(t => t.status === "Open").length;' +
+'            const resolvedCount = tickets.filter(t => t.status === "Resolved").length;' +
+'            renderChart("chartStatus", {' +
+'                type: "doughnut",' +
+'                data: { labels: ["Open", "Resolved"], datasets: [{ data: [openCount, resolvedCount], backgroundColor: ["#3182ce", "#38a169"] }] },' +
+'                options: { maintainAspectRatio: false, plugins: { legend: { position: "bottom" } } }' +
+'            });' +
+'' +
+'            const lowCount = tickets.filter(t => t.priority === "Low").length;' +
+'            const medCount = tickets.filter(t => t.priority === "Medium").length;' +
+'            const highCount = tickets.filter(t => t.priority === "High").length;' +
+'            renderChart("chartPriority", {' +
+'                type: "doughnut",' +
+'                data: { labels: ["Low", "Medium", "High"], datasets: [{ data: [lowCount, medCount, highCount], backgroundColor: ["#718096", "#dd6b20", "#e53e3e"] }] },' +
+'                options: { maintainAspectRatio: false, plugins: { legend: { position: "bottom" } } }' +
+'            });' +
+'' +
+'            const dayLabels = [];' +
+'            const dayCounts = [];' +
+'            const today = new Date();' +
+'            for (let i = 29; i >= 0; i--) {' +
+'                const d = new Date(today.getFullYear(), today.getMonth(), today.getDate() - i);' +
+'                dayLabels.push((d.getMonth() + 1) + "/" + d.getDate());' +
+'                const count = tickets.filter(t => {' +
+'                    if (!t.createdAt) return false;' +
+'                    const td = new Date(t.createdAt);' +
+'                    return td.getFullYear() === d.getFullYear() && td.getMonth() === d.getMonth() && td.getDate() === d.getDate();' +
+'                }).length;' +
+'                dayCounts.push(count);' +
+'            }' +
+'            renderChart("chartTrend", {' +
+'                type: "line",' +
+'                data: { labels: dayLabels, datasets: [{ label: "Tickets Submitted", data: dayCounts, borderColor: "#e53e3e", backgroundColor: "rgba(229,62,62,0.12)", tension: 0.3, fill: true }] },' +
+'                options: { maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } } }' +
+'            });' +
+'' +
+'            if (isAdmin) {' +
+'                const staffTotals = {};' +
+'                tickets.forEach(t => { const key = t.assignedTo || "Unassigned"; staffTotals[key] = (staffTotals[key] || 0) + 1; });' +
+'                renderChart("chartStaff", {' +
+'                    type: "bar",' +
+'                    data: { labels: Object.keys(staffTotals), datasets: [{ label: "Tickets Handled", data: Object.values(staffTotals), backgroundColor: "#0056b3" }] },' +
+'                    options: { indexAxis: "y", maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { beginAtZero: true, ticks: { stepSize: 1 } } } }' +
+'                });' +
+'' +
+'                const branchTotals = {};' +
+'                tickets.forEach(t => { const key = t.branch || "N/A"; branchTotals[key] = (branchTotals[key] || 0) + 1; });' +
+'                renderChart("chartBranch", {' +
+'                    type: "bar",' +
+'                    data: { labels: Object.keys(branchTotals), datasets: [{ label: "Tickets", data: Object.values(branchTotals), backgroundColor: "#319795" }] },' +
+'                    options: { indexAxis: "y", maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { beginAtZero: true, ticks: { stepSize: 1 } } } }' +
+'                });' +
+'            }' +
 '        }' +
 '        function downloadReport() {' +
 '            const month = document.getElementById("reportMonth").value;' +
