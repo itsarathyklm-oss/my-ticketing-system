@@ -47,6 +47,7 @@ const ticketSchema = new mongoose.Schema({
     ticketNumber: { type: Number, unique: true, sparse: true },
     title: String,
     submittedBy: { type: String, default: 'Unknown' },
+    category: { type: String, default: 'Other' },
     branch: { type: String, default: 'N/A' },
     priority: { type: String, default: 'Medium' },
     description: String,
@@ -71,6 +72,23 @@ const counterSchema = new mongoose.Schema({
     value: { type: Number, default: 0 }
 });
 const Counter = mongoose.model('Counter', counterSchema);
+
+// Audit Log Schema — tracks admin management actions (staff/branch changes, auto-escalation)
+const auditLogSchema = new mongoose.Schema({
+    actor: { type: String, required: true },
+    action: { type: String, required: true },
+    details: { type: String },
+    createdAt: { type: Date, default: Date.now }
+});
+const AuditLog = mongoose.model('AuditLog', auditLogSchema);
+
+async function logAudit(actor, action, details) {
+    try {
+        await AuditLog.create({ actor, action, details });
+    } catch (err) {
+        console.error('Failed to write audit log entry:', err.message);
+    }
+}
 
 async function getNextTicketNumber() {
     const counter = await Counter.findOneAndUpdate(
@@ -292,7 +310,7 @@ button[type="submit"]:active { transform: translateY(0); }
 .status-result-title { font-size: 13px; color: #1e2229; font-weight: 600; margin-top: 5px; }
 .status-result-meta { font-size: 11px; color: #8a8f98; margin-top: 3px; }
 .page-footer { position: fixed; bottom: 8px; left: 0; width: 100%; text-align: center; font-size: 11px; color: rgba(255,255,255,0.55); letter-spacing: .3px; }
-</style></head><body><div class="ticket-card"><div class="ticket-ribbon"><img src="/logo.png" alt="Company Logo" onerror="this.style.display='none'"><span class="ticket-ribbon-text">Sarathy IT Helpdesk</span></div><div class="tab-switch"><button type="button" class="tab-btn active" id="tabSubmitBtn" onclick="showTab('submit')">Submit Ticket</button><button type="button" class="tab-btn" id="tabStatusBtn" onclick="showTab('status')">Check Status</button></div><div class="ticket-body"><div id="submitPane"><h2 class="form-title">Submit a New Ticket</h2><div class="form-subtitle">We'll route it to the right person and keep you posted.</div><div class="ticket-perforation"></div><form id="ticketForm" enctype="multipart/form-data" class="form-grid"><div class="form-field"><label>Your Name</label><input type="text" id="submitterName" required></div><div class="form-field"><label>Mobile Number</label><input type="tel" id="mobile" placeholder="10-digit mobile number" pattern="[0-9]{10}" maxlength="10" inputmode="numeric" oninput="this.value=this.value.replace(/[^0-9]/g,'').slice(0,10)" required></div><div class="form-field full-width"><label>Issue Title</label><input type="text" id="title" required></div><div class="form-field"><label>Branch Location</label><select id="branch" required><option value="" disabled selected>Loading...</option></select></div><div class="form-field"><label>Priority Level</label><select id="priority"><option value="Low">Low</option><option value="Medium" selected>Medium</option><option value="High">High</option></select></div><div class="form-field full-width"><label>Description</label><textarea id="description" required></textarea></div><div class="form-field full-width"><label>Upload Screenshot (Optional)</label><input type="file" id="screenshot" accept="image/*"></div><button type="submit">Submit Ticket</button></form></div><div id="statusPane" style="display:none;"><h2 class="form-title">Check Ticket Status</h2><div class="form-subtitle">Enter the mobile number you used when submitting.</div><label>Mobile Number</label><input type="tel" id="statusMobile" placeholder="Enter your 10-digit mobile number" pattern="[0-9]{10}" maxlength="10" inputmode="numeric" oninput="this.value=this.value.replace(/[^0-9]/g,'').slice(0,10)"><button type="button" class="check-status-btn" onclick="checkTicketStatus()">Check Status</button><div id="statusResults"></div></div></div></div><div class="page-footer">&copy; 2026 Sarathy Pvt Ltd</div><script>
+</style></head><body><div class="ticket-card"><div class="ticket-ribbon"><img src="/logo.png" alt="Company Logo" onerror="this.style.display='none'"><span class="ticket-ribbon-text">Sarathy IT Helpdesk</span></div><div class="tab-switch"><button type="button" class="tab-btn active" id="tabSubmitBtn" onclick="showTab('submit')">Submit Ticket</button><button type="button" class="tab-btn" id="tabStatusBtn" onclick="showTab('status')">Check Status</button></div><div class="ticket-body"><div id="submitPane"><h2 class="form-title">Submit a New Ticket</h2><div class="form-subtitle">We'll route it to the right person and keep you posted.</div><div class="ticket-perforation"></div><form id="ticketForm" enctype="multipart/form-data" class="form-grid"><div class="form-field"><label>Your Name</label><input type="text" id="submitterName" required></div><div class="form-field"><label>Mobile Number</label><input type="tel" id="mobile" placeholder="10-digit mobile number" pattern="[0-9]{10}" maxlength="10" inputmode="numeric" oninput="this.value=this.value.replace(/[^0-9]/g,'').slice(0,10)" required></div><div class="form-field full-width"><label>Issue Title</label><input type="text" id="title" required></div><div class="form-field"><label>Branch Location</label><select id="branch" required><option value="" disabled selected>Loading...</option></select></div><div class="form-field"><label>Priority Level</label><select id="priority"><option value="Low">Low</option><option value="Medium" selected>Medium</option><option value="High">High</option></select></div><div class="form-field full-width"><label>Category</label><select id="category"><option value="Hardware">Hardware</option><option value="Software">Software</option><option value="Network">Network</option><option value="Printer">Printer</option><option value="Other" selected>Other</option></select></div><div class="form-field full-width"><label>Description</label><textarea id="description" required></textarea></div><div class="form-field full-width"><label>Upload Screenshot (Optional)</label><input type="file" id="screenshot" accept="image/*"></div><button type="submit">Submit Ticket</button></form></div><div id="statusPane" style="display:none;"><h2 class="form-title">Check Ticket Status</h2><div class="form-subtitle">Enter the mobile number you used when submitting.</div><label>Mobile Number</label><input type="tel" id="statusMobile" placeholder="Enter your 10-digit mobile number" pattern="[0-9]{10}" maxlength="10" inputmode="numeric" oninput="this.value=this.value.replace(/[^0-9]/g,'').slice(0,10)"><button type="button" class="check-status-btn" onclick="checkTicketStatus()">Check Status</button><div id="statusResults"></div></div></div></div><div class="page-footer">&copy; 2026 Sarathy Pvt Ltd</div><script>
     async function loadFormBranches() {
         try {
             const res = await fetch('/public-branches');
@@ -320,6 +338,7 @@ button[type="submit"]:active { transform: translateY(0); }
         formData.append('branch', document.getElementById('branch').value); 
         formData.append('mobile', document.getElementById('mobile').value); 
         formData.append('priority', document.getElementById('priority').value); 
+        formData.append('category', document.getElementById('category').value);
         formData.append('description', document.getElementById('description').value); 
         const fileInput = document.getElementById('screenshot'); 
         if (fileInput.files[0]) formData.append('screenshot', fileInput.files[0]); 
@@ -508,6 +527,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '        .escalate-btn { background-color: #dd6b20; color: white; border: none; padding: 8px 16px; font-size: 13px; font-weight: 600; border-radius: 6px; cursor: pointer; transition: background 0.2s; margin-left: 8px; }' +
 '        .escalate-btn:hover { background-color: #c05621; }' +
 '        .badge-escalated { background-color: #fef3c7; color: #92400e; }' +
+'        .badge-category { background-color: #e6fffa; color: #234e52; }' +
 '        .screenshot-preview { max-width: 100%; max-height: 180px; border-radius: 6px; border: 1px solid #e2e8f0; margin-top: 12px; display: block; object-fit: cover; }' +
 '        .assignment-info { margin-top: 16px; padding-top: 12px; border-top: 1px solid #edf2f7; font-size: 13px; color: #718096; }' +
 '        .assignment-info strong { color: #4a5568; }' +
@@ -546,6 +566,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                <li class="menu-item active" id="tabTicketsLink" onclick="switchView(\'tickets\')">Tickets System</li>' +
 (isAdminUser ? '                <li class="menu-item" id="tabBranchesLink" onclick="switchView(\'branches\')">Manage Branches</li>' : '') +
 (isAdminUser ? '                <li class="menu-item" id="tabStaffLink" onclick="switchView(\'staff\')">Manage IT Staff</li>' : '') +
+(isAdminUser ? '                <li class="menu-item" id="tabAuditLink" onclick="switchView(\'audit\')">Audit Log</li>' : '') +
 '                <li class="menu-item" id="tabReportsLink" onclick="switchView(\'reports\')">Reports</li>' +
 '            </ul>' +
 '        </div>' +
@@ -572,6 +593,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                    <div><label style="display:block;font-size:12px;font-weight:600;color:#4a5568;margin-bottom:4px;">From Date</label><input type="date" id="filterFromDate" style="padding: 8px 10px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 14px;"></div>' +
 '                    <div><label style="display:block;font-size:12px;font-weight:600;color:#4a5568;margin-bottom:4px;">To Date</label><input type="date" id="filterToDate" style="padding: 8px 10px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 14px;"></div>' +
 '                    <div id="staffFilterWrapper" style="display:none;"><label style="display:block;font-size:12px;font-weight:600;color:#4a5568;margin-bottom:4px;">Staff</label><select id="filterStaff" style="padding: 8px 10px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 14px;"><option value="">All Staff</option></select></div>' +
+'                    <div><label style="display:block;font-size:12px;font-weight:600;color:#4a5568;margin-bottom:4px;">Category</label><select id="filterCategory" style="padding: 8px 10px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 14px;"><option value="">All Categories</option><option value="Hardware">Hardware</option><option value="Software">Software</option><option value="Network">Network</option><option value="Printer">Printer</option><option value="Other">Other</option></select></div>' +
 '                    <button class="branch-add-btn" onclick="applyTicketFilters()">Search</button>' +
 '                    <button class="branch-delete-btn" onclick="clearTicketFilters()">Clear</button>' +
 '                </div>' +
@@ -593,6 +615,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                <div class="chart-grid">' +
 '                    <div class="chart-card"><h3>Tickets by Status</h3><canvas id="chartStatus"></canvas></div>' +
 '                    <div class="chart-card"><h3>Tickets by Priority</h3><canvas id="chartPriority"></canvas></div>' +
+'                    <div class="chart-card"><h3>Tickets by Category</h3><canvas id="chartCategory"></canvas></div>' +
 '                    <div class="chart-card wide"><h3>Ticket Volume \u2014 Last 30 Days</h3><canvas id="chartTrend"></canvas></div>' +
 (isAdminUser ? '                    <div class="chart-card"><h3>Tickets by Staff</h3><canvas id="chartStaff"></canvas></div>' : '') +
 (isAdminUser ? '                    <div class="chart-card"><h3>Tickets by Branch</h3><canvas id="chartBranch"></canvas></div>' : '') +
@@ -629,6 +652,15 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                    </table>' +
 '                </div>' +
 '            </div>' +
+'            <div id="viewAuditLog" class="dashboard-view">' +
+'                <div class="branch-panel-card">' +
+'                    <h2>Recent Admin Activity</h2>' +
+'                    <table class="branch-table">' +
+'                        <thead><tr><th>Timestamp</th><th>Actor</th><th>Action</th><th>Details</th></tr></thead>' +
+'                        <tbody id="auditLogTableBody"></tbody>' +
+'                    </table>' +
+'                </div>' +
+'            </div>' +
 '        </section>' +
 '    </main>' +
 '    <script>' +
@@ -636,7 +668,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '        const isAdmin = ' + dynamicIsAdmin + ';' +
 '        document.getElementById("displayUserLabel").innerText = currentUser;' +
 '        function switchView(target) {' +
-'            if ((target === "branches" || target === "staff") && !isAdmin) {' +
+'            if ((target === "branches" || target === "staff" || target === "audit") && !isAdmin) {' +
 '                alert("Access Denied: Admins only.");' +
 '                return;' +
 '            }' +
@@ -662,6 +694,11 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                document.getElementById("tabStaffLink").classList.add("active");' +
 '                document.getElementById("panelViewTitle").innerText = "Manage IT Staff Profile Queue";' +
 '                loadStaffList();' +
+'            } else if (target === "audit") {' +
+'                document.getElementById("viewAuditLog").classList.add("active");' +
+'                document.getElementById("tabAuditLink").classList.add("active");' +
+'                document.getElementById("panelViewTitle").innerText = "Recent Admin Activity";' +
+'                loadAuditLog();' +
 '            }' +
 '        }' +
 '        let currentStatusFilter = "all";' +
@@ -675,6 +712,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '        function clearTicketFilters() {' +
 '            document.getElementById("filterFromDate").value = "";' +
 '            document.getElementById("filterToDate").value = "";' +
+'            document.getElementById("filterCategory").value = "";' +
 '            const sf = document.getElementById("filterStaff");' +
 '            if (sf) sf.value = "";' +
 '            currentStatusFilter = "all";' +
@@ -699,6 +737,8 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            const staffFilterEl = document.getElementById("filterStaff");' +
 '            const staffFilterValue = staffFilterEl ? staffFilterEl.value : "";' +
 '            if (staffFilterValue) { tickets = tickets.filter(t => t.assignedTo === staffFilterValue); }' +
+'            const categoryFilterValue = document.getElementById("filterCategory").value;' +
+'            if (categoryFilterValue) { tickets = tickets.filter(t => (t.category || "Other") === categoryFilterValue); }' +
 '            const fromVal = document.getElementById("filterFromDate").value;' +
 '            const toVal = document.getElementById("filterToDate").value;' +
 '            if (fromVal) { const fromDate = new Date(fromVal + "T00:00:00"); tickets = tickets.filter(t => t.createdAt && new Date(t.createdAt) >= fromDate); }' +
@@ -726,7 +766,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                        commentListHtml += \'<div class="comment-item"><strong>\'+c.author+\':</strong> \'+c.text+\'</div>\';' +
 '                    });' +
 '                }' +
-'                listDiv.innerHTML += \'<div class="ticket-card"><div class="ticket-header"><div><h3 class="ticket-title">#\'+String(ticket.ticketNumber).padStart(4,"0")+\' \'+ticket.title+\'</h3><div style="margin-top: 8px;"><span class="badge p-\'+ticket.priority+\'">\'+ticket.priority+\'</span><span class="badge status-\'+ticket.status.toLowerCase()+\'">\'+ticket.status+\'</span>\'+escalatedBadge+\'</div></div>\'+actionBtn+escalateBtn+\'</div><p class="ticket-desc">\'+ticket.description+\'</p>\'+imageHtml+\'<div class="assignment-info"><span><strong>Submitted By:</strong> \'+(ticket.submittedBy || "Unknown")+\'</span> | <span><strong>Branch:</strong> \'+ticket.branch+\'</span> | <span><strong>Mobile:</strong> \'+ticket.mobile+\'</span> | <span><strong>Assigned:</strong> \'+ticket.assignedTo+\'</span> | <span><strong>Submitted:</strong> \'+(ticket.createdAt ? new Date(ticket.createdAt).toLocaleString() : "N/A")+\'</span>\'+resolvedLine+\'</div><div class="comments-section"><h4 class="comments-header">Internal Work Notes</h4><div>\'+(commentListHtml || "No updates.")+\'</div><div class="comment-form"><input type="text" id="input-\'+ticket._id+\'" placeholder="Write operational update..."><button onclick="addComment(\\\'\'+ticket._id+\'\\\')">Post</button></div></div></div>\';' +
+'                listDiv.innerHTML += \'<div class="ticket-card"><div class="ticket-header"><div><h3 class="ticket-title">#\'+String(ticket.ticketNumber).padStart(4,"0")+\' \'+ticket.title+\'</h3><div style="margin-top: 8px;"><span class="badge p-\'+ticket.priority+\'">\'+ticket.priority+\'</span><span class="badge status-\'+ticket.status.toLowerCase()+\'">\'+ticket.status+\'</span><span class="badge badge-category">\'+(ticket.category || "Other")+\'</span>\'+escalatedBadge+\'</div></div>\'+actionBtn+escalateBtn+\'</div><p class="ticket-desc">\'+ticket.description+\'</p>\'+imageHtml+\'<div class="assignment-info"><span><strong>Submitted By:</strong> \'+(ticket.submittedBy || "Unknown")+\'</span> | <span><strong>Branch:</strong> \'+ticket.branch+\'</span> | <span><strong>Mobile:</strong> \'+ticket.mobile+\'</span> | <span><strong>Assigned:</strong> \'+ticket.assignedTo+\'</span> | <span><strong>Submitted:</strong> \'+(ticket.createdAt ? new Date(ticket.createdAt).toLocaleString() : "N/A")+\'</span>\'+resolvedLine+\'</div><div class="comments-section"><h4 class="comments-header">Internal Work Notes</h4><div>\'+(commentListHtml || "No updates.")+\'</div><div class="comment-form"><input type="text" id="input-\'+ticket._id+\'" placeholder="Write operational update..."><button onclick="addComment(\\\'\'+ticket._id+\'\\\')">Post</button></div></div></div>\';' +
 '            });' +
 '        }' +
 '        async function loadBranchesList() {' +
@@ -832,6 +872,19 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            if (response.ok) loadStaffList();' +
 '            else alert("Could not delete staff member.");' +
 '        }' +
+'        async function loadAuditLog() {' +
+'            const response = await fetch("/audit-log");' +
+'            const entries = await response.json();' +
+'            const tbody = document.getElementById("auditLogTableBody");' +
+'            tbody.innerHTML = "";' +
+'            if (entries.length === 0) {' +
+'                tbody.innerHTML = \'<tr><td colspan="4" style="text-align: center; color: #a0aec0; padding: 20px;">No activity recorded yet.</td></tr>\';' +
+'                return;' +
+'            }' +
+'            entries.forEach(e => {' +
+'                tbody.innerHTML += \'<tr><td>\'+new Date(e.createdAt).toLocaleString()+\'</td><td>\'+e.actor+\'</td><td>\'+e.action+\'</td><td>\'+(e.details || "")+\'</td></tr>\';' +
+'            });' +
+'        }' +
 '        async function updateStaffBranches(staffId) {' +
 '            const checks = document.querySelectorAll(".branch-check-" + staffId);' +
 '            const branches = Array.from(checks).filter(c => c.checked).map(c => c.value);' +
@@ -908,6 +961,14 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            renderChart("chartPriority", {' +
 '                type: "doughnut",' +
 '                data: { labels: ["Low", "Medium", "High"], datasets: [{ data: [lowCount, medCount, highCount], backgroundColor: ["#718096", "#dd6b20", "#e53e3e"] }] },' +
+'                options: { maintainAspectRatio: false, plugins: { legend: { position: "bottom" } } }' +
+'            });' +
+'' +
+'            const categoryTotals = {};' +
+'            tickets.forEach(t => { const key = t.category || "Other"; categoryTotals[key] = (categoryTotals[key] || 0) + 1; });' +
+'            renderChart("chartCategory", {' +
+'                type: "doughnut",' +
+'                data: { labels: Object.keys(categoryTotals), datasets: [{ data: Object.values(categoryTotals), backgroundColor: ["#319795", "#805ad5", "#3182ce", "#dd6b20", "#718096"] }] },' +
 '                options: { maintainAspectRatio: false, plugins: { legend: { position: "bottom" } } }' +
 '            });' +
 '' +
@@ -1011,6 +1072,7 @@ app.get('/tickets/report', checkUserLogin, async (req, res) => {
             { header: 'Ticket #', key: 'ticketNumber', width: 12 },
             { header: 'Title', key: 'title', width: 30 },
             { header: 'Submitted By', key: 'submittedBy', width: 20 },
+            { header: 'Category', key: 'category', width: 14 },
             { header: 'Branch', key: 'branch', width: 25 },
             { header: 'Priority', key: 'priority', width: 12 },
             { header: 'Status', key: 'status', width: 12 },
@@ -1024,6 +1086,7 @@ app.get('/tickets/report', checkUserLogin, async (req, res) => {
                 ticketNumber: t.ticketNumber,
                 title: t.title,
                 submittedBy: t.submittedBy,
+                category: t.category,
                 branch: t.branch,
                 priority: t.priority,
                 status: t.status,
@@ -1090,6 +1153,7 @@ app.post('/tickets/branches', checkAdminLogin, async (req, res) => {
     try {
         const newBranch = new Branch({ name: req.body.name });
         await newBranch.save();
+        await logAudit(req.session.username, 'Add Branch', `Added branch "${newBranch.name}"`);
         res.status(201).json({ success: true });
     } catch(err) {
         res.status(500).json({ error: err.message });
@@ -1101,6 +1165,7 @@ app.delete('/tickets/branches/:id', checkAdminLogin, async (req, res) => {
     await Branch.findByIdAndDelete(req.params.id);
     if (branch) {
         await StaffBranch.updateMany({}, { $pull: { branches: branch.name } });
+        await logAudit(req.session.username, 'Delete Branch', `Removed branch "${branch.name}"`);
     }
     res.json({ success: true });
 });
@@ -1124,6 +1189,7 @@ app.put('/tickets/branches/:id', checkAdminLogin, async (req, res) => {
                 { arrayFilters: [{ elem: oldName }] }
             );
         }
+        await logAudit(req.session.username, 'Edit Branch', `Renamed branch "${oldName}" to "${branch.name}"`);
         res.json({ success: true });
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -1133,6 +1199,12 @@ app.put('/tickets/branches/:id', checkAdminLogin, async (req, res) => {
 app.get('/tickets/staff-list', checkAdminLogin, async (req, res) => {
     const staff = await Staff.find().sort({ staffId: 1 });
     res.json(staff.map(s => ({ id: s.staffId, name: s.name, email: s.email })));
+});
+
+// Recent admin activity — staff/branch changes and auto-escalations
+app.get('/audit-log', checkAdminLogin, async (req, res) => {
+    const entries = await AuditLog.find().sort({ createdAt: -1 }).limit(200);
+    res.json(entries);
 });
 
 // Add a new staff member (auto-generates the next sequential staff ID)
@@ -1146,6 +1218,7 @@ app.post('/tickets/staff', checkAdminLogin, async (req, res) => {
         const hashedPassword = await bcrypt.hash(password, 10);
         const newStaff = new Staff({ staffId, name, password: hashedPassword, email });
         await newStaff.save();
+        await logAudit(req.session.username, 'Add Staff', `Added staff ${name} (${staffId})`);
         res.status(201).json({ success: true, staffId });
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -1164,6 +1237,7 @@ app.put('/tickets/staff/:staffId', checkAdminLogin, async (req, res) => {
             update.password = await bcrypt.hash(password, 10);
         }
         await Staff.findOneAndUpdate({ staffId: req.params.staffId }, update);
+        await logAudit(req.session.username, 'Edit Staff', `Updated staff ${req.params.staffId}${password ? ' (password reset)' : ''}`);
         res.json({ success: true });
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -1175,6 +1249,7 @@ app.delete('/tickets/staff/:staffId', checkAdminLogin, async (req, res) => {
     try {
         await Staff.findOneAndDelete({ staffId: req.params.staffId });
         await StaffBranch.findOneAndDelete({ staffId: req.params.staffId });
+        await logAudit(req.session.username, 'Delete Staff', `Removed staff ${req.params.staffId}`);
         res.json({ success: true });
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -1202,6 +1277,7 @@ app.post('/tickets/staff-branches', checkAdminLogin, async (req, res) => {
             { staffId, branches },
             { upsert: true, returnDocument: 'after' }
         );
+        await logAudit(req.session.username, 'Update Branch Assignment', `Set branches for staff ${staffId}: ${branches && branches.length ? branches.join(', ') : 'none'}`);
         res.json({ success: true });
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -1234,6 +1310,7 @@ app.post('/tickets', upload.single('screenshot'), async (req, res) => {
             ticketNumber,
             title: req.body.title,
             submittedBy: req.body.submittedBy || 'Unknown',
+            category: req.body.category || 'Other',
             branch: branchName,
             mobile: req.body.mobile,
             priority: req.body.priority,
@@ -1264,6 +1341,36 @@ app.post('/tickets', upload.single('screenshot'), async (req, res) => {
         res.status(500).json({ error: err.message });
     }
 });
+
+// Auto-escalation: High priority tickets left Open too long get bumped to Admin automatically.
+// Note: this only runs while the server process is awake. On Render's free tier the app
+// spins down after inactivity, so this check only fires again once something wakes it back up
+// (e.g. the next visitor). It'll run continuously and reliably once on an always-on host.
+const AUTO_ESCALATE_HOURS = Number(process.env.AUTO_ESCALATE_HOURS) || 4;
+async function runAutoEscalation() {
+    try {
+        const cutoff = new Date(Date.now() - AUTO_ESCALATE_HOURS * 60 * 60 * 1000);
+        const staleTickets = await Ticket.find({
+            priority: 'High',
+            status: 'Open',
+            escalated: false,
+            createdAt: { $lte: cutoff }
+        });
+        for (const ticket of staleTickets) {
+            ticket.escalated = true;
+            ticket.assignedTo = 'Admin';
+            await ticket.save();
+            await logAudit('System', 'Auto-Escalate', `Ticket #${String(ticket.ticketNumber).padStart(4, '0')} (${ticket.title}) auto-escalated to Admin — High priority, open more than ${AUTO_ESCALATE_HOURS}h`);
+        }
+        if (staleTickets.length > 0) {
+            console.log(`Auto-escalated ${staleTickets.length} stale high-priority ticket(s).`);
+        }
+    } catch (err) {
+        console.error('Auto-escalation check failed:', err.message);
+    }
+}
+setInterval(runAutoEscalation, 15 * 60 * 1000); // check every 15 minutes
+runAutoEscalation(); // also run once at startup
 
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`Server configuration active on port ${PORT}`);
