@@ -1,5 +1,4 @@
 const express = require('express');
-const path = require('path');
 const dns = require('dns');
 // Render's outbound network doesn't reliably support IPv6 — without this, Node tries
 // Gmail's IPv6 address first and the connection dies with ENETUNREACH before it ever
@@ -77,7 +76,7 @@ async function getNextTicketNumber() {
     const counter = await Counter.findOneAndUpdate(
         { name: 'ticketNumber' },
         { $inc: { value: 1 } },
-        { upsert: true, new: true }
+        { upsert: true, returnDocument: 'after' }
     );
     return counter.value;
 }
@@ -603,7 +602,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                <div class="branch-panel-card">' +
 '                    <h2>Create New Branch Location</h2>' +
 '                    <div class="branch-input-group">' +
-'                        <input type="text" id="newBranchName" placeholder="Enter Branch Details">' +
+'                        <input type="text" id="newBranchName" placeholder="Bajaj, Pallimukk">' +
 '                        <button class="branch-add-btn" onclick="addNewBranch()">Add Branch</button>' +
 '                    </div>' +
 '                    <table class="branch-table">' +
@@ -1201,7 +1200,7 @@ app.post('/tickets/staff-branches', checkAdminLogin, async (req, res) => {
         await StaffBranch.findOneAndUpdate(
             { staffId },
             { staffId, branches },
-            { upsert: true, new: true }
+            { upsert: true, returnDocument: 'after' }
         );
         res.json({ success: true });
     } catch (err) {
