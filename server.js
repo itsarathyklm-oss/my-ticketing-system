@@ -29,9 +29,16 @@ mongoose.connect(MONGO_URI)
     })
     .catch(err => console.error("Database connection error:", err));
 
+// Region Schema (e.g. TRIVANDRUM, KOLLAM) — groups branches together
+const regionSchema = new mongoose.Schema({
+    name: { type: String, required: true }
+});
+const Region = mongoose.model('Region', regionSchema);
+
 // Branch Schema
 const branchSchema = new mongoose.Schema({
-    name: { type: String, required: true }
+    name: { type: String, required: true },
+    region: { type: String, default: 'Unassigned' }
 });
 const Branch = mongoose.model('Branch', branchSchema);
 
@@ -323,8 +330,18 @@ button[type="submit"]:active { transform: translateY(0); }
                 return;
             }
             select.innerHTML = '<option value="" disabled selected>Choose branch location</option>';
+            const regionGroups = {};
             branches.forEach(b => {
-                select.innerHTML += '<option value="' + b.name + '">' + b.name + '</option>';
+                const region = b.region || 'Unassigned';
+                if (!regionGroups[region]) regionGroups[region] = [];
+                regionGroups[region].push(b);
+            });
+            Object.keys(regionGroups).sort().forEach(region => {
+                select.innerHTML += '<optgroup label="' + region + '">';
+                regionGroups[region].forEach(b => {
+                    select.innerHTML += '<option value="' + b.name + '">' + b.name + '</option>';
+                });
+                select.innerHTML += '</optgroup>';
             });
         } catch(e) {
             document.getElementById('branch').innerHTML = '<option value="General">General/Headquarters</option>';
@@ -625,17 +642,26 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                </div>' +
 '            </div>' +
 '            <div id="viewBranches" class="dashboard-view">' +
+'                <div class="branch-panel-card" style="margin-bottom: 20px;">' +
+'                    <h2>Manage Regions</h2>' +
+'                    <div class="branch-input-group">' +
+'                        <input type="text" id="newRegionName" placeholder="e.g. TRIVANDRUM">' +
+'                        <button class="branch-add-btn" onclick="addNewRegion()">Add Region</button>' +
+'                    </div>' +
+'                    <table class="branch-table">' +
+'                        <thead><tr><th>Region Name</th><th>Edit</th><th>Delete</th></tr></thead>' +
+'                        <tbody id="regionTableBody"></tbody>' +
+'                    </table>' +
+'                </div>' +
 '                <div class="branch-panel-card">' +
 '                    <h2>Create New Branch Location</h2>' +
 '                    <div class="branch-input-group">' +
 '                        <input type="text" id="newBranchName" placeholder="Enter Branch Details">' +
+'                        <select id="newBranchRegion" style="flex-grow: 1; padding: 12px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 14px;"><option value="" disabled selected>Select Region</option></select>' +
 '                        <button class="branch-add-btn" onclick="addNewBranch()">Add Branch</button>' +
 '                    </div>' +
-'                    <table class="branch-table">' +
-'                        <thead><tr><th>Branch Name</th><th>Edit</th><th>Delete</th></tr></thead>' +
-'                        <tbody id="branchTableBody"></tbody>' +
-'                    </table>' +
-'                    </div>' +
+'                    <div id="branchGroupsContainer"></div>' +
+'                </div>' +
 '            </div>' +
 '            <div id="viewStaff" class="dashboard-view">' +
 '                <div class="branch-panel-card" style="margin-bottom: 20px;">' +
@@ -691,6 +717,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                document.getElementById("viewBranches").classList.add("active");' +
 '                document.getElementById("tabBranchesLink").classList.add("active");' +
 '                document.getElementById("panelViewTitle").innerText = "Company Branches Layout";' +
+'                loadRegionsList();' +
 '                loadBranchesList();' +
 '            } else if (target === "staff") {' +
 '                document.getElementById("viewStaff").classList.add("active");' +
@@ -772,47 +799,126 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                listDiv.innerHTML += \'<div class="ticket-card"><div class="ticket-header"><div><h3 class="ticket-title">#\'+String(ticket.ticketNumber).padStart(4,"0")+\' \'+ticket.title+\'</h3><div style="margin-top: 8px;"><span class="badge p-\'+ticket.priority+\'">\'+ticket.priority+\'</span><span class="badge status-\'+ticket.status.toLowerCase()+\'">\'+ticket.status+\'</span><span class="badge badge-category">\'+(ticket.category || "Other")+\'</span>\'+escalatedBadge+\'</div></div>\'+actionBtn+escalateBtn+\'</div><p class="ticket-desc">\'+ticket.description+\'</p>\'+imageHtml+\'<div class="assignment-info"><span><strong>Submitted By:</strong> \'+(ticket.submittedBy || "Unknown")+(ticket.designation ? " ("+ticket.designation+")" : "")+\'</span> | <span><strong>Branch:</strong> \'+ticket.branch+\'</span> | <span><strong>Mobile:</strong> \'+ticket.mobile+\'</span> | <span><strong>Assigned:</strong> \'+ticket.assignedTo+\'</span> | <span><strong>Submitted:</strong> \'+(ticket.createdAt ? new Date(ticket.createdAt).toLocaleString() : "N/A")+\'</span>\'+resolvedLine+\'</div><div class="comments-section"><h4 class="comments-header">Internal Work Notes</h4><div>\'+(commentListHtml || "No updates.")+\'</div><div class="comment-form"><input type="text" id="input-\'+ticket._id+\'" placeholder="Write operational update..."><button onclick="addComment(\\\'\'+ticket._id+\'\\\')">Post</button></div></div></div>\';' +
 '            });' +
 '        }' +
-'        async function loadBranchesList() {' +
-'            const response = await fetch("/public-branches");' +
-'            const branches = await response.json();' +
-'            const tbody = document.getElementById("branchTableBody");' +
-'            tbody.innerHTML = "";' +
-'            if (branches.length === 0) {' +
-'                tbody.innerHTML = \'<tr><td colspan="3" style="text-align: center; color: #a0aec0; padding: 20px;">No branch locations added yet.</td></tr>\';' +
-'                return;' +
-'            }' +
-'            branches.forEach(b => {' +
-'                const safeName = b.name.replace(/\'/g, "\\\\\'");' +
-'                tbody.innerHTML += \'<tr><td>\'+b.name+\'</td><td><button class="branch-delete-btn" onclick="editBranch(\\\'\'+b._id+\'\\\', \\\'\'+safeName+\'\\\')">Edit</button></td><td><button class="branch-delete-btn" onclick="deleteBranch(\\\'\'+b._id+\'\\\')">Delete</button></td></tr>\';' +
+'async function loadRegionsList() {' +
+'    const response = await fetch("/tickets/regions");' +
+'    const regions = await response.json();' +
+'    const tbody = document.getElementById("regionTableBody");' +
+'    tbody.innerHTML = "";' +
+'    if (regions.length === 0) {' +
+'        tbody.innerHTML = \'<tr><td colspan="3" style="text-align: center; color: #a0aec0; padding: 20px;">No regions added yet.</td></tr>\';' +
+'    } else {' +
+'        regions.forEach(r => {' +
+'            const safeName = r.name.replace(/\'/g, "\\\\\'");' +
+'            tbody.innerHTML += \'<tr><td>\'+r.name+\'</td><td><button class="branch-delete-btn" onclick="editRegion(\\\'\'+r._id+\'\\\', \\\'\'+safeName+\'\\\')">Edit</button></td><td><button class="branch-delete-btn" onclick="deleteRegion(\\\'\'+r._id+\'\\\')">Delete</button></td></tr>\';' +
+'        });' +
+'    }' +
+'    const select = document.getElementById("newBranchRegion");' +
+'    select.innerHTML = \'<option value="" disabled selected>Select Region</option>\';' +
+'    regions.forEach(r => {' +
+'        select.innerHTML += \'<option value="\'+r.name+\'">\'+r.name+\'</option>\';' +
+'    });' +
+'}' +
+'async function addNewRegion() {' +
+'    const input = document.getElementById("newRegionName");' +
+'    const name = input.value.trim();' +
+'    if (!name) return;' +
+'    const response = await fetch("/tickets/regions", {' +
+'        method: "POST",' +
+'        headers: { "Content-Type": "application/json" },' +
+'        body: JSON.stringify({ name })' +
+'    });' +
+'    if (response.ok) { input.value = ""; loadRegionsList(); loadBranchesList(); }' +
+'    else { const err = await response.json(); alert(err.error || "Could not add region."); }' +
+'}' +
+'async function editRegion(id, currentName) {' +
+'    const newName = prompt("Edit region name:", currentName);' +
+'    if (!newName || !newName.trim() || newName === currentName) return;' +
+'    const response = await fetch("/tickets/regions/" + id, {' +
+'        method: "PUT",' +
+'        headers: { "Content-Type": "application/json" },' +
+'        body: JSON.stringify({ name: newName.trim() })' +
+'    });' +
+'    if (response.ok) { loadRegionsList(); loadBranchesList(); }' +
+'    else { const err = await response.json(); alert(err.error || "Could not update region."); }' +
+'}' +
+'async function deleteRegion(id) {' +
+'    if (!confirm("Remove this region?")) return;' +
+'    const response = await fetch("/tickets/regions/" + id, { method: "DELETE" });' +
+'    if (response.ok) { loadRegionsList(); loadBranchesList(); }' +
+'    else { const err = await response.json(); alert(err.error || "Could not delete region."); }' +
+'}' +
+'async function loadBranchesList() {' +
+'    const [branchRes, regionRes] = await Promise.all([fetch("/public-branches"), fetch("/tickets/regions")]);' +
+'    const branches = await branchRes.json();' +
+'    const regions = await regionRes.json();' +
+'    const allRegionNames = regions.map(r => r.name);' +
+'    if (allRegionNames.indexOf("Unassigned") === -1) allRegionNames.push("Unassigned");' +
+'    const container = document.getElementById("branchGroupsContainer");' +
+'    container.innerHTML = "";' +
+'    if (branches.length === 0) {' +
+'        container.innerHTML = \'<p style="text-align: center; color: #a0aec0; padding: 20px;">No branch locations added yet.</p>\';' +
+'        return;' +
+'    }' +
+'    const groups = {};' +
+'    branches.forEach(b => {' +
+'        const region = b.region || "Unassigned";' +
+'        if (!groups[region]) groups[region] = [];' +
+'        groups[region].push(b);' +
+'    });' +
+'    Object.keys(groups).sort().forEach(region => {' +
+'        let rowsHtml = "";' +
+'        groups[region].forEach(b => {' +
+'            const safeName = b.name.replace(/\'/g, "\\\\\'");' +
+'            let regionOptionsHtml = "";' +
+'            allRegionNames.forEach(rn => {' +
+'                regionOptionsHtml += \'<option value="\'+rn+\'"\'+(rn === region ? \' selected\' : \'\')+\'>\'+rn+\'</option>\';' +
 '            });' +
-'        }' +
-'        async function addNewBranch() {' +
-'            const input = document.getElementById("newBranchName");' +
-'            const name = input.value.trim();' +
-'            if (!name) return;' +
-'            const response = await fetch("/tickets/branches", {' +
-'                method: "POST",' +
-'                headers: { "Content-Type": "application/json" },' +
-'                body: JSON.stringify({ name })' +
-'            });' +
-'            if(response.ok) { input.value = ""; loadBranchesList(); }' +
-'        }' +
-'        async function editBranch(id, currentName) {' +
-'            const newName = prompt("Edit branch name:", currentName);' +
-'            if (!newName || !newName.trim() || newName === currentName) return;' +
-'            const response = await fetch("/tickets/branches/" + id, {' +
-'                method: "PUT",' +
-'                headers: { "Content-Type": "application/json" },' +
-'                body: JSON.stringify({ name: newName.trim() })' +
-'            });' +
-'            if (response.ok) loadBranchesList();' +
-'            else alert("Could not update branch.");' +
-'        }' +
-'        async function deleteBranch(id) {' +
-'            if(!confirm("Remove this branch option?")) return;' +
-'            const response = await fetch("/tickets/branches/" + id, { method: "DELETE" });' +
-'            if(response.ok) loadBranchesList();' +
-'        }' +
+'            rowsHtml += \'<tr><td>\'+b.name+\'</td><td><select onchange="moveBranchRegion(\\\'\'+b._id+\'\\\', this.value)" style="padding:6px;border:1px solid #cbd5e0;border-radius:4px;font-size:13px;">\'+regionOptionsHtml+\'</select></td><td><button class="branch-delete-btn" onclick="editBranch(\\\'\'+b._id+\'\\\', \\\'\'+safeName+\'\\\')">Edit</button></td><td><button class="branch-delete-btn" onclick="deleteBranch(\\\'\'+b._id+\'\\\')">Delete</button></td></tr>\';' +
+'        });' +
+'        container.innerHTML +=' +
+'            \'<h3 style="margin: 20px 0 8px; font-size: 14px; font-weight: 700; color: #4a5568; text-transform: uppercase; letter-spacing: 0.5px;">\' + region + \'</h3>\' +' +
+'            \'<table class="branch-table"><thead><tr><th>Branch Name</th><th>Region</th><th>Edit</th><th>Delete</th></tr></thead><tbody>\' + rowsHtml + \'</tbody></table>\';' +
+'    });' +
+'}' +
+'async function addNewBranch() {' +
+'    const input = document.getElementById("newBranchName");' +
+'    const regionSelect = document.getElementById("newBranchRegion");' +
+'    const name = input.value.trim();' +
+'    const region = regionSelect.value;' +
+'    if (!name || !region) { alert("Please enter a branch name and select a region."); return; }' +
+'    const response = await fetch("/tickets/branches", {' +
+'        method: "POST",' +
+'        headers: { "Content-Type": "application/json" },' +
+'        body: JSON.stringify({ name, region })' +
+'    });' +
+'    if (response.ok) { input.value = ""; regionSelect.value = ""; loadBranchesList(); }' +
+'    else { const err = await response.json(); alert(err.error || "Could not add branch."); }' +
+'}' +
+'async function editBranch(id, currentName) {' +
+'    const newName = prompt("Edit branch name:", currentName);' +
+'    if (!newName || !newName.trim() || newName === currentName) return;' +
+'    const response = await fetch("/tickets/branches/" + id, {' +
+'        method: "PUT",' +
+'        headers: { "Content-Type": "application/json" },' +
+'        body: JSON.stringify({ name: newName.trim() })' +
+'    });' +
+'    if (response.ok) loadBranchesList();' +
+'    else alert("Could not update branch.");' +
+'}' +
+'async function deleteBranch(id) {' +
+'    if(!confirm("Remove this branch option?")) return;' +
+'    const response = await fetch("/tickets/branches/" + id, { method: "DELETE" });' +
+'    if(response.ok) loadBranchesList();' +
+'}' +
+'async function moveBranchRegion(id, newRegion) {' +
+'    const response = await fetch("/tickets/branches/" + id, {' +
+'        method: "PUT",' +
+'        headers: { "Content-Type": "application/json" },' +
+'        body: JSON.stringify({ region: newRegion })' +
+'    });' +
+'    if (response.ok) loadBranchesList();' +
+'    else alert("Could not move branch to that region.");' +
+'}' +
 '        async function loadStaffList() {' +
 '            const [staffRes, branchRes, assignRes] = await Promise.all([' +
 '                fetch("/tickets/staff-list"), fetch("/public-branches"), fetch("/tickets/staff-branches")' +
@@ -824,11 +930,24 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            tbody.innerHTML = "";' +
 '            staff.forEach(s => {' +
 '                const assigned = assignments[s.id] || [];' +
-'                let checkboxesHtml = branches.map(b => {' +
-'                    const checked = assigned.includes(b.name) ? "checked" : "";' +
-'                    return \'<label style="display:inline-flex;align-items:center;gap:4px;margin-right:12px;font-weight:normal;font-size:13px;"><input type="checkbox" value="\'+b.name+\'" \'+checked+\' onchange="updateStaffBranches(\\\'\'+s.id+\'\\\')" class="branch-check-\'+s.id+\'"> \'+b.name+\'</label>\';' +
-'                }).join("");' +
-'                if (branches.length === 0) checkboxesHtml = \'<span style="color:#a0aec0;">No branches added yet</span>\';' +
+'                let checkboxesHtml = "";' +
+'                if (branches.length === 0) {' +
+'                    checkboxesHtml = \'<span style="color:#a0aec0;">No branches added yet</span>\';' +
+'                } else {' +
+'                    const regionGroups = {};' +
+'                    branches.forEach(b => {' +
+'                        const region = b.region || "Unassigned";' +
+'                        if (!regionGroups[region]) regionGroups[region] = [];' +
+'                        regionGroups[region].push(b);' +
+'                    });' +
+'                    Object.keys(regionGroups).sort().forEach(region => {' +
+'                        checkboxesHtml += \'<div style="font-size:11px;font-weight:700;color:#718096;text-transform:uppercase;margin:6px 0 3px;">\' + region + \'</div>\';' +
+'                        regionGroups[region].forEach(b => {' +
+'                            const checked = assigned.includes(b.name) ? "checked" : "";' +
+'                            checkboxesHtml += \'<label style="display:inline-flex;align-items:center;gap:4px;margin-right:12px;font-weight:normal;font-size:13px;"><input type="checkbox" value="\'+b.name+\'" \'+checked+\' onchange="updateStaffBranches(\\\'\'+s.id+\'\\\')" class="branch-check-\'+s.id+\'"> \'+b.name+\'</label>\';' +
+'                        });' +
+'                    });' +
+'                }' +
 '                let nameCell, emailCell, editCell, deleteCell;' +
 '                if (editingStaffIds.has(s.id)) {' +
 '                    nameCell = \'<input type="text" id="editName-\'+s.id+\'" value="\'+s.name+\'" style="width:100%;padding:6px;border:1px solid #cbd5e0;border-radius:4px;">\';' +
@@ -1133,10 +1252,64 @@ app.post('/tickets/:id/comment', checkUserLogin, async (req, res) => {
 
 app.get('/public-branches', async (req, res) => {
     try {
-        const branches = await Branch.find().sort({ name: 1 });
+        const branches = await Branch.find().sort({ region: 1, name: 1 });
         res.json(branches);
     } catch(err) {
         res.status(500).json([]);
+    }
+});
+
+// Regions (admin only — used to organize the branch list into groups)
+app.get('/tickets/regions', checkAdminLogin, async (req, res) => {
+    const regions = await Region.find().sort({ name: 1 });
+    res.json(regions);
+});
+
+app.post('/tickets/regions', checkAdminLogin, async (req, res) => {
+    try {
+        const name = (req.body.name || '').trim();
+        if (!name) return res.status(400).json({ error: 'Region name is required' });
+        const newRegion = new Region({ name });
+        await newRegion.save();
+        await logAudit(req.session.username, 'Add Region', `Added region "${newRegion.name}"`);
+        res.status(201).json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.put('/tickets/regions/:id', checkAdminLogin, async (req, res) => {
+    try {
+        const name = (req.body.name || '').trim();
+        if (!name) return res.status(400).json({ error: 'Region name is required' });
+        const region = await Region.findById(req.params.id);
+        if (!region) return res.status(404).json({ error: 'Region not found' });
+        const oldName = region.name;
+        region.name = name;
+        await region.save();
+        if (oldName !== name) {
+            await Branch.updateMany({ region: oldName }, { $set: { region: name } });
+        }
+        await logAudit(req.session.username, 'Edit Region', `Renamed region "${oldName}" to "${name}"`);
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.delete('/tickets/regions/:id', checkAdminLogin, async (req, res) => {
+    try {
+        const region = await Region.findById(req.params.id);
+        if (!region) return res.status(404).json({ error: 'Region not found' });
+        const branchCount = await Branch.countDocuments({ region: region.name });
+        if (branchCount > 0) {
+            return res.status(400).json({ error: `Cannot delete — ${branchCount} branch(es) still belong to this region. Reassign or remove them first.` });
+        }
+        await Region.findByIdAndDelete(req.params.id);
+        await logAudit(req.session.username, 'Delete Region', `Removed region "${region.name}"`);
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
     }
 });
 
@@ -1156,9 +1329,14 @@ app.get('/tickets/lookup', async (req, res) => {
 
 app.post('/tickets/branches', checkAdminLogin, async (req, res) => {
     try {
-        const newBranch = new Branch({ name: req.body.name });
+        const name = (req.body.name || '').trim();
+        const region = (req.body.region || '').trim();
+        if (!name || !region) {
+            return res.status(400).json({ error: 'Branch name and region are both required' });
+        }
+        const newBranch = new Branch({ name, region });
         await newBranch.save();
-        await logAudit(req.session.username, 'Add Branch', `Added branch "${newBranch.name}"`);
+        await logAudit(req.session.username, 'Add Branch', `Added branch "${newBranch.name}" under region "${region}"`);
         res.status(201).json({ success: true });
     } catch(err) {
         res.status(500).json({ error: err.message });
@@ -1175,26 +1353,34 @@ app.delete('/tickets/branches/:id', checkAdminLogin, async (req, res) => {
     res.json({ success: true });
 });
 
-// Rename a branch, and update any staff assignments that reference the old name
+// Update a branch's name and/or region, keeping staff assignments in sync
 app.put('/tickets/branches/:id', checkAdminLogin, async (req, res) => {
     try {
-        const { name } = req.body;
-        if (!name || !name.trim()) {
-            return res.status(400).json({ error: 'Branch name is required' });
-        }
         const branch = await Branch.findById(req.params.id);
         if (!branch) return res.status(404).json({ error: 'Branch not found' });
         const oldName = branch.name;
-        branch.name = name.trim();
+        const oldRegion = branch.region;
+
+        if (req.body.name !== undefined) {
+            if (!req.body.name.trim()) return res.status(400).json({ error: 'Branch name cannot be empty' });
+            branch.name = req.body.name.trim();
+        }
+        if (req.body.region !== undefined && req.body.region.trim()) {
+            branch.region = req.body.region.trim();
+        }
         await branch.save();
+
         if (oldName !== branch.name) {
             await StaffBranch.updateMany(
                 { branches: oldName },
                 { $set: { 'branches.$[elem]': branch.name } },
                 { arrayFilters: [{ elem: oldName }] }
             );
+            await logAudit(req.session.username, 'Edit Branch', `Renamed branch "${oldName}" to "${branch.name}"`);
         }
-        await logAudit(req.session.username, 'Edit Branch', `Renamed branch "${oldName}" to "${branch.name}"`);
+        if (oldRegion !== branch.region) {
+            await logAudit(req.session.username, 'Edit Branch', `Moved branch "${branch.name}" from region "${oldRegion}" to "${branch.region}"`);
+        }
         res.json({ success: true });
     } catch (err) {
         res.status(500).json({ error: err.message });
