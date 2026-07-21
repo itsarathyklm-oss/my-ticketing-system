@@ -81,7 +81,7 @@ const counterSchema = new mongoose.Schema({
 });
 const Counter = mongoose.model('Counter', counterSchema);
 
-// Audit Log Schema — tracks admin management actions (staff/branch changes, auto-escalation)
+// Audit Log Schema — tracks admin management actions (staff/branch changes)
 const auditLogSchema = new mongoose.Schema({
     actor: { type: String, required: true },
     action: { type: String, required: true },
@@ -283,7 +283,7 @@ body {
     padding: 16px;
     overflow: hidden;
 }
-.ticket-card { width: 100%; max-width: 560px; max-height: 92vh; background: #fdfcfb; border-radius: 14px; box-shadow: 0 24px 70px rgba(0,0,0,0.45); overflow-y: auto; overflow-x: hidden; }
+.ticket-card { width: 100%; max-width: 660px; max-height: 92vh; background: #fdfcfb; border-radius: 14px; box-shadow: 0 24px 70px rgba(0,0,0,0.45); overflow-y: auto; overflow-x: hidden; }
 .ticket-ribbon { background: #1e2229; padding: 12px 26px; display: flex; align-items: center; gap: 12px; }
 .ticket-ribbon img { height: 28px; width: auto; object-fit: contain; }
 .ticket-ribbon-text { font-family: 'Barlow Condensed', sans-serif; font-weight: 700; font-size: 16px; letter-spacing: 1px; color: #fff; text-transform: uppercase; }
@@ -294,8 +294,9 @@ h2.form-title { font-family: 'Barlow Condensed', sans-serif; font-weight: 600; f
 .ticket-perforation::before, .ticket-perforation::after { content: ''; position: absolute; top: -8px; width: 16px; height: 16px; border-radius: 50%; background: #f1f0ee; box-shadow: inset 0 1px 3px rgba(0,0,0,0.15); }
 .ticket-perforation::before { left: -8px; }
 .ticket-perforation::after { right: -8px; }
-.form-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; column-gap: 12px; }
-@media (max-width: 480px) { .form-grid { grid-template-columns: 1fr; } }
+.form-grid { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; column-gap: 12px; }
+@media (max-width: 600px) { .form-grid { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 400px) { .form-grid { grid-template-columns: 1fr; } }
 .form-field { margin-top: 8px; min-width: 0; }
 .full-width { grid-column: 1 / -1; }
 label { display: block; margin-bottom: 3px; font-weight: 600; font-size: 10.5px; color: #6b7280; text-transform: uppercase; letter-spacing: .4px; }
@@ -319,33 +320,42 @@ button[type="submit"]:active { transform: translateY(0); }
 .status-result-title { font-size: 13px; color: #1e2229; font-weight: 600; margin-top: 5px; }
 .status-result-meta { font-size: 11px; color: #8a8f98; margin-top: 3px; }
 .page-footer { position: fixed; bottom: 8px; left: 0; width: 100%; text-align: center; font-size: 11px; color: rgba(255,255,255,0.55); letter-spacing: .3px; }
-</style></head><body><div class="ticket-card"><div class="ticket-ribbon"><img src="/logo.png" alt="Company Logo" onerror="this.style.display='none'"><span class="ticket-ribbon-text">Sarathy IT Helpdesk</span></div><div class="tab-switch"><button type="button" class="tab-btn active" id="tabSubmitBtn" onclick="showTab('submit')">Submit Ticket</button><button type="button" class="tab-btn" id="tabStatusBtn" onclick="showTab('status')">Check Status</button></div><div class="ticket-body"><div id="submitPane"><h2 class="form-title">Submit a New Ticket</h2><div class="form-subtitle">We'll route it to the right person and keep you posted.</div><div class="ticket-perforation"></div><form id="ticketForm" enctype="multipart/form-data" class="form-grid"><div class="form-field"><label>Your Name</label><input type="text" id="submitterName" required></div><div class="form-field"><label>Designation</label><input type="text" id="submitterDesignation"></div><div class="form-field"><label>Mobile Number</label><input type="tel" id="mobile" placeholder="10-digit mobile number" pattern="[0-9]{10}" maxlength="10" inputmode="numeric" oninput="this.value=this.value.replace(/[^0-9]/g,'').slice(0,10)" required></div><div class="form-field full-width"><label>Issue Title</label><input type="text" id="title" required></div><div class="form-field"><label>Branch Location</label><select id="branch" required><option value="" disabled selected>Loading...</option></select></div><div class="form-field"><label>Priority Level</label><select id="priority"><option value="Low">Low</option><option value="Medium" selected>Medium</option><option value="High">High</option></select></div><div class="form-field"><label>Category</label><select id="category" required><option value="" disabled selected>Select Category</option><option value="Hardware">Hardware</option><option value="Software">Software</option><option value="Network">Network</option><option value="Printer">Printer</option><option value="Other">Other</option></select></div><div class="form-field full-width"><label>Description</label><textarea id="description" required></textarea></div><div class="form-field full-width"><label>Upload Screenshot (Optional)</label><input type="file" id="screenshot" accept="image/*"></div><button type="submit">Submit Ticket</button></form></div><div id="statusPane" style="display:none;"><h2 class="form-title">Check Ticket Status</h2><div class="form-subtitle">Enter the mobile number you used when submitting.</div><label>Mobile Number</label><input type="tel" id="statusMobile" placeholder="Enter your 10-digit mobile number" pattern="[0-9]{10}" maxlength="10" inputmode="numeric" oninput="this.value=this.value.replace(/[^0-9]/g,'').slice(0,10)"><button type="button" class="check-status-btn" onclick="checkTicketStatus()">Check Status</button><div id="statusResults"></div></div></div></div><div class="page-footer">&copy; 2026 Sarathy Pvt Ltd</div><script>
+</style></head><body><div class="ticket-card"><div class="ticket-ribbon"><img src="/logo.png" alt="Company Logo" onerror="this.style.display='none'"><span class="ticket-ribbon-text">Sarathy IT Helpdesk</span></div><div class="tab-switch"><button type="button" class="tab-btn active" id="tabSubmitBtn" onclick="showTab('submit')">Submit Ticket</button><button type="button" class="tab-btn" id="tabStatusBtn" onclick="showTab('status')">Check Status</button></div><div class="ticket-body"><div id="submitPane"><h2 class="form-title">Submit a New Ticket</h2><div class="form-subtitle">We'll route it to the right person and keep you posted.</div><div class="ticket-perforation"></div><form id="ticketForm" enctype="multipart/form-data" class="form-grid"><div class="form-field"><label>Your Name</label><input type="text" id="submitterName" required></div><div class="form-field"><label>Designation</label><input type="text" id="submitterDesignation"></div><div class="form-field"><label>Mobile Number</label><input type="tel" id="mobile" placeholder="10-digit mobile number" pattern="[0-9]{10}" maxlength="10" inputmode="numeric" oninput="this.value=this.value.replace(/[^0-9]/g,'').slice(0,10)" required></div><div class="form-field full-width"><label>Issue Title</label><input type="text" id="title" required></div><div class="form-field"><label>Region</label><select id="region" required onchange="updateBranchOptions()"><option value="" disabled selected>Loading...</option></select></div><div class="form-field"><label>Branch Location</label><select id="branch" required><option value="" disabled selected>Select region first</option></select></div><div class="form-field"><label>Priority Level</label><select id="priority"><option value="Low">Low</option><option value="Medium" selected>Medium</option><option value="High">High</option></select></div><div class="form-field"><label>Category</label><select id="category" required><option value="" disabled selected>Select Category</option><option value="Hardware">Hardware</option><option value="Software">Software</option><option value="Network">Network</option><option value="Printer">Printer</option><option value="Other">Other</option></select></div><div class="form-field full-width"><label>Description</label><textarea id="description" required></textarea></div><div class="form-field full-width"><label>Upload Screenshot (Optional)</label><input type="file" id="screenshot" accept="image/*"></div><button type="submit">Submit Ticket</button></form></div><div id="statusPane" style="display:none;"><h2 class="form-title">Check Ticket Status</h2><div class="form-subtitle">Enter the mobile number you used when submitting.</div><label>Mobile Number</label><input type="tel" id="statusMobile" placeholder="Enter your 10-digit mobile number" pattern="[0-9]{10}" maxlength="10" inputmode="numeric" oninput="this.value=this.value.replace(/[^0-9]/g,'').slice(0,10)"><button type="button" class="check-status-btn" onclick="checkTicketStatus()">Check Status</button><div id="statusResults"></div></div></div></div><div class="page-footer">&copy; 2026 Sarathy Pvt Ltd</div><script>
+    let allBranchesCache = [];
     async function loadFormBranches() {
         try {
             const res = await fetch('/public-branches');
-            const branches = await res.json();
-            const select = document.getElementById('branch');
-            if (branches.length === 0) {
-                select.innerHTML = '<option value="General">No specific branches configured</option>';
+            allBranchesCache = await res.json();
+            const regionSelect = document.getElementById('region');
+            const branchSelect = document.getElementById('branch');
+            if (allBranchesCache.length === 0) {
+                regionSelect.innerHTML = '<option value="">No branches configured</option>';
+                branchSelect.innerHTML = '<option value="General">No specific branches configured</option>';
                 return;
             }
-            select.innerHTML = '<option value="" disabled selected>Choose branch location</option>';
-            const regionGroups = {};
-            branches.forEach(b => {
-                const region = b.region || 'Unassigned';
-                if (!regionGroups[region]) regionGroups[region] = [];
-                regionGroups[region].push(b);
+            const regions = [...new Set(allBranchesCache.map(b => b.region || 'Unassigned'))].sort();
+            regionSelect.innerHTML = '<option value="" disabled selected>Choose region</option>';
+            regions.forEach(r => {
+                regionSelect.innerHTML += '<option value="' + r + '">' + r + '</option>';
             });
-            Object.keys(regionGroups).sort().forEach(region => {
-                select.innerHTML += '<optgroup label="' + region + '">';
-                regionGroups[region].forEach(b => {
-                    select.innerHTML += '<option value="' + b.name + '">' + b.name + '</option>';
-                });
-                select.innerHTML += '</optgroup>';
-            });
+            branchSelect.innerHTML = '<option value="" disabled selected>Select region first</option>';
         } catch(e) {
+            document.getElementById('region').innerHTML = '<option value="">Error loading regions</option>';
             document.getElementById('branch').innerHTML = '<option value="General">General/Headquarters</option>';
         }
+    }
+    function updateBranchOptions() {
+        const region = document.getElementById('region').value;
+        const branchSelect = document.getElementById('branch');
+        const filtered = allBranchesCache.filter(b => (b.region || 'Unassigned') === region);
+        if (filtered.length === 0) {
+            branchSelect.innerHTML = '<option value="" disabled selected>No branches in this region</option>';
+            return;
+        }
+        branchSelect.innerHTML = '<option value="" disabled selected>Choose branch location</option>';
+        filtered.forEach(b => {
+            branchSelect.innerHTML += '<option value="' + b.name + '">' + b.name + '</option>';
+        });
     }
     loadFormBranches();
 
@@ -490,6 +500,33 @@ app.get('/logout', (req, res) => {
     res.redirect('/login');
 });
 
+// Staff can change their own password. Admin's password is set via an environment
+// variable (ADMIN_PASSWORD), so it can't be changed here — only from the hosting dashboard.
+app.post('/change-password', checkUserLogin, async (req, res) => {
+    try {
+        if (req.session.isAdmin) {
+            return res.status(400).json({ error: 'Admin password is set via the ADMIN_PASSWORD environment variable in your hosting dashboard — it can\'t be changed here.' });
+        }
+        const { currentPassword, newPassword } = req.body;
+        if (!currentPassword || !newPassword) {
+            return res.status(400).json({ error: 'Current and new password are both required' });
+        }
+        if (newPassword.length < 4) {
+            return res.status(400).json({ error: 'New password is too short' });
+        }
+        const staffUser = await Staff.findOne({ name: req.session.username });
+        if (!staffUser) return res.status(404).json({ error: 'Account not found' });
+        const isValid = await verifyPassword(currentPassword, staffUser.password);
+        if (!isValid) return res.status(401).json({ error: 'Current password is incorrect' });
+        staffUser.password = await bcrypt.hash(newPassword, 10);
+        await staffUser.save();
+        await logAudit(req.session.username, 'Change Password', `${req.session.username} changed their own password`);
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // Admin Panel
 app.get('/admin', checkUserLogin, (req, res) => {
     const dynamicUsername = req.session.username || 'User';
@@ -588,6 +625,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 (isAdminUser ? '                <li class="menu-item" id="tabStaffLink" onclick="switchView(\'staff\')">Manage IT Staff</li>' : '') +
 (isAdminUser ? '                <li class="menu-item" id="tabAuditLink" onclick="switchView(\'audit\')">Audit Log</li>' : '') +
 '                <li class="menu-item" id="tabReportsLink" onclick="switchView(\'reports\')">Reports</li>' +
+'                <li class="menu-item" id="tabPasswordLink" onclick="switchView(\'password\')">Change Password</li>' +
 '            </ul>' +
 '        </div>' +
 '        <div class="sidebar-footer">' +
@@ -639,6 +677,24 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                    <div class="chart-card wide"><h3>Ticket Volume \u2014 Last 30 Days</h3><canvas id="chartTrend"></canvas></div>' +
 (isAdminUser ? '                    <div class="chart-card"><h3>Tickets by Staff</h3><canvas id="chartStaff"></canvas></div>' : '') +
 (isAdminUser ? '                    <div class="chart-card"><h3>Tickets by Branch</h3><canvas id="chartBranch"></canvas></div>' : '') +
+'                </div>' +
+'            </div>' +
+'            <div id="viewChangePassword" class="dashboard-view">' +
+'                <div class="branch-panel-card">' +
+'                    <h2>Change Password</h2>' +
+(isAdminUser ?
+'                    <p style="color:#718096;font-size:14px;line-height:1.6;max-width:480px;">Admin password is set via the <code>ADMIN_PASSWORD</code> environment variable in your hosting dashboard (e.g. Render). Update it there and redeploy \u2014 it can\'t be changed from this page.</p>'
+:
+'                    <div style="max-width:360px;">' +
+'                        <label style="display:block;font-size:12px;font-weight:600;color:#4a5568;margin-top:14px;margin-bottom:4px;">Current Password</label>' +
+'                        <input type="password" id="currentPassword" style="width:100%;padding:10px;border:1px solid #cbd5e0;border-radius:6px;font-size:14px;">' +
+'                        <label style="display:block;font-size:12px;font-weight:600;color:#4a5568;margin-top:14px;margin-bottom:4px;">New Password</label>' +
+'                        <input type="password" id="newPassword" style="width:100%;padding:10px;border:1px solid #cbd5e0;border-radius:6px;font-size:14px;">' +
+'                        <label style="display:block;font-size:12px;font-weight:600;color:#4a5568;margin-top:14px;margin-bottom:4px;">Confirm New Password</label>' +
+'                        <input type="password" id="confirmPassword" style="width:100%;padding:10px;border:1px solid #cbd5e0;border-radius:6px;font-size:14px;">' +
+'                        <button class="branch-add-btn" onclick="changePassword()" style="margin-top:16px;">Update Password</button>' +
+'                    </div>'
+) +
 '                </div>' +
 '            </div>' +
 '            <div id="viewBranches" class="dashboard-view">' +
@@ -713,6 +769,10 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                document.getElementById("tabReportsLink").classList.add("active");' +
 '                document.getElementById("panelViewTitle").innerText = "Monthly Reports";' +
 '                loadReportCharts();' +
+'            } else if (target === "password") {' +
+'                document.getElementById("viewChangePassword").classList.add("active");' +
+'                document.getElementById("tabPasswordLink").classList.add("active");' +
+'                document.getElementById("panelViewTitle").innerText = "Change Password";' +
 '            } else if (target === "branches") {' +
 '                document.getElementById("viewBranches").classList.add("active");' +
 '                document.getElementById("tabBranchesLink").classList.add("active");' +
@@ -1142,6 +1202,27 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            if (!from || !to) { alert("Please select both a From and To date."); return; }' +
 '            window.location.href = "/tickets/report?from=" + from + "&to=" + to;' +
 '        }' +
+'        async function changePassword() {' +
+'            const current = document.getElementById("currentPassword").value;' +
+'            const next = document.getElementById("newPassword").value;' +
+'            const confirmVal = document.getElementById("confirmPassword").value;' +
+'            if (!current || !next || !confirmVal) { alert("Please fill in all fields."); return; }' +
+'            if (next !== confirmVal) { alert("New password and confirmation do not match."); return; }' +
+'            const response = await fetch("/change-password", {' +
+'                method: "POST",' +
+'                headers: { "Content-Type": "application/json" },' +
+'                body: JSON.stringify({ currentPassword: current, newPassword: next })' +
+'            });' +
+'            const data = await response.json();' +
+'            if (response.ok) {' +
+'                alert("Password updated successfully.");' +
+'                document.getElementById("currentPassword").value = "";' +
+'                document.getElementById("newPassword").value = "";' +
+'                document.getElementById("confirmPassword").value = "";' +
+'            } else {' +
+'                alert(data.error || "Could not update password.");' +
+'            }' +
+'        }' +
 '        document.getElementById("reportMonth").value = new Date().toISOString().slice(0, 7);' +
 '        loadStaffFilterOptions();' +
 '        loadTickets();' +
@@ -1392,7 +1473,7 @@ app.get('/tickets/staff-list', checkAdminLogin, async (req, res) => {
     res.json(staff.map(s => ({ id: s.staffId, name: s.name, email: s.email })));
 });
 
-// Recent admin activity — staff/branch changes and auto-escalations
+// Recent admin activity — staff/branch changes
 app.get('/audit-log', checkAdminLogin, async (req, res) => {
     const entries = await AuditLog.find().sort({ createdAt: -1 }).limit(200);
     res.json(entries);
@@ -1533,36 +1614,6 @@ app.post('/tickets', upload.single('screenshot'), async (req, res) => {
         res.status(500).json({ error: err.message });
     }
 });
-
-// Auto-escalation: High priority tickets left Open too long get bumped to Admin automatically.
-// Note: this only runs while the server process is awake. On Render's free tier the app
-// spins down after inactivity, so this check only fires again once something wakes it back up
-// (e.g. the next visitor). It'll run continuously and reliably once on an always-on host.
-const AUTO_ESCALATE_HOURS = Number(process.env.AUTO_ESCALATE_HOURS) || 4;
-async function runAutoEscalation() {
-    try {
-        const cutoff = new Date(Date.now() - AUTO_ESCALATE_HOURS * 60 * 60 * 1000);
-        const staleTickets = await Ticket.find({
-            priority: 'High',
-            status: 'Open',
-            escalated: false,
-            createdAt: { $lte: cutoff }
-        });
-        for (const ticket of staleTickets) {
-            ticket.escalated = true;
-            ticket.assignedTo = 'Admin';
-            await ticket.save();
-            await logAudit('System', 'Auto-Escalate', `Ticket #${String(ticket.ticketNumber).padStart(4, '0')} (${ticket.title}) auto-escalated to Admin — High priority, open more than ${AUTO_ESCALATE_HOURS}h`);
-        }
-        if (staleTickets.length > 0) {
-            console.log(`Auto-escalated ${staleTickets.length} stale high-priority ticket(s).`);
-        }
-    } catch (err) {
-        console.error('Auto-escalation check failed:', err.message);
-    }
-}
-setInterval(runAutoEscalation, 15 * 60 * 1000); // check every 15 minutes
-runAutoEscalation(); // also run once at startup
 
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`Server configuration active on port ${PORT}`);
