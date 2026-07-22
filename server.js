@@ -383,6 +383,7 @@ button[type="submit"]:active { transform: translateY(0); }
             const response = await fetch('/tickets', { method: 'POST', body: formData }); 
             if (response.ok) { 
                 const result = await response.json();
+                localStorage.setItem('sarathyTicketMobile', document.getElementById('mobile').value);
                 alert('Ticket #' + String(result.ticketNumber).padStart(4, '0') + ' submitted successfully!'); 
                 document.getElementById('ticketForm').reset(); 
                 loadFormBranches();
@@ -402,6 +403,13 @@ button[type="submit"]:active { transform: translateY(0); }
         document.getElementById('statusPane').style.display = tab === 'status' ? 'block' : 'none';
         document.getElementById('tabSubmitBtn').classList.toggle('active', tab === 'submit');
         document.getElementById('tabStatusBtn').classList.toggle('active', tab === 'status');
+        if (tab === 'status') {
+            const savedMobile = localStorage.getItem('sarathyTicketMobile');
+            if (savedMobile) {
+                document.getElementById('statusMobile').value = savedMobile;
+                checkTicketStatus();
+            }
+        }
     }
 
     async function checkTicketStatus() {
