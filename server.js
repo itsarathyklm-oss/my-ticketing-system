@@ -241,7 +241,7 @@ function loginRateLimiter(req, res, next) {
         return next();
     }
     if (entry.count >= LOGIN_MAX_ATTEMPTS) {
-        return res.send('<h3>Too many login attempts. Please wait a few minutes and try again.</h3>');
+        return res.status(429).json({ error: 'Too many login attempts. Please wait a few minutes and try again.' });
     }
     entry.count++;
     next();
@@ -303,7 +303,10 @@ label { display: block; margin-bottom: 3px; font-weight: 600; font-size: 10.5px;
 input, textarea, select { width: 100%; padding: 8px 11px; border: 1.5px solid #e5e1de; border-radius: 7px; font-size: 13px; font-family: 'Inter', sans-serif; background: #faf9f7; color: #1e2229; transition: border-color .18s, box-shadow .18s; }
 input:focus, textarea:focus, select:focus { outline: none; border-color: #e53e3e; box-shadow: 0 0 0 3px rgba(229,62,62,.14); background: #fff; }
 textarea { resize: none; height: 44px; }
-button[type="submit"] { grid-column: 1 / -1; margin-top: 12px; padding: 11px; width: 100%; background: linear-gradient(120deg, #e53e3e, #c53030); color: #fff; border: none; border-radius: 8px; cursor: pointer; font-family: 'Barlow Condensed', sans-serif; font-weight: 700; font-size: 14px; letter-spacing: 1px; text-transform: uppercase; box-shadow: 0 8px 20px rgba(197,48,48,.4); transition: transform .15s, box-shadow .15s; }
+button[type="submit"] { grid-column: 1 / -1; margin-top: 12px; padding: 11px; width: 100%; background: linear-gradient(120deg, #e53e3e, #c53030); color: #fff; border: none; border-radius: 8px; cursor: pointer; font-family: 'Barlow Condensed', sans-serif; font-weight: 700; font-size: 14px; letter-spacing: 1px; text-transform: uppercase; box-shadow: 0 8px 20px rgba(197,48,48,.4); transition: transform .15s, box-shadow .15s; display: flex; align-items: center; justify-content: center; gap: 8px; }
+button[type="submit"]:disabled { opacity: .7; cursor: not-allowed; transform: none; }
+.spinner { width: 14px; height: 14px; border: 2px solid rgba(255,255,255,.45); border-top-color: #fff; border-radius: 50%; animation: spin .7s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
 button[type="submit"]:hover { transform: translateY(-2px); box-shadow: 0 12px 28px rgba(197,48,48,.5); }
 button[type="submit"]:active { transform: translateY(0); }
 .tab-switch { display: flex; background: #f1f0ee; }
@@ -320,7 +323,7 @@ button[type="submit"]:active { transform: translateY(0); }
 .status-result-title { font-size: 13px; color: #1e2229; font-weight: 600; margin-top: 5px; }
 .status-result-meta { font-size: 11px; color: #8a8f98; margin-top: 3px; }
 .page-footer { position: fixed; bottom: 8px; left: 0; width: 100%; text-align: center; font-size: 11px; color: rgba(255,255,255,0.55); letter-spacing: .3px; }
-</style></head><body><div class="ticket-card"><div class="ticket-ribbon"><img src="/logo.png" alt="Company Logo" onerror="this.style.display='none'"><span class="ticket-ribbon-text">Sarathy IT Helpdesk</span></div><div class="tab-switch"><button type="button" class="tab-btn active" id="tabSubmitBtn" onclick="showTab('submit')">Submit Ticket</button><button type="button" class="tab-btn" id="tabStatusBtn" onclick="showTab('status')">Check Status</button></div><div class="ticket-body"><div id="submitPane"><h2 class="form-title">Submit a New Ticket</h2><div class="form-subtitle">We'll route it to the right person and keep you posted.</div><div class="ticket-perforation"></div><form id="ticketForm" enctype="multipart/form-data" class="form-grid"><div class="form-field"><label>Your Name</label><input type="text" id="submitterName" required></div><div class="form-field"><label>Designation</label><input type="text" id="submitterDesignation"></div><div class="form-field"><label>Mobile Number</label><input type="tel" id="mobile" placeholder="10-digit mobile number" pattern="[0-9]{10}" maxlength="10" inputmode="numeric" oninput="this.value=this.value.replace(/[^0-9]/g,'').slice(0,10)" required></div><div class="form-field full-width"><label>Issue Title</label><input type="text" id="title" required></div><div class="form-field"><label>Region</label><select id="region" required onchange="updateBranchOptions()"><option value="" disabled selected>Loading...</option></select></div><div class="form-field"><label>Branch Location</label><select id="branch" required><option value="" disabled selected>Select region first</option></select></div><div class="form-field"><label>Priority Level</label><select id="priority"><option value="Low">Low</option><option value="Medium" selected>Medium</option><option value="High">High</option></select></div><div class="form-field"><label>Category</label><select id="category" required><option value="" disabled selected>Select Category</option><option value="Hardware">Hardware</option><option value="Software">Software</option><option value="Network">Network</option><option value="Printer">Printer</option><option value="Other">Other</option></select></div><div class="form-field full-width"><label>Description</label><textarea id="description" required></textarea></div><div class="form-field full-width"><label>Upload Screenshot (Optional)</label><input type="file" id="screenshot" accept="image/*"></div><button type="submit">Submit Ticket</button></form></div><div id="statusPane" style="display:none;"><h2 class="form-title">Check Ticket Status</h2><div class="form-subtitle">Enter the mobile number you used when submitting.</div><label>Mobile Number</label><input type="tel" id="statusMobile" placeholder="Enter your 10-digit mobile number" pattern="[0-9]{10}" maxlength="10" inputmode="numeric" oninput="this.value=this.value.replace(/[^0-9]/g,'').slice(0,10)"><button type="button" class="check-status-btn" onclick="checkTicketStatus()">Check Status</button><div id="statusResults"></div></div></div></div><div class="page-footer">&copy; 2026 Sarathy Pvt Ltd</div><script>
+</style></head><body><div class="ticket-card"><div class="ticket-ribbon"><img src="/logo.png" alt="Company Logo" onerror="this.style.display='none'"><span class="ticket-ribbon-text">Sarathy IT Helpdesk</span></div><div class="tab-switch"><button type="button" class="tab-btn active" id="tabSubmitBtn" onclick="showTab('submit')">Submit Ticket</button><button type="button" class="tab-btn" id="tabStatusBtn" onclick="showTab('status')">Check Status</button></div><div class="ticket-body"><div id="submitPane"><h2 class="form-title">Submit a New Ticket</h2><div class="form-subtitle">We'll route it to the right person and keep you posted.</div><div class="ticket-perforation"></div><form id="ticketForm" enctype="multipart/form-data" class="form-grid"><div class="form-field"><label>Your Name</label><input type="text" id="submitterName" required></div><div class="form-field"><label>Designation</label><input type="text" id="submitterDesignation"></div><div class="form-field"><label>Mobile Number</label><input type="tel" id="mobile" placeholder="10-digit mobile number" pattern="[0-9]{10}" maxlength="10" inputmode="numeric" oninput="this.value=this.value.replace(/[^0-9]/g,'').slice(0,10)" required></div><div class="form-field full-width"><label>Issue Title</label><input type="text" id="title" required></div><div class="form-field"><label>Region</label><select id="region" required onchange="updateBranchOptions()"><option value="" disabled selected>Loading...</option></select></div><div class="form-field"><label>Branch Location</label><select id="branch" required><option value="" disabled selected>Select region first</option></select></div><div class="form-field"><label>Priority Level</label><select id="priority"><option value="Low">Low</option><option value="Medium" selected>Medium</option><option value="High">High</option></select></div><div class="form-field"><label>Category</label><select id="category" required><option value="" disabled selected>Select Category</option><option value="Hardware">Hardware</option><option value="Software">Software</option><option value="Network">Network</option><option value="Printer">Printer</option><option value="Other">Other</option></select></div><div class="form-field full-width"><label>Description</label><textarea id="description" required></textarea></div><div class="form-field full-width"><label>Upload Screenshot (Optional)</label><input type="file" id="screenshot" accept="image/*"></div><button type="submit" id="submitTicketBtn">Submit Ticket</button></form></div><div id="statusPane" style="display:none;"><h2 class="form-title">Check Ticket Status</h2><div class="form-subtitle">Enter the mobile number you used when submitting.</div><label>Mobile Number</label><input type="tel" id="statusMobile" placeholder="Enter your 10-digit mobile number" pattern="[0-9]{10}" maxlength="10" inputmode="numeric" oninput="this.value=this.value.replace(/[^0-9]/g,'').slice(0,10)"><button type="button" class="check-status-btn" onclick="checkTicketStatus()">Check Status</button><div id="statusResults"></div></div></div></div><div class="page-footer">&copy; 2026 Sarathy Pvt Ltd</div><script>
     let allBranchesCache = [];
     async function loadFormBranches() {
         try {
@@ -361,6 +364,10 @@ button[type="submit"]:active { transform: translateY(0); }
 
     document.getElementById('ticketForm').addEventListener('submit', async (e) => { 
         e.preventDefault(); 
+        const submitBtn = document.getElementById('submitTicketBtn');
+        const submitBtnDefaultHTML = submitBtn.innerHTML;
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<span class="spinner"></span>Submitting...';
         const formData = new FormData(); 
         formData.append('title', document.getElementById('title').value); 
         formData.append('submittedBy', document.getElementById('submitterName').value);
@@ -372,13 +379,22 @@ button[type="submit"]:active { transform: translateY(0); }
         formData.append('description', document.getElementById('description').value); 
         const fileInput = document.getElementById('screenshot'); 
         if (fileInput.files[0]) formData.append('screenshot', fileInput.files[0]); 
-        const response = await fetch('/tickets', { method: 'POST', body: formData }); 
-        if (response.ok) { 
-            const result = await response.json();
-            alert('Ticket #' + String(result.ticketNumber).padStart(4, '0') + ' submitted successfully!'); 
-            document.getElementById('ticketForm').reset(); 
-            loadFormBranches();
-        } 
+        try {
+            const response = await fetch('/tickets', { method: 'POST', body: formData }); 
+            if (response.ok) { 
+                const result = await response.json();
+                alert('Ticket #' + String(result.ticketNumber).padStart(4, '0') + ' submitted successfully!'); 
+                document.getElementById('ticketForm').reset(); 
+                loadFormBranches();
+            } else {
+                alert('Could not submit the ticket. Please try again.');
+            }
+        } catch (err) {
+            alert('Something went wrong submitting the ticket. Please check your connection and try again.');
+        } finally {
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = submitBtnDefaultHTML;
+        }
     });
 
     function showTab(tab) {
@@ -450,11 +466,81 @@ body {
 label { display: block; margin-top: 16px; font-weight: 600; font-size: 12px; color: #6b7280; text-transform: uppercase; letter-spacing: .5px; }
 input { width: 100%; padding: 12px 14px; margin-top: 7px; border: 1.5px solid #e2e8f0; border-radius: 9px; font-size: 14px; font-family: 'Inter', sans-serif; background: #f8f9fa; color: #1e2229; transition: border-color .18s, box-shadow .18s; }
 input:focus { outline: none; border-color: #e53e3e; box-shadow: 0 0 0 3px rgba(229,62,62,.14); background: #fff; }
-button { margin-top: 24px; padding: 13px; width: 100%; background: linear-gradient(120deg, #e53e3e, #c53030); color: #fff; border: none; border-radius: 9px; cursor: pointer; font-family: 'Barlow Condensed', sans-serif; font-weight: 700; font-size: 16px; letter-spacing: 1px; text-transform: uppercase; box-shadow: 0 8px 20px rgba(197,48,48,.4); transition: transform .15s, box-shadow .15s; }
-button:hover { transform: translateY(-2px); box-shadow: 0 12px 28px rgba(197,48,48,.5); }
-button:active { transform: translateY(0); }
+.password-wrapper { position: relative; }
+.password-wrapper input { padding-right: 44px; }
+.toggle-password { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); background: none; border: none; padding: 6px; margin: 0; width: auto; box-shadow: none; cursor: pointer; color: #8a8f98; display: flex; align-items: center; }
+.toggle-password:hover { transform: translateY(-50%); box-shadow: none; color: #4a5568; }
+.caps-warning { display: none; margin-top: 6px; font-size: 11.5px; color: #c05621; font-weight: 600; }
+.login-error { display: none; margin-top: 14px; padding: 10px 12px; background: #fed7d7; color: #9b2c2c; border-radius: 8px; font-size: 13px; font-weight: 500; }
+button[type="submit"] { margin-top: 24px; padding: 13px; width: 100%; background: linear-gradient(120deg, #e53e3e, #c53030); color: #fff; border: none; border-radius: 9px; cursor: pointer; font-family: 'Barlow Condensed', sans-serif; font-weight: 700; font-size: 16px; letter-spacing: 1px; text-transform: uppercase; box-shadow: 0 8px 20px rgba(197,48,48,.4); transition: transform .15s, box-shadow .15s; display: flex; align-items: center; justify-content: center; gap: 8px; }
+button[type="submit"]:hover { transform: translateY(-2px); box-shadow: 0 12px 28px rgba(197,48,48,.5); }
+button[type="submit"]:active { transform: translateY(0); }
+button[type="submit"]:disabled { opacity: .7; cursor: not-allowed; transform: none; box-shadow: 0 8px 20px rgba(197,48,48,.4); }
+.spinner { width: 15px; height: 15px; border: 2px solid rgba(255,255,255,.45); border-top-color: #fff; border-radius: 50%; animation: spin .7s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
 .page-footer { position: fixed; bottom: 8px; left: 0; width: 100%; text-align: center; font-size: 11px; color: rgba(255,255,255,0.55); letter-spacing: .3px; }
-</style></head><body><div class="login-card"><div class="badge-hole"></div><div class="login-ribbon"><img src="/logo.png" alt="Company Logo" onerror="this.style.display='none'"><span class="login-ribbon-text">Sarathy IT</span><span class="login-ribbon-sub">Staff &amp; Admin Access</span></div><div class="login-body"><form action="/login" method="POST"><label>Username / Staff Name</label> <input type="text" name="username" required><label>Password</label> <input type="password" name="password" required><button type="submit">Login</button></form></div></div><div class="page-footer">&copy; 2026 Sarathy Pvt Ltd</div></body></html>`);
+@media (max-width: 400px) { .login-ribbon { padding: 20px 22px 16px; } .login-body { padding: 22px 22px 26px; } }
+</style></head><body><div class="login-card"><div class="badge-hole"></div><div class="login-ribbon"><img src="/logo.png" alt="Company Logo" onerror="this.style.display='none'"><span class="login-ribbon-text">Sarathy IT</span><span class="login-ribbon-sub">Staff &amp; Admin Access</span></div><div class="login-body"><form id="loginForm"><label>Username / Staff Name</label><input type="text" id="username" required><label>Password</label><div class="password-wrapper"><input type="password" id="password" required><button type="button" class="toggle-password" id="togglePassword" aria-label="Show password"><svg id="eyeIcon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button></div><div class="caps-warning" id="capsWarning">Caps Lock is on</div><div class="login-error" id="loginError"></div><button type="submit" id="loginBtn">Login</button></form></div></div><div class="page-footer">&copy; 2026 Sarathy Pvt Ltd</div><script>
+    const loginForm = document.getElementById('loginForm');
+    const loginBtn = document.getElementById('loginBtn');
+    const loginError = document.getElementById('loginError');
+    const passwordInput = document.getElementById('password');
+    const capsWarning = document.getElementById('capsWarning');
+    const toggleBtn = document.getElementById('togglePassword');
+    const eyeIcon = document.getElementById('eyeIcon');
+    const loginBtnDefaultHTML = loginBtn.innerHTML;
+
+    const EYE_OPEN = '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>';
+    const EYE_CLOSED = '<path d="M17.94 17.94A10.94 10.94 0 0 1 12 20c-7 0-11-8-11-8a18.5 18.5 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/>';
+    let passwordVisible = false;
+    toggleBtn.addEventListener('click', () => {
+        passwordVisible = !passwordVisible;
+        passwordInput.type = passwordVisible ? 'text' : 'password';
+        eyeIcon.innerHTML = passwordVisible ? EYE_CLOSED : EYE_OPEN;
+        toggleBtn.setAttribute('aria-label', passwordVisible ? 'Hide password' : 'Show password');
+    });
+
+    function checkCapsLock(e) {
+        if (e.getModifierState && e.getModifierState('CapsLock')) {
+            capsWarning.style.display = 'block';
+        } else {
+            capsWarning.style.display = 'none';
+        }
+    }
+    passwordInput.addEventListener('keydown', checkCapsLock);
+    passwordInput.addEventListener('keyup', checkCapsLock);
+
+    loginForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        loginError.style.display = 'none';
+        loginBtn.disabled = true;
+        loginBtn.innerHTML = '<span class="spinner"></span>Logging in...';
+        try {
+            const response = await fetch('/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    username: document.getElementById('username').value,
+                    password: passwordInput.value
+                })
+            });
+            const data = await response.json();
+            if (response.ok && data.success) {
+                window.location.href = data.redirect || '/admin';
+                return;
+            }
+            loginError.textContent = data.error || 'Invalid username or password.';
+            loginError.style.display = 'block';
+            loginBtn.disabled = false;
+            loginBtn.innerHTML = loginBtnDefaultHTML;
+        } catch (err) {
+            loginError.textContent = 'Something went wrong. Please try again.';
+            loginError.style.display = 'block';
+            loginBtn.disabled = false;
+            loginBtn.innerHTML = loginBtnDefaultHTML;
+        }
+    });
+    </script></body></html>`);
 });
 
 // Compares a submitted password against a stored one. Handles both bcrypt-hashed
@@ -477,7 +563,7 @@ app.post('/login', loginRateLimiter, async (req, res) => {
         req.session.isAdmin = true;
         req.session.isStaff = false;
         req.session.username = 'Admin';
-        return res.redirect('/admin');
+        return res.json({ success: true, redirect: '/admin' });
     }
     const allStaff = await Staff.find();
     const staffUser = allStaff.find(s => s.name.toLowerCase() === username.toLowerCase());
@@ -490,9 +576,9 @@ app.post('/login', loginRateLimiter, async (req, res) => {
         req.session.isAdmin = false;
         req.session.isStaff = true;
         req.session.username = staffUser.name;
-        return res.redirect('/admin');
+        return res.json({ success: true, redirect: '/admin' });
     }
-    res.send('<h3>Invalid Credentials. <a href="/login">Try Again</a></h3>');
+    res.status(401).json({ error: 'Invalid username or password.' });
 });
 
 app.get('/logout', (req, res) => {
@@ -544,6 +630,20 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '    <style>' +
 '        * { box-sizing: border-box; margin: 0; padding: 0; font-family: \'Segoe UI\', Tahoma, Geneva, Verdana, sans-serif; }' +
 '        body { display: flex; height: 100vh; background-color: #f8f9fa; color: #333; overflow: hidden; }' +
+'        .hamburger-btn { display: none; background: none; border: none; cursor: pointer; padding: 6px; flex-direction: column; gap: 4px; }' +
+'        .hamburger-btn span { display: block; width: 22px; height: 2px; background: #2d3748; border-radius: 2px; }' +
+'        .sidebar-backdrop { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 998; }' +
+'        .sidebar-backdrop.active { display: block; }' +
+'        @media (max-width: 768px) {' +
+'            .sidebar { position: fixed; top: 0; bottom: 0; left: -270px; z-index: 999; transition: left 0.25s ease; width: 260px; }' +
+'            .sidebar.sidebar-open { left: 0; }' +
+'            .hamburger-btn { display: flex; }' +
+'            .top-navbar { padding: 0 16px; }' +
+'            .content-body { padding: 16px; }' +
+'            .metrics-grid { gap: 12px; }' +
+'            .branch-table { display: block; overflow-x: auto; white-space: nowrap; }' +
+'            .ticket-header { flex-direction: column; align-items: flex-start; gap: 10px; }' +
+'        }' +
 '        .sidebar { width: 260px; background-color: #1e2229; color: #fff; display: flex; flex-direction: column; justify-content: space-between; }' +
 '        .sidebar-brand { padding: 24px; display: flex; align-items: center; gap: 12px; border-bottom: 1px solid #2d323e; }' +
 '        .sidebar-logo { height: 35px; width: auto; object-fit: contain; }' +
@@ -597,7 +697,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '        .comment-form button { background-color: #3182ce; color: white; border: none; padding: 8px 16px; font-size: 13px; font-weight: 600; border-radius: 6px; cursor: pointer; }' +
 '        .branch-panel-card { background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }' +
 '        .branch-panel-card h2 { font-size: 16px; font-weight: 600; color: #2d3748; margin-bottom: 20px; }' +
-'        .branch-input-group { display: flex; gap: 15px; margin-bottom: 25px; }' +
+'        .branch-input-group { display: flex; gap: 15px; margin-bottom: 25px; flex-wrap: wrap; }' +
 '        .branch-input-group input { flex-grow: 1; padding: 12px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 14px; }' +
 '        .branch-add-btn { background-color: #0056b3; color: white; border: none; padding: 0 30px; font-size: 14px; font-weight: 600; border-radius: 6px; cursor: pointer; }' +
 '        .branch-table { width: 100%; border-collapse: collapse; text-align: left; margin-top: 10px; }' +
@@ -612,7 +712,8 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '    </style>' +
 '</head>' +
 '<body>' +
-'    <aside class="sidebar">' +
+'    <div class="sidebar-backdrop" id="sidebarBackdrop" onclick="closeSidebar()"></div>' +
+'    <aside class="sidebar" id="sidebar">' +
 '        <div>' +
 '            <div class="sidebar-brand">' +
 '                <img src="/logo.png" alt="Logo" class="sidebar-logo" onerror="this.style.display=\'none\'">' +
@@ -638,6 +739,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '    </aside>' +
 '    <main class="main-content">' +
 '        <header class="top-navbar">' +
+'            <button class="hamburger-btn" onclick="toggleSidebar()" aria-label="Menu"><span></span><span></span><span></span></button>' +
 '            <h1 class="page-title" id="panelViewTitle">Helpdesk Operations</h1>' +
 '        </header>' +
 '        <section class="content-body">' +
@@ -752,7 +854,16 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '        const currentUser = "' + dynamicUsername + '";' +
 '        const isAdmin = ' + dynamicIsAdmin + ';' +
 '        document.getElementById("displayUserLabel").innerText = currentUser;' +
+'        function toggleSidebar() {' +
+'            document.getElementById("sidebar").classList.toggle("sidebar-open");' +
+'            document.getElementById("sidebarBackdrop").classList.toggle("active");' +
+'        }' +
+'        function closeSidebar() {' +
+'            document.getElementById("sidebar").classList.remove("sidebar-open");' +
+'            document.getElementById("sidebarBackdrop").classList.remove("active");' +
+'        }' +
 '        function switchView(target) {' +
+'            closeSidebar();' +
 '            if ((target === "branches" || target === "staff" || target === "audit") && !isAdmin) {' +
 '                alert("Access Denied: Admins only.");' +
 '                return;' +
