@@ -730,9 +730,26 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '        .chart-card.wide { grid-column: 1 / -1; }' +
 '        .chart-card h3 { font-size: 14px; font-weight: 600; color: #2d3748; margin: 0 0 14px; }' +
 '        .section-heading { font-size: 16px; font-weight: 600; color: #2d3748; margin: 28px 0 0; }' +
+'        .confirm-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 3000; align-items: center; justify-content: center; padding: 20px; }' +
+'        .confirm-overlay.show { display: flex; }' +
+'        .confirm-box { background: #fff; border-radius: 10px; padding: 24px; max-width: 380px; width: 100%; box-shadow: 0 20px 50px rgba(0,0,0,0.3); }' +
+'        .confirm-box p { font-size: 14px; color: #2d3748; line-height: 1.5; margin-bottom: 20px; }' +
+'        .confirm-actions { display: flex; gap: 12px; justify-content: flex-end; }' +
+'        .confirm-actions button { padding: 9px 18px; border-radius: 7px; font-size: 13px; font-weight: 600; cursor: pointer; border: none; }' +
+'        .confirm-cancel-btn { background: #edf2f7; color: #4a5568; }' +
+'        .confirm-ok-btn { background: #e53e3e; color: #fff; }' +
 '    </style>' +
 '</head>' +
 '<body>' +
+'    <div class="confirm-overlay" id="confirmOverlay">' +
+'        <div class="confirm-box">' +
+'            <p id="confirmMessage"></p>' +
+'            <div class="confirm-actions">' +
+'                <button class="confirm-cancel-btn" onclick="closeConfirmModal(false)">Cancel</button>' +
+'                <button class="confirm-ok-btn" id="confirmOkBtn" onclick="closeConfirmModal(true)">Confirm</button>' +
+'            </div>' +
+'        </div>' +
+'    </div>' +
 '    <div class="sidebar-backdrop" id="sidebarBackdrop" onclick="closeSidebar()"></div>' +
 '    <aside class="sidebar" id="sidebar">' +
 '        <div>' +
@@ -824,7 +841,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                <div class="branch-panel-card" style="margin-bottom: 20px;">' +
 '                    <h2>Manage Regions</h2>' +
 '                    <div class="branch-input-group">' +
-'                        <input type="text" id="newRegionName" placeholder="e.g. TRIVANDRUM">' +
+'                        <input type="text" id="newRegionName" placeholder="Enter Region">' +
 '                        <button class="branch-add-btn" onclick="addNewRegion()">Add Region</button>' +
 '                    </div>' +
 '                    <table class="branch-table">' +
@@ -882,6 +899,19 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '        function closeSidebar() {' +
 '            document.getElementById("sidebar").classList.remove("sidebar-open");' +
 '            document.getElementById("sidebarBackdrop").classList.remove("active");' +
+'        }' +
+'        let confirmCallback = null;' +
+'        function showConfirmModal(message, callback, okLabel) {' +
+'            document.getElementById("confirmMessage").innerText = message;' +
+'            document.getElementById("confirmOkBtn").innerText = okLabel || "Confirm";' +
+'            confirmCallback = callback;' +
+'            document.getElementById("confirmOverlay").classList.add("show");' +
+'        }' +
+'        function closeConfirmModal(confirmed) {' +
+'            document.getElementById("confirmOverlay").classList.remove("show");' +
+'            const cb = confirmCallback;' +
+'            confirmCallback = null;' +
+'            if (confirmed && cb) cb();' +
 '        }' +
 '        function switchView(target) {' +
 '            closeSidebar();' +
@@ -1034,10 +1064,11 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '    else { const err = await response.json(); alert(err.error || "Could not update region."); }' +
 '}' +
 'async function deleteRegion(id) {' +
-'    if (!confirm("Remove this region?")) return;' +
-'    const response = await fetch("/tickets/regions/" + id, { method: "DELETE" });' +
-'    if (response.ok) { loadRegionsList(); loadBranchesList(); }' +
-'    else { const err = await response.json(); alert(err.error || "Could not delete region."); }' +
+'    showConfirmModal("Remove this region?", async () => {' +
+'        const response = await fetch("/tickets/regions/" + id, { method: "DELETE" });' +
+'        if (response.ok) { loadRegionsList(); loadBranchesList(); }' +
+'        else { const err = await response.json(); alert(err.error || "Could not delete region."); }' +
+'    }, "Delete");' +
 '}' +
 'async function loadBranchesList() {' +
 '    const [branchRes, regionRes] = await Promise.all([fetch("/public-branches"), fetch("/tickets/regions")]);' +
@@ -1098,9 +1129,10 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '    else alert("Could not update branch.");' +
 '}' +
 'async function deleteBranch(id) {' +
-'    if(!confirm("Remove this branch option?")) return;' +
-'    const response = await fetch("/tickets/branches/" + id, { method: "DELETE" });' +
-'    if(response.ok) loadBranchesList();' +
+'    showConfirmModal("Remove this branch option?", async () => {' +
+'        const response = await fetch("/tickets/branches/" + id, { method: "DELETE" });' +
+'        if(response.ok) loadBranchesList();' +
+'    }, "Delete");' +
 '}' +
 'async function moveBranchRegion(id, newRegion) {' +
 '    const response = await fetch("/tickets/branches/" + id, {' +
@@ -1181,10 +1213,11 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            }' +
 '        }' +
 '        async function deleteStaff(staffId) {' +
-'            if (!confirm("Remove this staff member? This cannot be undone.")) return;' +
-'            const response = await fetch("/tickets/staff/" + staffId, { method: "DELETE" });' +
-'            if (response.ok) loadStaffList();' +
-'            else alert("Could not delete staff member.");' +
+'            showConfirmModal("Remove this staff member? This cannot be undone.", async () => {' +
+'                const response = await fetch("/tickets/staff/" + staffId, { method: "DELETE" });' +
+'                if (response.ok) loadStaffList();' +
+'                else alert("Could not delete staff member.");' +
+'            }, "Delete");' +
 '        }' +
 '        async function loadAuditLog() {' +
 '            const response = await fetch("/audit-log");' +
@@ -1240,14 +1273,16 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            loadTickets();' +
 '        }' +
 '        async function resolveTicket(id) {' +
-'            if (!confirm("Mark this ticket as resolved? This action can\'t be undone.")) return;' +
-'            const response = await fetch("/tickets/" + id + "/resolve", { method: "POST" });' +
-'            if (response.ok) loadTickets();' +
+'            showConfirmModal("Mark this ticket as resolved? This action can\'t be undone.", async () => {' +
+'                const response = await fetch("/tickets/" + id + "/resolve", { method: "POST" });' +
+'                if (response.ok) loadTickets();' +
+'            }, "Mark Resolved");' +
 '        }' +
 '        async function escalateTicket(id) {' +
-'            if (!confirm("Escalate this ticket to Admin (Level 2)?")) return;' +
-'            const response = await fetch("/tickets/" + id + "/escalate", { method: "POST" });' +
-'            if (response.ok) loadTickets();' +
+'            showConfirmModal("Escalate this ticket to Admin (Level 2)?", async () => {' +
+'                const response = await fetch("/tickets/" + id + "/escalate", { method: "POST" });' +
+'                if (response.ok) loadTickets();' +
+'            }, "Escalate");' +
 '        }' +
 '        let chartInstances = {};' +
 '        function renderChart(canvasId, config) {' +
