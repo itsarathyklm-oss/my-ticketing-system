@@ -219,9 +219,10 @@ if (!process.env.SESSION_SECRET) {
 app.use(session({
     secret: process.env.SESSION_SECRET || 'my-super-secret-key-123',
     resave: false,
+    rolling: true, // resets the expiry on every request, so it's truly inactivity-based
     saveUninitialized: true,
     cookie: {
-        maxAge: 1800000,
+        maxAge: 600000, // 10 minutes of inactivity logs the user out
         httpOnly: true,
         sameSite: 'lax',
         secure: process.env.NODE_ENV === 'production'
@@ -799,6 +800,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                    <div><label style="display:block;font-size:12px;font-weight:600;color:#4a5568;margin-bottom:4px;">From Date</label><input type="date" id="filterFromDate" style="padding: 8px 10px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 14px;"></div>' +
 '                    <div><label style="display:block;font-size:12px;font-weight:600;color:#4a5568;margin-bottom:4px;">To Date</label><input type="date" id="filterToDate" style="padding: 8px 10px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 14px;"></div>' +
 '                    <div id="staffFilterWrapper" style="display:none;"><label style="display:block;font-size:12px;font-weight:600;color:#4a5568;margin-bottom:4px;">Staff</label><select id="filterStaff" style="padding: 8px 10px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 14px;"><option value="">All Staff</option></select></div>' +
+'                    <div id="regionFilterWrapper" style="display:none;"><label style="display:block;font-size:12px;font-weight:600;color:#4a5568;margin-bottom:4px;">Region</label><select id="filterRegion" style="padding: 8px 10px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 14px;"><option value="">All Regions</option></select></div>' +
 '                    <div><label style="display:block;font-size:12px;font-weight:600;color:#4a5568;margin-bottom:4px;">Category</label><select id="filterCategory" style="padding: 8px 10px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 14px;"><option value="">All Categories</option><option value="Hardware">Hardware</option><option value="Software">Software</option><option value="Network">Network</option><option value="Printer">Printer</option><option value="Other">Other</option></select></div>' +
 '                    <button class="branch-add-btn" onclick="applyTicketFilters()">Search</button>' +
 '                    <button class="branch-delete-btn" onclick="clearTicketFilters()">Clear</button>' +
@@ -806,6 +808,11 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                <div id="ticketList">Loading active queue...</div>' +
 '            </div>' +
 '            <div id="viewReports" class="dashboard-view">' +
+'                <div class="branch-panel-card" style="display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 20px;">' +
+'                    <strong style="font-size: 14px; color: #2d3748;">Region:</strong>' +
+'                    <select id="reportRegion" style="padding: 8px 10px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 14px;"><option value="">All Regions</option></select>' +
+'                    <span style="font-size: 12px; color: #a0aec0;">Applies to both reports below</span>' +
+'                </div>' +
 '                <div class="branch-panel-card" style="display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 20px;">' +
 '                    <strong style="font-size: 14px; color: #2d3748;">Monthly Report:</strong>' +
 '                    <input type="month" id="reportMonth" style="padding: 8px 10px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 14px;">' +
@@ -874,7 +881,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                        <input type="text" id="newStaffName" placeholder="Full Name">' +
 '                        <input type="text" id="newStaffPassword" placeholder="Password">' +
 '                        <input type="email" id="newStaffEmail" placeholder="Email">' +
-'                        <button class="branch-add-btn" onclick="addNewStaff()">Add Staff</button>' +
+'                        <button class="branch-add-btn" id="addStaffBtn" onclick="addNewStaff()">Add Staff</button>' +
 '                    </div>' +
 '                </div>' +
 '                <div class="branch-panel-card">' +
@@ -900,6 +907,15 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '        const currentUser = "' + dynamicUsername + '";' +
 '        const isAdmin = ' + dynamicIsAdmin + ';' +
 '        document.getElementById("displayUserLabel").innerText = currentUser;' +
+'        let inactivityTimer = null;' +
+'        function resetInactivityTimer() {' +
+'            clearTimeout(inactivityTimer);' +
+'            inactivityTimer = setTimeout(() => { window.location.href = "/logout"; }, 10 * 60 * 1000);' +
+'        }' +
+'        ["mousemove", "keydown", "click", "scroll", "touchstart"].forEach(evt => {' +
+'            document.addEventListener(evt, resetInactivityTimer);' +
+'        });' +
+'        resetInactivityTimer();' +
 '        function toggleSidebar() {' +
 '            document.getElementById("sidebar").classList.toggle("sidebar-open");' +
 '            document.getElementById("sidebarBackdrop").classList.toggle("active");' +
@@ -999,6 +1015,8 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            document.getElementById("filterCategory").value = "";' +
 '            const sf = document.getElementById("filterStaff");' +
 '            if (sf) sf.value = "";' +
+'            const rf = document.getElementById("filterRegion");' +
+'            if (rf) rf.value = "";' +
 '            currentStatusFilter = "all";' +
 '            loadTickets();' +
 '        }' +
@@ -1013,6 +1031,23 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                select.innerHTML += \'<option value="\'+s.name+\'">\'+s.name+\'</option>\';' +
 '            });' +
 '        }' +
+'        async function loadRegionFilterOptions() {' +
+'            if (!isAdmin) return;' +
+'            const res = await fetch("/tickets/regions");' +
+'            const regions = await res.json();' +
+'            const filterWrapper = document.getElementById("regionFilterWrapper");' +
+'            if (filterWrapper) filterWrapper.style.display = "block";' +
+'            const filterSelect = document.getElementById("filterRegion");' +
+'            if (filterSelect) {' +
+'                filterSelect.innerHTML = \'<option value="">All Regions</option>\';' +
+'                regions.forEach(r => { filterSelect.innerHTML += \'<option value="\'+r.name+\'">\'+r.name+\'</option>\'; });' +
+'            }' +
+'            const reportSelect = document.getElementById("reportRegion");' +
+'            if (reportSelect) {' +
+'                reportSelect.innerHTML = \'<option value="">All Regions</option>\';' +
+'                regions.forEach(r => { reportSelect.innerHTML += \'<option value="\'+r.name+\'">\'+r.name+\'</option>\'; });' +
+'            }' +
+'        }' +
 '        async function loadTickets() {' +
 '            const response = await fetch("/tickets");' +
 '            if (response.status === 401) { window.location.href = "/login"; return; }' +
@@ -1021,6 +1056,14 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            const staffFilterEl = document.getElementById("filterStaff");' +
 '            const staffFilterValue = staffFilterEl ? staffFilterEl.value : "";' +
 '            if (staffFilterValue) { tickets = tickets.filter(t => t.assignedTo === staffFilterValue); }' +
+'            const regionFilterEl = document.getElementById("filterRegion");' +
+'            const regionFilterValue = regionFilterEl ? regionFilterEl.value : "";' +
+'            if (regionFilterValue) {' +
+'                const branchRes = await fetch("/public-branches");' +
+'                const allBranches = await branchRes.json();' +
+'                const branchNamesInRegion = allBranches.filter(b => (b.region || "Unassigned") === regionFilterValue).map(b => b.name);' +
+'                tickets = tickets.filter(t => branchNamesInRegion.includes(t.branch));' +
+'            }' +
 '            const categoryFilterValue = document.getElementById("filterCategory").value;' +
 '            if (categoryFilterValue) { tickets = tickets.filter(t => (t.category || "Other") === categoryFilterValue); }' +
 '            const fromVal = document.getElementById("filterFromDate").value;' +
@@ -1316,19 +1359,32 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            const name = document.getElementById("newStaffName").value.trim();' +
 '            const password = document.getElementById("newStaffPassword").value.trim();' +
 '            const email = document.getElementById("newStaffEmail").value.trim();' +
-'            if (!name || !password || !email) { alert("Please fill in name, password, and email."); return; }' +
-'            const response = await fetch("/tickets/staff", {' +
-'                method: "POST",' +
-'                headers: { "Content-Type": "application/json" },' +
-'                body: JSON.stringify({ name, password, email })' +
-'            });' +
-'            if (response.ok) {' +
-'                document.getElementById("newStaffName").value = "";' +
-'                document.getElementById("newStaffPassword").value = "";' +
-'                document.getElementById("newStaffEmail").value = "";' +
-'                loadStaffList();' +
-'            } else {' +
-'                alert("Could not add staff member.");' +
+'            if (!name || !password || !email) { showAdminToast("Please fill in name, password, and email.", true); return; }' +
+'            const btn = document.getElementById("addStaffBtn");' +
+'            const defaultHTML = btn.innerHTML;' +
+'            btn.disabled = true;' +
+'            btn.innerHTML = \'<span class="admin-spinner"></span>Adding...\';' +
+'            try {' +
+'                const response = await fetch("/tickets/staff", {' +
+'                    method: "POST",' +
+'                    headers: { "Content-Type": "application/json" },' +
+'                    body: JSON.stringify({ name, password, email })' +
+'                });' +
+'                if (response.ok) {' +
+'                    document.getElementById("newStaffName").value = "";' +
+'                    document.getElementById("newStaffPassword").value = "";' +
+'                    document.getElementById("newStaffEmail").value = "";' +
+'                    showAdminToast("Staff member added successfully.");' +
+'                    loadStaffList();' +
+'                } else {' +
+'                    const err = await response.json();' +
+'                    showAdminToast(err.error || "Could not add staff member.", true);' +
+'                }' +
+'            } catch (err) {' +
+'                showAdminToast("Something went wrong. Please try again.", true);' +
+'            } finally {' +
+'                btn.disabled = false;' +
+'                btn.innerHTML = defaultHTML;' +
 '            }' +
 '        }' +
 '        async function addComment(id) {' +
@@ -1433,13 +1489,19 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '        function downloadReport() {' +
 '            const month = document.getElementById("reportMonth").value;' +
 '            if (!month) { alert("Please select a month."); return; }' +
-'            window.location.href = "/tickets/report?month=" + month;' +
+'            const region = document.getElementById("reportRegion").value;' +
+'            let url = "/tickets/report?month=" + month;' +
+'            if (region) url += "&region=" + encodeURIComponent(region);' +
+'            window.location.href = url;' +
 '        }' +
 '        function downloadReportByRange() {' +
 '            const from = document.getElementById("reportFromDate").value;' +
 '            const to = document.getElementById("reportToDate").value;' +
 '            if (!from || !to) { alert("Please select both a From and To date."); return; }' +
-'            window.location.href = "/tickets/report?from=" + from + "&to=" + to;' +
+'            const region = document.getElementById("reportRegion").value;' +
+'            let url = "/tickets/report?from=" + from + "&to=" + to;' +
+'            if (region) url += "&region=" + encodeURIComponent(region);' +
+'            window.location.href = url;' +
 '        }' +
 '        async function changePassword() {' +
 '            const current = document.getElementById("currentPassword").value;' +
@@ -1464,6 +1526,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '        }' +
 '        document.getElementById("reportMonth").value = new Date().toISOString().slice(0, 7);' +
 '        loadStaffFilterOptions();' +
+'        loadRegionFilterOptions();' +
 '        loadTickets();' +
 '    </script>' +
 '</body>' +
@@ -1506,6 +1569,12 @@ app.get('/tickets/report', checkUserLogin, async (req, res) => {
         if (!req.session.isAdmin) {
             query.assignedTo = req.session.username;
         }
+        let regionLabel = '';
+        if (req.query.region) {
+            const branchNamesInRegion = await Branch.find({ region: req.query.region }).distinct('name');
+            query.branch = { $in: branchNamesInRegion };
+            regionLabel = '-' + req.query.region.replace(/\s+/g, '-');
+        }
         const tickets = await Ticket.find(query).sort({ ticketNumber: 1 });
 
         const workbook = new ExcelJS.Workbook();
@@ -1542,7 +1611,7 @@ app.get('/tickets/report', checkUserLogin, async (req, res) => {
 
         const nameLabel = req.session.isAdmin ? 'All-Staff' : req.session.username.replace(/\s+/g, '-');
         res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-        res.setHeader('Content-Disposition', `attachment; filename="Ticket-Report-${nameLabel}-${rangeLabel}.xlsx"`);
+        res.setHeader('Content-Disposition', `attachment; filename="Ticket-Report-${nameLabel}${regionLabel}-${rangeLabel}.xlsx"`);
         await workbook.xlsx.write(res);
         res.end();
     } catch (err) {
