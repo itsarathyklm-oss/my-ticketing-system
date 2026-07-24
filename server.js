@@ -720,7 +720,8 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '        .branch-panel-card h2 { font-size: 16px; font-weight: 600; color: #2d3748; margin-bottom: 20px; }' +
 '        .branch-input-group { display: flex; gap: 15px; margin-bottom: 25px; flex-wrap: wrap; }' +
 '        .branch-input-group input { flex-grow: 1; padding: 12px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 14px; }' +
-'        .branch-add-btn { background-color: #0056b3; color: white; border: none; padding: 0 30px; font-size: 14px; font-weight: 600; border-radius: 6px; cursor: pointer; }' +
+'        .branch-add-btn { background-color: #0056b3; color: white; border: none; padding: 0 30px; font-size: 14px; font-weight: 600; border-radius: 6px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 4px; }' +
+'        .branch-add-btn:disabled { opacity: .7; cursor: not-allowed; }' +
 '        .branch-table { width: 100%; border-collapse: collapse; text-align: left; margin-top: 10px; }' +
 '        .branch-table th { background-color: #f7fafc; color: #4a5568; font-size: 13px; font-weight: 600; padding: 12px 16px; border-bottom: 1px solid #e2e8f0; }' +
 '        .branch-table td { padding: 14px 16px; font-size: 14px; color: #2d3748; border-bottom: 1px solid #edf2f7; }' +
@@ -738,18 +739,25 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '        .confirm-actions button { padding: 9px 18px; border-radius: 7px; font-size: 13px; font-weight: 600; cursor: pointer; border: none; }' +
 '        .confirm-cancel-btn { background: #edf2f7; color: #4a5568; }' +
 '        .confirm-ok-btn { background: #e53e3e; color: #fff; }' +
+'        .admin-toast { position: fixed; top: 20px; left: 50%; transform: translateX(-50%) translateY(-16px); background: #22543d; color: #fff; padding: 12px 22px; border-radius: 9px; font-size: 13px; font-weight: 600; box-shadow: 0 8px 24px rgba(0,0,0,0.3); z-index: 4000; opacity: 0; transition: opacity .25s, transform .25s; pointer-events: none; max-width: 90vw; text-align: center; }' +
+'        .admin-toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }' +
+'        .admin-toast.error { background: #9b2c2c; }' +
+'        .admin-spinner { width: 13px; height: 13px; border: 2px solid rgba(255,255,255,.4); border-top-color: #fff; border-radius: 50%; display: inline-block; animation: adminspin .7s linear infinite; margin-right: 6px; vertical-align: middle; }' +
+'        @keyframes adminspin { to { transform: rotate(360deg); } }' +
 '    </style>' +
 '</head>' +
 '<body>' +
 '    <div class="confirm-overlay" id="confirmOverlay">' +
 '        <div class="confirm-box">' +
 '            <p id="confirmMessage"></p>' +
+'            <input type="text" id="confirmInput" style="display:none;width:100%;padding:10px;border:1px solid #cbd5e0;border-radius:6px;font-size:14px;margin-bottom:16px;">' +
 '            <div class="confirm-actions">' +
 '                <button class="confirm-cancel-btn" onclick="closeConfirmModal(false)">Cancel</button>' +
 '                <button class="confirm-ok-btn" id="confirmOkBtn" onclick="closeConfirmModal(true)">Confirm</button>' +
 '            </div>' +
 '        </div>' +
 '    </div>' +
+'    <div id="adminToast" class="admin-toast"></div>' +
 '    <div class="sidebar-backdrop" id="sidebarBackdrop" onclick="closeSidebar()"></div>' +
 '    <aside class="sidebar" id="sidebar">' +
 '        <div>' +
@@ -841,8 +849,8 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                <div class="branch-panel-card" style="margin-bottom: 20px;">' +
 '                    <h2>Manage Regions</h2>' +
 '                    <div class="branch-input-group">' +
-'                        <input type="text" id="newRegionName" placeholder="Enter Region">' +
-'                        <button class="branch-add-btn" onclick="addNewRegion()">Add Region</button>' +
+'                        <input type="text" id="newRegionName" placeholder="Enter Region Name">' +
+'                        <button class="branch-add-btn" id="addRegionBtn" onclick="addNewRegion()">Add Region</button>' +
 '                    </div>' +
 '                    <table class="branch-table">' +
 '                        <thead><tr><th>Region Name</th><th>Edit</th><th>Delete</th></tr></thead>' +
@@ -852,9 +860,9 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                <div class="branch-panel-card">' +
 '                    <h2>Create New Branch Location</h2>' +
 '                    <div class="branch-input-group">' +
-'                        <input type="text" id="newBranchName" placeholder="Enter Branch Details">' +
+'                        <input type="text" id="newBranchName" placeholder="Enter Branch Name">' +
 '                        <select id="newBranchRegion" style="flex-grow: 1; padding: 12px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 14px;"><option value="" disabled selected>Select Region</option></select>' +
-'                        <button class="branch-add-btn" onclick="addNewBranch()">Add Branch</button>' +
+'                        <button class="branch-add-btn" id="addBranchBtn" onclick="addNewBranch()">Add Branch</button>' +
 '                    </div>' +
 '                    <div id="branchGroupsContainer"></div>' +
 '                </div>' +
@@ -901,17 +909,41 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            document.getElementById("sidebarBackdrop").classList.remove("active");' +
 '        }' +
 '        let confirmCallback = null;' +
+'        let confirmHasInput = false;' +
 '        function showConfirmModal(message, callback, okLabel) {' +
 '            document.getElementById("confirmMessage").innerText = message;' +
 '            document.getElementById("confirmOkBtn").innerText = okLabel || "Confirm";' +
+'            document.getElementById("confirmInput").style.display = "none";' +
+'            confirmHasInput = false;' +
 '            confirmCallback = callback;' +
 '            document.getElementById("confirmOverlay").classList.add("show");' +
 '        }' +
+'        function showPromptModal(message, defaultValue, callback, okLabel) {' +
+'            document.getElementById("confirmMessage").innerText = message;' +
+'            document.getElementById("confirmOkBtn").innerText = okLabel || "Save";' +
+'            const input = document.getElementById("confirmInput");' +
+'            input.style.display = "block";' +
+'            input.value = defaultValue || "";' +
+'            confirmHasInput = true;' +
+'            confirmCallback = callback;' +
+'            document.getElementById("confirmOverlay").classList.add("show");' +
+'            setTimeout(() => input.focus(), 50);' +
+'        }' +
 '        function closeConfirmModal(confirmed) {' +
+'            const inputValue = document.getElementById("confirmInput").value;' +
+'            const hadInput = confirmHasInput;' +
 '            document.getElementById("confirmOverlay").classList.remove("show");' +
 '            const cb = confirmCallback;' +
 '            confirmCallback = null;' +
-'            if (confirmed && cb) cb();' +
+'            if (confirmed && cb) { hadInput ? cb(inputValue) : cb(); }' +
+'        }' +
+'        let adminToastTimer = null;' +
+'        function showAdminToast(message, isError) {' +
+'            const toast = document.getElementById("adminToast");' +
+'            toast.textContent = message;' +
+'            toast.className = "admin-toast show" + (isError ? " error" : "");' +
+'            clearTimeout(adminToastTimer);' +
+'            adminToastTimer = setTimeout(() => { toast.classList.remove("show"); }, 4000);' +
 '        }' +
 '        function switchView(target) {' +
 '            closeSidebar();' +
@@ -1044,30 +1076,49 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '    const input = document.getElementById("newRegionName");' +
 '    const name = input.value.trim();' +
 '    if (!name) return;' +
-'    const response = await fetch("/tickets/regions", {' +
-'        method: "POST",' +
-'        headers: { "Content-Type": "application/json" },' +
-'        body: JSON.stringify({ name })' +
-'    });' +
-'    if (response.ok) { input.value = ""; loadRegionsList(); loadBranchesList(); }' +
-'    else { const err = await response.json(); alert(err.error || "Could not add region."); }' +
+'    const btn = document.getElementById("addRegionBtn");' +
+'    const defaultHTML = btn.innerHTML;' +
+'    btn.disabled = true;' +
+'    btn.innerHTML = \'<span class="admin-spinner"></span>Adding...\';' +
+'    try {' +
+'        const response = await fetch("/tickets/regions", {' +
+'            method: "POST",' +
+'            headers: { "Content-Type": "application/json" },' +
+'            body: JSON.stringify({ name })' +
+'        });' +
+'        if (response.ok) {' +
+'            input.value = "";' +
+'            showAdminToast("Region added successfully.");' +
+'            loadRegionsList();' +
+'            loadBranchesList();' +
+'        } else {' +
+'            const err = await response.json();' +
+'            showAdminToast(err.error || "Could not add region.", true);' +
+'        }' +
+'    } catch (err) {' +
+'        showAdminToast("Something went wrong. Please try again.", true);' +
+'    } finally {' +
+'        btn.disabled = false;' +
+'        btn.innerHTML = defaultHTML;' +
+'    }' +
 '}' +
 'async function editRegion(id, currentName) {' +
-'    const newName = prompt("Edit region name:", currentName);' +
-'    if (!newName || !newName.trim() || newName === currentName) return;' +
-'    const response = await fetch("/tickets/regions/" + id, {' +
-'        method: "PUT",' +
-'        headers: { "Content-Type": "application/json" },' +
-'        body: JSON.stringify({ name: newName.trim() })' +
-'    });' +
-'    if (response.ok) { loadRegionsList(); loadBranchesList(); }' +
-'    else { const err = await response.json(); alert(err.error || "Could not update region."); }' +
+'    showPromptModal("Edit region name:", currentName, async (newName) => {' +
+'        if (!newName || !newName.trim() || newName === currentName) return;' +
+'        const response = await fetch("/tickets/regions/" + id, {' +
+'            method: "PUT",' +
+'            headers: { "Content-Type": "application/json" },' +
+'            body: JSON.stringify({ name: newName.trim() })' +
+'        });' +
+'        if (response.ok) { showAdminToast("Region updated successfully."); loadRegionsList(); loadBranchesList(); }' +
+'        else { const err = await response.json(); showAdminToast(err.error || "Could not update region.", true); }' +
+'    }, "Save");' +
 '}' +
 'async function deleteRegion(id) {' +
 '    showConfirmModal("Remove this region?", async () => {' +
 '        const response = await fetch("/tickets/regions/" + id, { method: "DELETE" });' +
-'        if (response.ok) { loadRegionsList(); loadBranchesList(); }' +
-'        else { const err = await response.json(); alert(err.error || "Could not delete region."); }' +
+'        if (response.ok) { showAdminToast("Region removed."); loadRegionsList(); loadBranchesList(); }' +
+'        else { const err = await response.json(); showAdminToast(err.error || "Could not delete region.", true); }' +
 '    }, "Delete");' +
 '}' +
 'async function loadBranchesList() {' +
@@ -1108,30 +1159,50 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '    const regionSelect = document.getElementById("newBranchRegion");' +
 '    const name = input.value.trim();' +
 '    const region = regionSelect.value;' +
-'    if (!name || !region) { alert("Please enter a branch name and select a region."); return; }' +
-'    const response = await fetch("/tickets/branches", {' +
-'        method: "POST",' +
-'        headers: { "Content-Type": "application/json" },' +
-'        body: JSON.stringify({ name, region })' +
-'    });' +
-'    if (response.ok) { input.value = ""; regionSelect.value = ""; loadBranchesList(); }' +
-'    else { const err = await response.json(); alert(err.error || "Could not add branch."); }' +
+'    if (!name || !region) { showAdminToast("Please enter a branch name and select a region.", true); return; }' +
+'    const btn = document.getElementById("addBranchBtn");' +
+'    const defaultHTML = btn.innerHTML;' +
+'    btn.disabled = true;' +
+'    btn.innerHTML = \'<span class="admin-spinner"></span>Adding...\';' +
+'    try {' +
+'        const response = await fetch("/tickets/branches", {' +
+'            method: "POST",' +
+'            headers: { "Content-Type": "application/json" },' +
+'            body: JSON.stringify({ name, region })' +
+'        });' +
+'        if (response.ok) {' +
+'            input.value = "";' +
+'            regionSelect.value = "";' +
+'            showAdminToast("Branch added successfully.");' +
+'            loadBranchesList();' +
+'        } else {' +
+'            const err = await response.json();' +
+'            showAdminToast(err.error || "Could not add branch.", true);' +
+'        }' +
+'    } catch (err) {' +
+'        showAdminToast("Something went wrong. Please try again.", true);' +
+'    } finally {' +
+'        btn.disabled = false;' +
+'        btn.innerHTML = defaultHTML;' +
+'    }' +
 '}' +
 'async function editBranch(id, currentName) {' +
-'    const newName = prompt("Edit branch name:", currentName);' +
-'    if (!newName || !newName.trim() || newName === currentName) return;' +
-'    const response = await fetch("/tickets/branches/" + id, {' +
-'        method: "PUT",' +
-'        headers: { "Content-Type": "application/json" },' +
-'        body: JSON.stringify({ name: newName.trim() })' +
-'    });' +
-'    if (response.ok) loadBranchesList();' +
-'    else alert("Could not update branch.");' +
+'    showPromptModal("Edit branch name:", currentName, async (newName) => {' +
+'        if (!newName || !newName.trim() || newName === currentName) return;' +
+'        const response = await fetch("/tickets/branches/" + id, {' +
+'            method: "PUT",' +
+'            headers: { "Content-Type": "application/json" },' +
+'            body: JSON.stringify({ name: newName.trim() })' +
+'        });' +
+'        if (response.ok) { showAdminToast("Branch updated successfully."); loadBranchesList(); }' +
+'        else { showAdminToast("Could not update branch.", true); }' +
+'    }, "Save");' +
 '}' +
 'async function deleteBranch(id) {' +
 '    showConfirmModal("Remove this branch option?", async () => {' +
 '        const response = await fetch("/tickets/branches/" + id, { method: "DELETE" });' +
-'        if(response.ok) loadBranchesList();' +
+'        if(response.ok) { showAdminToast("Branch removed."); loadBranchesList(); }' +
+'        else { showAdminToast("Could not delete branch.", true); }' +
 '    }, "Delete");' +
 '}' +
 'async function moveBranchRegion(id, newRegion) {' +
@@ -1140,8 +1211,8 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '        headers: { "Content-Type": "application/json" },' +
 '        body: JSON.stringify({ region: newRegion })' +
 '    });' +
-'    if (response.ok) loadBranchesList();' +
-'    else alert("Could not move branch to that region.");' +
+'    if (response.ok) { showAdminToast("Branch moved to " + newRegion + "."); loadBranchesList(); }' +
+'    else { showAdminToast("Could not move branch to that region.", true); }' +
 '}' +
 '        async function loadStaffList() {' +
 '            const [staffRes, branchRes, assignRes] = await Promise.all([' +
