@@ -972,6 +972,8 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                alert("Access Denied: Admins only.");' +
 '                return;' +
 '            }' +
+'            const mainContentEl = document.querySelector(".main-content");' +
+'            if (mainContentEl) mainContentEl.scrollTop = 0;' +
 '            document.querySelectorAll(".dashboard-view").forEach(el => el.classList.remove("active"));' +
 '            document.querySelectorAll(".menu-item").forEach(el => el.classList.remove("active"));' +
 '            if (target === "tickets") {' +
