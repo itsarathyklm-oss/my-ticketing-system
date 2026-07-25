@@ -676,7 +676,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '        .sidebar-footer { padding: 20px; border-top: 1px solid #2d323e; }' +
 '        .user-info { font-size: 12px; color: #a0aec0; margin-bottom: 12px; }' +
 '        .user-info strong { color: #fff; display: block; font-size: 14px; margin-bottom: 2px; }' +
-'        .logout-btn { display: block; width: 100%; text-align: center; background-color: #e53e3e; color: white; text-decoration: none; padding: 10px; border-radius: 6px; font-size: 14px; font-weight: 600; transition: background 0.2s; }' +
+'        .logout-btn { display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%; background-color: #e53e3e; color: white; text-decoration: none; padding: 10px; border-radius: 6px; font-size: 14px; font-weight: 600; transition: background 0.2s; }' +
 '        .logout-btn:hover { background-color: #c53030; }' +
 '        .main-content { flex-grow: 1; display: flex; flex-direction: column; height: 100vh; overflow-y: auto; }' +
 '        .top-navbar { height: 70px; background-color: #fff; border-bottom: 1px solid #e2e8f0; display: flex; align-items: center; justify-content: space-between; padding: 0 30px; }' +
@@ -722,6 +722,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '        .branch-input-group { display: flex; gap: 15px; margin-bottom: 25px; flex-wrap: wrap; }' +
 '        .branch-input-group input { flex-grow: 1; padding: 12px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 14px; }' +
 '        .branch-add-btn { background-color: #0056b3; color: white; border: none; padding: 0 30px; font-size: 14px; font-weight: 600; border-radius: 6px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 4px; }' +
+'        .search-btn { padding: 14px 40px; font-size: 15px; }' +
 '        .branch-add-btn:disabled { opacity: .7; cursor: not-allowed; }' +
 '        .branch-table { width: 100%; border-collapse: collapse; text-align: left; margin-top: 10px; }' +
 '        .branch-table th { background-color: #f7fafc; color: #4a5568; font-size: 13px; font-weight: 600; padding: 12px 16px; border-bottom: 1px solid #e2e8f0; }' +
@@ -781,7 +782,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                <span>Logged in as</span>' +
 '                <strong id="displayUserLabel">Loading...</strong>' +
 '            </div>' +
-'            <a href="/logout" class="logout-btn">Logout</a>' +
+'            <a href="/logout" class="logout-btn" id="logoutBtn" onclick="handleLogoutClick()">Logout</a>' +
 '        </div>' +
 '    </aside>' +
 '    <main class="main-content">' +
@@ -802,7 +803,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                    <div id="staffFilterWrapper" style="display:none;"><label style="display:block;font-size:12px;font-weight:600;color:#4a5568;margin-bottom:4px;">Staff</label><select id="filterStaff" style="padding: 8px 10px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 14px;"><option value="">All Staff</option></select></div>' +
 '                    <div id="regionFilterWrapper" style="display:none;"><label style="display:block;font-size:12px;font-weight:600;color:#4a5568;margin-bottom:4px;">Region</label><select id="filterRegion" style="padding: 8px 10px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 14px;"><option value="">All Regions</option></select></div>' +
 '                    <div><label style="display:block;font-size:12px;font-weight:600;color:#4a5568;margin-bottom:4px;">Category</label><select id="filterCategory" style="padding: 8px 10px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 14px;"><option value="">All Categories</option><option value="Hardware">Hardware</option><option value="Software">Software</option><option value="Network">Network</option><option value="Printer">Printer</option><option value="Other">Other</option></select></div>' +
-'                    <button class="branch-add-btn" onclick="applyTicketFilters()">Search</button>' +
+'                    <button class="branch-add-btn search-btn" id="searchTicketsBtn" onclick="applyTicketFilters()">Search</button>' +
 '                    <button class="branch-delete-btn" onclick="clearTicketFilters()">Clear</button>' +
 '                </div>' +
 '                <div id="ticketList">Loading active queue...</div>' +
@@ -879,6 +880,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                    <h2>Add New Staff Member</h2>' +
 '                    <div class="branch-input-group">' +
 '                        <input type="text" id="newStaffName" placeholder="Full Name">' +
+'                        <input type="text" id="newStaffId" placeholder="Staff ID (optional)">' +
 '                        <input type="text" id="newStaffPassword" placeholder="Password">' +
 '                        <input type="email" id="newStaffEmail" placeholder="Email">' +
 '                        <button class="branch-add-btn" id="addStaffBtn" onclick="addNewStaff()">Add Staff</button>' +
@@ -911,6 +913,9 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '        function resetInactivityTimer() {' +
 '            clearTimeout(inactivityTimer);' +
 '            inactivityTimer = setTimeout(() => { window.location.href = "/logout"; }, 10 * 60 * 1000);' +
+'        }' +
+'        function handleLogoutClick() {' +
+'            document.getElementById("logoutBtn").innerHTML = \'<span class="admin-spinner"></span>Logging out...\';' +
 '        }' +
 '        ["mousemove", "keydown", "click", "scroll", "touchstart"].forEach(evt => {' +
 '            document.addEventListener(evt, resetInactivityTimer);' +
@@ -1006,8 +1011,14 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            currentStatusFilter = status;' +
 '            loadTickets();' +
 '        }' +
-'        function applyTicketFilters() {' +
-'            loadTickets();' +
+'        async function applyTicketFilters() {' +
+'            const btn = document.getElementById("searchTicketsBtn");' +
+'            const defaultHTML = btn.innerHTML;' +
+'            btn.disabled = true;' +
+'            btn.innerHTML = \'<span class="admin-spinner"></span>Searching...\';' +
+'            await loadTickets();' +
+'            btn.disabled = false;' +
+'            btn.innerHTML = defaultHTML;' +
 '        }' +
 '        function clearTicketFilters() {' +
 '            document.getElementById("filterFromDate").value = "";' +
@@ -1357,6 +1368,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '        }' +
 '        async function addNewStaff() {' +
 '            const name = document.getElementById("newStaffName").value.trim();' +
+'            const staffId = document.getElementById("newStaffId").value.trim();' +
 '            const password = document.getElementById("newStaffPassword").value.trim();' +
 '            const email = document.getElementById("newStaffEmail").value.trim();' +
 '            if (!name || !password || !email) { showAdminToast("Please fill in name, password, and email.", true); return; }' +
@@ -1368,13 +1380,15 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                const response = await fetch("/tickets/staff", {' +
 '                    method: "POST",' +
 '                    headers: { "Content-Type": "application/json" },' +
-'                    body: JSON.stringify({ name, password, email })' +
+'                    body: JSON.stringify({ name, staffId, password, email })' +
 '                });' +
 '                if (response.ok) {' +
+'                    const result = await response.json();' +
 '                    document.getElementById("newStaffName").value = "";' +
+'                    document.getElementById("newStaffId").value = "";' +
 '                    document.getElementById("newStaffPassword").value = "";' +
 '                    document.getElementById("newStaffEmail").value = "";' +
-'                    showAdminToast("Staff member added successfully.");' +
+'                    showAdminToast("Staff member added successfully (" + result.staffId + ").");' +
 '                    loadStaffList();' +
 '                } else {' +
 '                    const err = await response.json();' +
@@ -1576,6 +1590,9 @@ app.get('/tickets/report', checkUserLogin, async (req, res) => {
             regionLabel = '-' + req.query.region.replace(/\s+/g, '-');
         }
         const tickets = await Ticket.find(query).sort({ ticketNumber: 1 });
+        const allStaffForReport = await Staff.find();
+        const staffIdByName = {};
+        allStaffForReport.forEach(s => { staffIdByName[s.name] = s.staffId; });
 
         const workbook = new ExcelJS.Workbook();
         const sheet = workbook.addWorksheet('Report');
@@ -1589,6 +1606,7 @@ app.get('/tickets/report', checkUserLogin, async (req, res) => {
             { header: 'Priority', key: 'priority', width: 12 },
             { header: 'Status', key: 'status', width: 12 },
             { header: 'Assigned To', key: 'assignedTo', width: 16 },
+            { header: 'Assigned Staff ID', key: 'assignedStaffId', width: 16 },
             { header: 'Submitted At', key: 'createdAt', width: 22 },
             { header: 'Resolved At', key: 'resolvedAt', width: 22 }
         ];
@@ -1604,6 +1622,7 @@ app.get('/tickets/report', checkUserLogin, async (req, res) => {
                 priority: t.priority,
                 status: t.status,
                 assignedTo: t.assignedTo,
+                assignedStaffId: staffIdByName[t.assignedTo] || (t.assignedTo === 'Admin' ? 'Admin' : ''),
                 createdAt: t.createdAt ? t.createdAt.toLocaleString() : '',
                 resolvedAt: t.resolvedAt ? t.resolvedAt.toLocaleString() : ''
             });
@@ -1794,7 +1813,15 @@ app.post('/tickets/staff', checkAdminLogin, async (req, res) => {
         if (!name || !password || !email) {
             return res.status(400).json({ error: 'Name, password, and email are all required' });
         }
-        const staffId = await getNextStaffId();
+        let staffId = (req.body.staffId || '').trim();
+        if (staffId) {
+            const existing = await Staff.findOne({ staffId });
+            if (existing) {
+                return res.status(400).json({ error: `Staff ID "${staffId}" is already in use.` });
+            }
+        } else {
+            staffId = await getNextStaffId();
+        }
         const hashedPassword = await bcrypt.hash(password, 10);
         const newStaff = new Staff({ staffId, name, password: hashedPassword, email });
         await newStaff.save();
