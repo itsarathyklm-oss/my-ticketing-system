@@ -1,4 +1,5 @@
 const express = require('express');
+const path = require('path');
 const dns = require('dns');
 // Render's outbound network doesn't reliably support IPv6 — without this, Node tries
 // Gmail's IPv6 address first and the connection dies with ENETUNREACH before it ever
@@ -118,10 +119,31 @@ const storage = new CloudinaryStorage({
     cloudinary: cloudinary,
     params: {
         folder: 'helpdesk_screenshots',
-        allowed_formats: ['jpg', 'png', 'jpeg', 'webp']
+        allowed_formats: ['jpg', 'png', 'jpeg', 'webp', 'gif', 'pdf']
     }
 });
-const upload = multer({ storage: storage });
+
+// Upload security: explicit allowlist (not a blocklist) so anything not on this list —
+// including executables like .exe/.bat/.js/.php — is rejected outright, regardless of
+// what extension someone tries to disguise it with. Checks both the extension AND the
+// browser-reported mimetype since either alone can be spoofed.
+const ALLOWED_UPLOAD_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.pdf'];
+const ALLOWED_UPLOAD_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'application/pdf'];
+
+function uploadFileFilter(req, file, cb) {
+    const ext = path.extname(file.originalname || '').toLowerCase();
+    if (ALLOWED_UPLOAD_EXTENSIONS.includes(ext) && ALLOWED_UPLOAD_MIME_TYPES.includes(file.mimetype)) {
+        cb(null, true);
+    } else {
+        cb(new Error('Only PDF, JPG, PNG, WEBP, and GIF files are allowed.'));
+    }
+}
+
+const upload = multer({
+    storage: storage,
+    limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
+    fileFilter: uploadFileFilter
+});
 
 // Staff Schema (persisted so staff can be added via the admin panel)
 const staffSchema = new mongoose.Schema({
@@ -327,7 +349,7 @@ button[type="submit"]:active { transform: translateY(0); }
 .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 .toast.error { background: #9b2c2c; }
 .page-footer { position: fixed; bottom: 8px; left: 0; width: 100%; text-align: center; font-size: 11px; color: rgba(255,255,255,0.55); letter-spacing: .3px; }
-</style></head><body><div id="formToast" class="toast"></div><div class="ticket-card"><div class="ticket-ribbon"><img src="/logo.png" alt="Company Logo" onerror="this.style.display='none'"><span class="ticket-ribbon-text">Sarathy IT Helpdesk</span></div><div class="tab-switch"><button type="button" class="tab-btn active" id="tabSubmitBtn" onclick="showTab('submit')">Submit Ticket</button><button type="button" class="tab-btn" id="tabStatusBtn" onclick="showTab('status')">Check Status</button></div><div class="ticket-body"><div id="submitPane"><h2 class="form-title">Submit a New Ticket</h2><div class="form-subtitle">We'll route it to the right person and keep you posted.</div><div class="ticket-perforation"></div><form id="ticketForm" enctype="multipart/form-data" class="form-grid"><div class="form-field"><label>Your Name</label><input type="text" id="submitterName" required></div><div class="form-field"><label>Designation</label><input type="text" id="submitterDesignation"></div><div class="form-field"><label>Mobile Number</label><input type="tel" id="mobile" placeholder="10-digit mobile number" pattern="[0-9]{10}" maxlength="10" inputmode="numeric" oninput="this.value=this.value.replace(/[^0-9]/g,'').slice(0,10)" required></div><div class="form-field full-width"><label>Issue Title</label><input type="text" id="title" required></div><div class="form-field"><label>Region</label><select id="region" required onchange="updateBranchOptions()"><option value="" disabled selected>Loading...</option></select></div><div class="form-field"><label>Branch Location</label><select id="branch" required><option value="" disabled selected>Select region first</option></select></div><div class="form-field"><label>Priority Level</label><select id="priority"><option value="Low">Low</option><option value="Medium" selected>Medium</option><option value="High">High</option></select></div><div class="form-field"><label>Category</label><select id="category" required><option value="" disabled selected>Select Category</option><option value="Hardware">Hardware</option><option value="Software">Software</option><option value="Network">Network</option><option value="Printer">Printer</option><option value="Other">Other</option></select></div><div class="form-field full-width"><label>Description</label><textarea id="description" required></textarea></div><div class="form-field full-width"><label>Upload Screenshot (Optional)</label><input type="file" id="screenshot" accept="image/*"></div><button type="submit" id="submitTicketBtn">Submit Ticket</button></form></div><div id="statusPane" style="display:none;"><h2 class="form-title">Check Ticket Status</h2><div class="form-subtitle">Enter the mobile number you used when submitting.</div><label>Mobile Number</label><input type="tel" id="statusMobile" placeholder="Enter your 10-digit mobile number" pattern="[0-9]{10}" maxlength="10" inputmode="numeric" oninput="this.value=this.value.replace(/[^0-9]/g,'').slice(0,10)"><button type="button" class="check-status-btn" onclick="checkTicketStatus()">Check Status</button><div id="statusResults"></div></div></div></div><div class="page-footer">&copy; 2026 Sarathy Pvt Ltd</div><script>
+</style></head><body><div id="formToast" class="toast"></div><div class="ticket-card"><div class="ticket-ribbon"><img src="/logo.png" alt="Company Logo" onerror="this.style.display='none'"><span class="ticket-ribbon-text">Sarathy IT Helpdesk</span></div><div class="tab-switch"><button type="button" class="tab-btn active" id="tabSubmitBtn" onclick="showTab('submit')">Submit Ticket</button><button type="button" class="tab-btn" id="tabStatusBtn" onclick="showTab('status')">Check Status</button></div><div class="ticket-body"><div id="submitPane"><h2 class="form-title">Submit a New Ticket</h2><div class="form-subtitle">We'll route it to the right person and keep you posted.</div><div class="ticket-perforation"></div><form id="ticketForm" enctype="multipart/form-data" class="form-grid"><div class="form-field"><label>Your Name</label><input type="text" id="submitterName" required></div><div class="form-field"><label>Designation</label><input type="text" id="submitterDesignation"></div><div class="form-field"><label>Mobile Number</label><input type="tel" id="mobile" placeholder="10-digit mobile number" pattern="[0-9]{10}" maxlength="10" inputmode="numeric" oninput="this.value=this.value.replace(/[^0-9]/g,'').slice(0,10)" required></div><div class="form-field full-width"><label>Issue Title</label><input type="text" id="title" required></div><div class="form-field"><label>Region</label><select id="region" required onchange="updateBranchOptions()"><option value="" disabled selected>Loading...</option></select></div><div class="form-field"><label>Branch Location</label><select id="branch" required><option value="" disabled selected>Select region first</option></select></div><div class="form-field"><label>Priority Level</label><select id="priority"><option value="Low">Low</option><option value="Medium" selected>Medium</option><option value="High">High</option></select></div><div class="form-field"><label>Category</label><select id="category" required><option value="" disabled selected>Select Category</option><option value="Hardware">Hardware</option><option value="Software">Software</option><option value="Network">Network</option><option value="Printer">Printer</option><option value="Other">Other</option></select></div><div class="form-field full-width"><label>Description</label><textarea id="description" required></textarea></div><div class="form-field full-width"><label>Upload Screenshot (Optional, PDF/JPG/PNG/WEBP/GIF, max 5MB)</label><input type="file" id="screenshot" accept="image/jpeg,image/png,image/webp,image/gif,application/pdf,.jpg,.jpeg,.png,.webp,.gif,.pdf"></div><button type="submit" id="submitTicketBtn">Submit Ticket</button></form></div><div id="statusPane" style="display:none;"><h2 class="form-title">Check Ticket Status</h2><div class="form-subtitle">Enter the mobile number you used when submitting.</div><label>Mobile Number</label><input type="tel" id="statusMobile" placeholder="Enter your 10-digit mobile number" pattern="[0-9]{10}" maxlength="10" inputmode="numeric" oninput="this.value=this.value.replace(/[^0-9]/g,'').slice(0,10)"><button type="button" class="check-status-btn" onclick="checkTicketStatus()">Check Status</button><div id="statusResults"></div></div></div></div><div class="page-footer">&copy; 2026 Sarathy Pvt Ltd</div><script>
     let allBranchesCache = [];
     let toastTimer = null;
     function showToast(message, isError) {
@@ -391,7 +413,25 @@ button[type="submit"]:active { transform: translateY(0); }
         formData.append('category', document.getElementById('category').value);
         formData.append('description', document.getElementById('description').value); 
         const fileInput = document.getElementById('screenshot'); 
-        if (fileInput.files[0]) formData.append('screenshot', fileInput.files[0]); 
+        if (fileInput.files[0]) {
+            const file = fileInput.files[0];
+            const allowedExts = ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.pdf'];
+            const nameParts = file.name.split('.');
+            const ext = nameParts.length > 1 ? '.' + nameParts.pop().toLowerCase() : '';
+            if (!allowedExts.includes(ext)) {
+                showToast('Only PDF, JPG, PNG, WEBP, and GIF files are allowed.', true);
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = submitBtnDefaultHTML;
+                return;
+            }
+            if (file.size > 5 * 1024 * 1024) {
+                showToast('File is too large. Maximum allowed size is 5MB.', true);
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = submitBtnDefaultHTML;
+                return;
+            }
+            formData.append('screenshot', file);
+        }
         try {
             const response = await fetch('/tickets', { method: 'POST', body: formData }); 
             if (response.ok) { 
@@ -401,7 +441,12 @@ button[type="submit"]:active { transform: translateY(0); }
                 document.getElementById('ticketForm').reset(); 
                 loadFormBranches();
             } else {
-                showToast('Could not submit the ticket. Please try again.', true);
+                let errorMsg = 'Could not submit the ticket. Please try again.';
+                try {
+                    const errData = await response.json();
+                    if (errData && errData.error) errorMsg = errData.error;
+                } catch (parseErr) {}
+                showToast(errorMsg, true);
             }
         } catch (err) {
             showToast('Something went wrong submitting the ticket. Please check your connection and try again.', true);
@@ -1893,7 +1938,17 @@ app.post('/tickets/staff-branches', checkAdminLogin, async (req, res) => {
     }
 });
 
-app.post('/tickets', upload.single('screenshot'), async (req, res) => {
+app.post('/tickets', (req, res, next) => {
+    upload.single('screenshot')(req, res, (err) => {
+        if (err) {
+            if (err.code === 'LIMIT_FILE_SIZE') {
+                return res.status(400).json({ error: 'File is too large. Maximum allowed size is 5MB.' });
+            }
+            return res.status(400).json({ error: err.message || 'Invalid file upload.' });
+        }
+        next();
+    });
+}, async (req, res) => {
     try {
         const branchName = req.body.branch || 'N/A';
         const allStaff = await Staff.find();
