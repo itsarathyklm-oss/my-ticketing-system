@@ -717,6 +717,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '        .sidebar-menu { list-style: none; padding: 20px 0; flex-grow: 1; }' +
 '        .menu-category { font-size: 11px; font-weight: 700; text-transform: uppercase; color: #4a5568; padding: 10px 24px 5px 24px; letter-spacing: 0.5px; }' +
 '        .menu-item { padding: 12px 24px; display: flex; align-items: center; gap: 12px; color: #a0aec0; text-decoration: none; font-size: 14px; font-weight: 500; cursor: pointer; transition: all 0.2s; border-left: 4px solid transparent; }' +
+'        .menu-icon { width: 17px; height: 17px; flex-shrink: 0; }' +
 '        .menu-item:hover, .menu-item.active { background-color: #2d323e; color: #fff; border-left-color: #0056b3; }' +
 '        .sidebar-footer { padding: 20px; border-top: 1px solid #2d323e; }' +
 '        .user-info { font-size: 12px; color: #a0aec0; margin-bottom: 12px; }' +
@@ -730,9 +731,16 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '        .dashboard-view { display: none; }' +
 '        .dashboard-view.active { display: block; }' +
 '        .metrics-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 20px; margin-bottom: 30px; }' +
-'        .metric-card { background: white; border-radius: 8px; padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); border: 1px solid #e2e8f0; border-top: 4px solid #3182ce; }' +
+'        .metric-card { background: white; border-radius: 12px; padding: 22px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); border: 1px solid #edf1f5; border-top: 3px solid #3182ce; cursor: pointer; transition: box-shadow .2s, transform .2s; }' +
+'        .metric-card:hover { box-shadow: 0 10px 26px rgba(0,0,0,0.09); transform: translateY(-2px); }' +
+'        .metric-icon-badge { width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; margin-bottom: 16px; }' +
+'        .metric-icon-badge svg { width: 20px; height: 20px; }' +
+'        .metric-icon-blue { background: #ebf8ff; color: #3182ce; }' +
+'        .metric-icon-green { background: #f0fff4; color: #38a169; }' +
+'        .metric-icon-red { background: #fff5f5; color: #e53e3e; }' +
+'        .metric-subtitle { font-size: 12px; color: #a0aec0; margin-top: 5px; font-weight: 500; }' +
 '        .metric-card.resolved { border-top-color: #38a169; }' +
-'        .metric-card.assigned { border-top-color: #dd6b20; }' +
+'        .metric-card.assigned { border-top-color: #e53e3e; }' +
 '        .metric-label { font-size: 13px; font-weight: 600; color: #718096; text-transform: uppercase; letter-spacing: 0.5px; }' +
 '        .metric-value { font-size: 28px; font-weight: 700; color: #2d3748; margin-top: 5px; }' +
 '        .ticket-card { background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 24px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); position: relative; border-top: 4px solid #3182ce; }' +
@@ -786,7 +794,17 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '        .confirm-actions button { padding: 9px 18px; border-radius: 7px; font-size: 13px; font-weight: 600; cursor: pointer; border: none; }' +
 '        .confirm-cancel-btn { background: #edf2f7; color: #4a5568; }' +
 '        .confirm-ok-btn { background: #e53e3e; color: #fff; }' +
-'        .admin-toast { position: fixed; top: 20px; left: 50%; transform: translateX(-50%) translateY(-16px); background: #22543d; color: #fff; padding: 12px 22px; border-radius: 9px; font-size: 13px; font-weight: 600; box-shadow: 0 8px 24px rgba(0,0,0,0.3); z-index: 4000; opacity: 0; transition: opacity .25s, transform .25s; pointer-events: none; max-width: 90vw; text-align: center; }' +
+'        .admin-toast { position: fixed; top: 20px; right: 20px; background: #fff; color: #1a202c; padding: 16px 20px; border-radius: 12px; font-size: 13px; box-shadow: 0 16px 40px rgba(0,0,0,0.16); z-index: 4000; opacity: 0; transform: translateX(24px); transition: opacity .25s, transform .25s; pointer-events: none; max-width: 340px; text-align: left; border-left: 4px solid #38a169; display: flex; align-items: flex-start; gap: 12px; overflow: hidden; }' +
+'        .admin-toast.show { opacity: 1; transform: translateX(0); }' +
+'        .admin-toast.error { border-left-color: #e53e3e; }' +
+'        .admin-toast-icon { width: 32px; height: 32px; border-radius: 8px; background: #f0fff4; color: #38a169; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }' +
+'        .admin-toast.error .admin-toast-icon { background: #fff5f5; color: #e53e3e; }' +
+'        .admin-toast-icon svg { width: 18px; height: 18px; }' +
+'        .admin-toast-title { font-weight: 700; font-size: 13px; color: #1a202c; margin-bottom: 2px; }' +
+'        .admin-toast-message { font-size: 12px; color: #718096; line-height: 1.4; }' +
+'        .admin-toast-progress { position: absolute; bottom: 0; left: 0; height: 3px; background: #38a169; animation: toastshrink 4s linear forwards; }' +
+'        .admin-toast.error .admin-toast-progress { background: #e53e3e; }' +
+'        @keyframes toastshrink { from { width: 100%; } to { width: 0%; } }' +
 '        .admin-toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }' +
 '        .admin-toast.error { background: #9b2c2c; }' +
 '        .admin-spinner { width: 13px; height: 13px; border: 2px solid rgba(255,255,255,.4); border-top-color: #fff; border-radius: 50%; display: inline-block; animation: adminspin .7s linear infinite; margin-right: 6px; vertical-align: middle; }' +
@@ -814,12 +832,12 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            </div>' +
 '            <div class="menu-category">Navigation</div>' +
 '            <ul class="sidebar-menu">' +
-'                <li class="menu-item active" id="tabTicketsLink" onclick="switchView(\'tickets\')">Tickets System</li>' +
-(isAdminUser ? '                <li class="menu-item" id="tabBranchesLink" onclick="switchView(\'branches\')">Manage Branches</li>' : '') +
-(isAdminUser ? '                <li class="menu-item" id="tabStaffLink" onclick="switchView(\'staff\')">Manage IT Staff</li>' : '') +
-(isAdminUser ? '                <li class="menu-item" id="tabAuditLink" onclick="switchView(\'audit\')">Audit Log</li>' : '') +
-'                <li class="menu-item" id="tabReportsLink" onclick="switchView(\'reports\')">Reports</li>' +
-'                <li class="menu-item" id="tabPasswordLink" onclick="switchView(\'password\')">Change Password</li>' +
+'                <li class="menu-item active" id="tabTicketsLink" onclick="switchView(\'tickets\')"><svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v2z"></path><line x1="13" y1="5" x2="13" y2="19"></line></svg>Tickets System</li>' +
+(isAdminUser ? '                <li class="menu-item" id="tabBranchesLink" onclick="switchView(\'branches\')"><svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>Manage Branches</li>' : '') +
+(isAdminUser ? '                <li class="menu-item" id="tabStaffLink" onclick="switchView(\'staff\')"><svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>Manage IT Staff</li>' : '') +
+(isAdminUser ? '                <li class="menu-item" id="tabAuditLink" onclick="switchView(\'audit\')"><svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"></path><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg>Audit Log</li>' : '') +
+'                <li class="menu-item" id="tabReportsLink" onclick="switchView(\'reports\')"><svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>Reports</li>' +
+'                <li class="menu-item" id="tabPasswordLink" onclick="switchView(\'password\')"><svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>Change Password</li>' +
 '            </ul>' +
 '        </div>' +
 '        <div class="sidebar-footer">' +
@@ -838,9 +856,9 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '        <section class="content-body">' +
 '            <div id="viewTickets" class="dashboard-view active">' +
 '                <div class="metrics-grid">' +
-'                    <div class="metric-card" style="cursor:pointer;" onclick="filterByStatus(\'Open\')"><div class="metric-label">Open Issues</div><div class="metric-value" id="statOpen">0</div></div>' +
-'                    <div class="metric-card resolved" style="cursor:pointer;" onclick="filterByStatus(\'Resolved\')"><div class="metric-label">Resolved Issues</div><div class="metric-value" id="statResolved">0</div></div>' +
-'                    <div class="metric-card assigned" style="cursor:pointer;" onclick="filterByStatus(\'all\')"><div class="metric-label">Total Tickets</div><div class="metric-value" id="statMine">0</div></div>' +
+'                    <div class="metric-card" onclick="filterByStatus(\'Open\')"><div class="metric-icon-badge metric-icon-blue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg></div><div class="metric-label">Open Issues</div><div class="metric-value" id="statOpen">0</div><div class="metric-subtitle">Needs attention</div></div>' +
+'                    <div class="metric-card resolved" onclick="filterByStatus(\'Resolved\')"><div class="metric-icon-badge metric-icon-green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg></div><div class="metric-label">Resolved Issues</div><div class="metric-value" id="statResolved">0</div><div class="metric-subtitle">Completed successfully</div></div>' +
+'                    <div class="metric-card assigned" onclick="filterByStatus(\'all\')"><div class="metric-icon-badge metric-icon-red"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v2z"></path><line x1="13" y1="5" x2="13" y2="19"></line></svg></div><div class="metric-label">Total Tickets</div><div class="metric-value" id="statMine">0</div><div class="metric-subtitle">All requests in scope</div></div>' +
 '                </div>' +
 '                <div class="branch-panel-card" style="margin-bottom: 20px; display: flex; align-items: flex-end; gap: 14px; flex-wrap: wrap;">' +
 '                    <div><label style="display:block;font-size:12px;font-weight:600;color:#4a5568;margin-bottom:4px;">From Date</label><input type="date" id="filterFromDate" style="padding: 8px 10px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 14px;"></div>' +
@@ -1006,7 +1024,13 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '        let adminToastTimer = null;' +
 '        function showAdminToast(message, isError) {' +
 '            const toast = document.getElementById("adminToast");' +
-'            toast.textContent = message;' +
+'            const iconSvg = isError' +
+'                ? \'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>\'' +
+'                : \'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>\';' +
+'            toast.innerHTML =' +
+'                \'<div class="admin-toast-icon">\' + iconSvg + \'</div>\' +' +
+'                \'<div class="admin-toast-text"><div class="admin-toast-title">\' + (isError ? "Error" : "Success") + \'</div><div class="admin-toast-message">\' + message + \'</div></div>\' +' +
+'                \'<div class="admin-toast-progress"></div>\';' +
 '            toast.className = "admin-toast show" + (isError ? " error" : "");' +
 '            clearTimeout(adminToastTimer);' +
 '            adminToastTimer = setTimeout(() => { toast.classList.remove("show"); }, 4000);' +
