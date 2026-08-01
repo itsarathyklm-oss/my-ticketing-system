@@ -841,7 +841,6 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            <div class="menu-category">Navigation</div>' +
 '            <ul class="sidebar-menu">' +
 '                <li class="menu-item active" id="tabTicketsLink" onclick="switchView(\'tickets\')"><svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v2z"></path><line x1="13" y1="5" x2="13" y2="19"></line></svg>Tickets System</li>' +
-'                <li class="menu-item" id="tabEscalatedLink" onclick="showEscalatedTickets()"><svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>Escalated Tickets</li>' +
 (isAdminUser ? '                <li class="menu-item" id="tabBranchesLink" onclick="switchView(\'branches\')"><svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>Manage Branches</li>' : '') +
 (isAdminUser ? '                <li class="menu-item" id="tabStaffLink" onclick="switchView(\'staff\')"><svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>Manage IT Staff</li>' : '') +
 (isAdminUser ? '                <li class="menu-item" id="tabAuditLink" onclick="switchView(\'audit\')"><svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"></path><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg>Audit Log</li>' : '') +
@@ -1116,14 +1115,6 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            currentStatusFilter = status;' +
 '            loadTickets();' +
 '        }' +
-'        function showEscalatedTickets() {' +
-'            currentStatusFilter = "Escalated";' +
-'            switchView("tickets");' +
-'            document.getElementById("tabTicketsLink").classList.remove("active");' +
-'            document.getElementById("tabEscalatedLink").classList.add("active");' +
-'            document.getElementById("panelViewTitle").innerText = "Escalated Tickets";' +
-'            loadTickets();' +
-'        }' +
 '        async function applyTicketFilters() {' +
 '            const btn = document.getElementById("searchTicketsBtn");' +
 '            const defaultHTML = btn.innerHTML;' +
@@ -1176,7 +1167,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            const response = await fetch("/tickets");' +
 '            if (response.status === 401) { window.location.href = "/login"; return; }' +
 '            let tickets = await response.json();' +
-'            if (!isAdmin && currentStatusFilter !== "Escalated") { tickets = tickets.filter(t => t.assignedTo === currentUser); }' +
+'            if (!isAdmin) { tickets = tickets.filter(t => t.assignedTo === currentUser); }' +
 '            const staffFilterEl = document.getElementById("filterStaff");' +
 '            const staffFilterValue = staffFilterEl ? staffFilterEl.value : "";' +
 '            if (staffFilterValue) { tickets = tickets.filter(t => t.assignedTo === staffFilterValue); }' +
@@ -1683,9 +1674,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 
 // APIs
 app.get('/tickets', checkUserLogin, async (req, res) => {
-    const query = req.session.isAdmin
-        ? {}
-        : { $or: [{ assignedTo: req.session.username }, { escalated: true }] };
+    const query = req.session.isAdmin ? {} : { assignedTo: req.session.username };
     const tickets = await Ticket.find(query).sort({ _id: -1 });
     res.json(tickets);
 });
@@ -1733,7 +1722,23 @@ app.get('/tickets/report', checkUserLogin, async (req, res) => {
         allStaffForReport.forEach(s => { staffIdByName[s.name] = s.staffId; });
 
         const workbook = new ExcelJS.Workbook();
-        const sheet = workbook.addWorksheet('Report');
+        const summarySheet = workbook.addWorksheet('Summary');
+        summarySheet.columns = [
+            { header: 'Report Item', key: 'item', width: 28 },
+            { header: 'Count / Value', key: 'value', width: 26 }
+        ];
+        summarySheet.getRow(1).font = { bold: true };
+        summarySheet.addRows([
+            { item: 'Report Period', value: rangeLabel },
+            { item: 'Total Tickets', value: tickets.length },
+            { item: 'Open Tickets', value: tickets.filter(t => t.status === 'Open').length },
+            { item: 'Resolved Tickets', value: tickets.filter(t => t.status === 'Resolved').length },
+            { item: 'Escalated Tickets', value: tickets.filter(t => t.escalated).length },
+            { item: 'Escalated - Open', value: tickets.filter(t => t.escalated && t.status === 'Open').length },
+            { item: 'Escalated - Resolved', value: tickets.filter(t => t.escalated && t.status === 'Resolved').length }
+        ]);
+
+        const sheet = workbook.addWorksheet('All Tickets');
         sheet.columns = [
             { header: 'Ticket #', key: 'ticketNumber', width: 12 },
             { header: 'Title', key: 'title', width: 30 },
