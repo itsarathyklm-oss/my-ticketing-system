@@ -65,6 +65,8 @@ const ticketSchema = new mongoose.Schema({
     status: { type: String, default: 'Open' },
     assignedTo: { type: String, default: 'Unassigned' },
     escalated: { type: Boolean, default: false },
+    escalatedBy: { type: String, default: '' },
+    escalatedAt: { type: Date },
     createdAt: { type: Date, default: Date.now },
     resolvedAt: { type: Date },
     comments: [{
@@ -839,6 +841,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            <div class="menu-category">Navigation</div>' +
 '            <ul class="sidebar-menu">' +
 '                <li class="menu-item active" id="tabTicketsLink" onclick="switchView(\'tickets\')"><svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v2z"></path><line x1="13" y1="5" x2="13" y2="19"></line></svg>Tickets System</li>' +
+'                <li class="menu-item" id="tabEscalatedLink" onclick="showEscalatedTickets()"><svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>Escalated Tickets</li>' +
 (isAdminUser ? '                <li class="menu-item" id="tabBranchesLink" onclick="switchView(\'branches\')"><svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>Manage Branches</li>' : '') +
 (isAdminUser ? '                <li class="menu-item" id="tabStaffLink" onclick="switchView(\'staff\')"><svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>Manage IT Staff</li>' : '') +
 (isAdminUser ? '                <li class="menu-item" id="tabAuditLink" onclick="switchView(\'audit\')"><svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"></path><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg>Audit Log</li>' : '') +
@@ -1113,6 +1116,14 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            currentStatusFilter = status;' +
 '            loadTickets();' +
 '        }' +
+'        function showEscalatedTickets() {' +
+'            currentStatusFilter = "Escalated";' +
+'            switchView("tickets");' +
+'            document.getElementById("tabTicketsLink").classList.remove("active");' +
+'            document.getElementById("tabEscalatedLink").classList.add("active");' +
+'            document.getElementById("panelViewTitle").innerText = "Escalated Tickets";' +
+'            loadTickets();' +
+'        }' +
 '        async function applyTicketFilters() {' +
 '            const btn = document.getElementById("searchTicketsBtn");' +
 '            const defaultHTML = btn.innerHTML;' +
@@ -1165,7 +1176,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            const response = await fetch("/tickets");' +
 '            if (response.status === 401) { window.location.href = "/login"; return; }' +
 '            let tickets = await response.json();' +
-'            if (!isAdmin) { tickets = tickets.filter(t => t.assignedTo === currentUser); }' +
+'            if (!isAdmin && currentStatusFilter !== "Escalated") { tickets = tickets.filter(t => t.assignedTo === currentUser); }' +
 '            const staffFilterEl = document.getElementById("filterStaff");' +
 '            const staffFilterValue = staffFilterEl ? staffFilterEl.value : "";' +
 '            if (staffFilterValue) { tickets = tickets.filter(t => t.assignedTo === staffFilterValue); }' +
@@ -1185,9 +1196,9 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            if (toVal) { const toDate = new Date(toVal + "T23:59:59"); tickets = tickets.filter(t => t.createdAt && new Date(t.createdAt) <= toDate); }' +
 '            document.getElementById("statOpen").innerText = tickets.filter(t => t.status === "Open").length;' +
 '            document.getElementById("statResolved").innerText = tickets.filter(t => t.status === "Resolved").length;' +
-'            document.getElementById("statEscalated").innerText = tickets.filter(t => t.escalated && t.status !== "Resolved").length;' +
+'            document.getElementById("statEscalated").innerText = tickets.filter(t => t.escalated).length;' +
 '            document.getElementById("statMine").innerText = tickets.length;' +
-'            if (currentStatusFilter === "Escalated") { tickets = tickets.filter(t => t.escalated && t.status !== "Resolved"); }' +
+'            if (currentStatusFilter === "Escalated") { tickets = tickets.filter(t => t.escalated); }' +
 '            else if (currentStatusFilter !== "all") { tickets = tickets.filter(t => t.status === currentStatusFilter); }' +
 '            const listDiv = document.getElementById("ticketList");' +
 '            if (tickets.length === 0) {' +
@@ -1203,6 +1214,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                const actionsHtml = (reallocateBtn || actionBtn || escalateBtn) ? \'<div class="ticket-actions">\'+reallocateBtn+actionBtn+escalateBtn+\'</div>\' : "";' +
 '                const escalatedBadge = ticket.escalated ? \'<span class="badge badge-escalated">Escalated</span>\' : "";' +
 '                const resolvedLine = (ticket.status === "Resolved" && ticket.resolvedAt) ? \' | <span><strong>Resolved:</strong> \'+new Date(ticket.resolvedAt).toLocaleString()+\'</span>\' : "";' +
+'                const escalationLine = ticket.escalated ? \' | <span><strong>Escalation Status:</strong> \'+ticket.status+\' (\'+(ticket.escalatedBy || "Staff")+\' escalated\'+(ticket.escalatedAt ? " on "+new Date(ticket.escalatedAt).toLocaleString() : "")+\')</span>\' : "";' +
 '                const imageHtml = ticket.screenshot ? \'<a href="\'+ticket.screenshot+\'" target="_blank"><img src="\'+ticket.screenshot+\'" class="screenshot-preview"></a>\' : "";' +
 '                let commentListHtml = "";' +
 '                if (ticket.comments) {' +
@@ -1210,7 +1222,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                        commentListHtml += \'<div class="comment-item"><strong>\'+c.author+\':</strong> \'+c.text+\'</div>\';' +
 '                    });' +
 '                }' +
-'                listDiv.innerHTML += \'<div class="ticket-card \'+(isResolved ? "ticket-resolved" : "")+\'"><div class="ticket-header"><div><h3 class="ticket-title">#\'+String(ticket.ticketNumber).padStart(4,"0")+\' \'+ticket.title+\'</h3><div style="margin-top: 8px;"><span class="badge p-\'+ticket.priority+\'">\'+ticket.priority+\'</span><span class="badge status-\'+ticket.status.toLowerCase()+\'">\'+ticket.status+\'</span><span class="badge badge-category">\'+(ticket.category || "Other")+\'</span>\'+escalatedBadge+\'</div></div>\'+actionsHtml+\'</div><p class="ticket-desc">\'+ticket.description+\'</p>\'+imageHtml+\'<div class="assignment-info"><span><strong>Submitted By:</strong> \'+(ticket.submittedBy || "Unknown")+(ticket.designation ? " ("+ticket.designation+")" : "")+\'</span> | <span><strong>Branch:</strong> \'+ticket.branch+\'</span> | <span><strong>Mobile:</strong> \'+ticket.mobile+\'</span> | <span><strong>Assigned:</strong> \'+ticket.assignedTo+\'</span> | <span><strong>Submitted:</strong> \'+(ticket.createdAt ? new Date(ticket.createdAt).toLocaleString() : "N/A")+\'</span>\'+resolvedLine+\'</div><div class="comments-section"><h4 class="comments-header">Internal Work Notes</h4><div>\'+(commentListHtml || "No updates.")+\'</div><div class="comment-form"><input type="text" id="input-\'+ticket._id+\'" placeholder="Write operational update..."><button onclick="addComment(\\\'\'+ticket._id+\'\\\')">Post</button></div></div></div>\';' +
+'                listDiv.innerHTML += \'<div class="ticket-card \'+(isResolved ? "ticket-resolved" : "")+\'"><div class="ticket-header"><div><h3 class="ticket-title">#\'+String(ticket.ticketNumber).padStart(4,"0")+\' \'+ticket.title+\'</h3><div style="margin-top: 8px;"><span class="badge p-\'+ticket.priority+\'">\'+ticket.priority+\'</span><span class="badge status-\'+ticket.status.toLowerCase()+\'">\'+ticket.status+\'</span><span class="badge badge-category">\'+(ticket.category || "Other")+\'</span>\'+escalatedBadge+\'</div></div>\'+actionsHtml+\'</div><p class="ticket-desc">\'+ticket.description+\'</p>\'+imageHtml+\'<div class="assignment-info"><span><strong>Submitted By:</strong> \'+(ticket.submittedBy || "Unknown")+(ticket.designation ? " ("+ticket.designation+")" : "")+\'</span> | <span><strong>Branch:</strong> \'+ticket.branch+\'</span> | <span><strong>Mobile:</strong> \'+ticket.mobile+\'</span> | <span><strong>Assigned:</strong> \'+ticket.assignedTo+\'</span> | <span><strong>Submitted:</strong> \'+(ticket.createdAt ? new Date(ticket.createdAt).toLocaleString() : "N/A")+\'</span>\'+escalationLine+resolvedLine+\'</div><div class="comments-section"><h4 class="comments-header">Internal Work Notes</h4><div>\'+(commentListHtml || "No updates.")+\'</div><div class="comment-form"><input type="text" id="input-\'+ticket._id+\'" placeholder="Write operational update..."><button onclick="addComment(\\\'\'+ticket._id+\'\\\')">Post</button></div></div></div>\';' +
 '            });' +
 '        }' +
 'async function loadRegionsList() {' +
@@ -1671,7 +1683,10 @@ app.get('/admin', checkUserLogin, (req, res) => {
 
 // APIs
 app.get('/tickets', checkUserLogin, async (req, res) => {
-    const tickets = await Ticket.find().sort({ _id: -1 });
+    const query = req.session.isAdmin
+        ? {}
+        : { $or: [{ assignedTo: req.session.username }, { escalated: true }] };
+    const tickets = await Ticket.find(query).sort({ _id: -1 });
     res.json(tickets);
 });
 
@@ -1701,7 +1716,10 @@ app.get('/tickets/report', checkUserLogin, async (req, res) => {
 
         const query = { createdAt: { $gte: startDate, $lte: endDate } };
         if (!req.session.isAdmin) {
-            query.assignedTo = req.session.username;
+            query.$or = [
+                { assignedTo: req.session.username },
+                { escalatedBy: req.session.username }
+            ];
         }
         let regionLabel = '';
         if (req.query.region) {
@@ -1725,6 +1743,9 @@ app.get('/tickets/report', checkUserLogin, async (req, res) => {
             { header: 'Branch', key: 'branch', width: 25 },
             { header: 'Priority', key: 'priority', width: 12 },
             { header: 'Status', key: 'status', width: 12 },
+            { header: 'Escalation Status', key: 'escalationStatus', width: 20 },
+            { header: 'Escalated By', key: 'escalatedBy', width: 18 },
+            { header: 'Escalated At', key: 'escalatedAt', width: 22 },
             { header: 'Assigned To', key: 'assignedTo', width: 16 },
             { header: 'Assigned Staff ID', key: 'assignedStaffId', width: 16 },
             { header: 'Submitted At', key: 'createdAt', width: 22 },
@@ -1741,6 +1762,9 @@ app.get('/tickets/report', checkUserLogin, async (req, res) => {
                 branch: t.branch,
                 priority: t.priority,
                 status: t.status,
+                escalationStatus: t.escalated ? (t.status === 'Resolved' ? 'Escalated - Resolved' : 'Escalated - Open') : 'Not Escalated',
+                escalatedBy: t.escalatedBy || '',
+                escalatedAt: t.escalatedAt ? t.escalatedAt.toLocaleString() : '',
                 assignedTo: t.assignedTo,
                 assignedStaffId: staffIdByName[t.assignedTo] || (t.assignedTo === 'Admin' ? 'Admin' : ''),
                 createdAt: t.createdAt ? t.createdAt.toLocaleString() : '',
@@ -1765,7 +1789,12 @@ app.post('/tickets/:id/resolve', checkUserLogin, async (req, res) => {
 
 // Escalate a ticket to Level 2 (Admin) — reassigns it and flags it as escalated
 app.post('/tickets/:id/escalate', checkUserLogin, async (req, res) => {
-    await Ticket.findByIdAndUpdate(req.params.id, { escalated: true, assignedTo: 'Admin' });
+    await Ticket.findByIdAndUpdate(req.params.id, {
+        escalated: true,
+        escalatedBy: req.session.username,
+        escalatedAt: new Date(),
+        assignedTo: 'Admin'
+    });
     res.json({ success: true });
 });
 
