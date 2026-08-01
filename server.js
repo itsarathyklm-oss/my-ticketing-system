@@ -1705,10 +1705,7 @@ app.get('/tickets/report', checkUserLogin, async (req, res) => {
 
         const query = { createdAt: { $gte: startDate, $lte: endDate } };
         if (!req.session.isAdmin) {
-            query.$or = [
-                { assignedTo: req.session.username },
-                { escalatedBy: req.session.username }
-            ];
+            query.assignedTo = req.session.username;
         }
         let regionLabel = '';
         if (req.query.region) {
@@ -1722,23 +1719,7 @@ app.get('/tickets/report', checkUserLogin, async (req, res) => {
         allStaffForReport.forEach(s => { staffIdByName[s.name] = s.staffId; });
 
         const workbook = new ExcelJS.Workbook();
-        const summarySheet = workbook.addWorksheet('Summary');
-        summarySheet.columns = [
-            { header: 'Report Item', key: 'item', width: 28 },
-            { header: 'Count / Value', key: 'value', width: 26 }
-        ];
-        summarySheet.getRow(1).font = { bold: true };
-        summarySheet.addRows([
-            { item: 'Report Period', value: rangeLabel },
-            { item: 'Total Tickets', value: tickets.length },
-            { item: 'Open Tickets', value: tickets.filter(t => t.status === 'Open').length },
-            { item: 'Resolved Tickets', value: tickets.filter(t => t.status === 'Resolved').length },
-            { item: 'Escalated Tickets', value: tickets.filter(t => t.escalated).length },
-            { item: 'Escalated - Open', value: tickets.filter(t => t.escalated && t.status === 'Open').length },
-            { item: 'Escalated - Resolved', value: tickets.filter(t => t.escalated && t.status === 'Resolved').length }
-        ]);
-
-        const sheet = workbook.addWorksheet('All Tickets');
+        const sheet = workbook.addWorksheet('Report');
         sheet.columns = [
             { header: 'Ticket #', key: 'ticketNumber', width: 12 },
             { header: 'Title', key: 'title', width: 30 },
@@ -1748,9 +1729,6 @@ app.get('/tickets/report', checkUserLogin, async (req, res) => {
             { header: 'Branch', key: 'branch', width: 25 },
             { header: 'Priority', key: 'priority', width: 12 },
             { header: 'Status', key: 'status', width: 12 },
-            { header: 'Escalation Status', key: 'escalationStatus', width: 20 },
-            { header: 'Escalated By', key: 'escalatedBy', width: 18 },
-            { header: 'Escalated At', key: 'escalatedAt', width: 22 },
             { header: 'Assigned To', key: 'assignedTo', width: 16 },
             { header: 'Assigned Staff ID', key: 'assignedStaffId', width: 16 },
             { header: 'Submitted At', key: 'createdAt', width: 22 },
@@ -1767,9 +1745,6 @@ app.get('/tickets/report', checkUserLogin, async (req, res) => {
                 branch: t.branch,
                 priority: t.priority,
                 status: t.status,
-                escalationStatus: t.escalated ? (t.status === 'Resolved' ? 'Escalated - Resolved' : 'Escalated - Open') : 'Not Escalated',
-                escalatedBy: t.escalatedBy || '',
-                escalatedAt: t.escalatedAt ? t.escalatedAt.toLocaleString() : '',
                 assignedTo: t.assignedTo,
                 assignedStaffId: staffIdByName[t.assignedTo] || (t.assignedTo === 'Admin' ? 'Admin' : ''),
                 createdAt: t.createdAt ? t.createdAt.toLocaleString() : '',
