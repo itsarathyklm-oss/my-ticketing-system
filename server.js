@@ -731,20 +731,20 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '        .dashboard-view { display: none; }' +
 '        .dashboard-view.active { display: block; }' +
 '        .metrics-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 16px; }' +
-'        .metric-card { background: white; border-radius: 10px; padding: 12px 14px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); border: 1px solid #edf1f5; border-top: 3px solid #3182ce; cursor: pointer; transition: box-shadow .2s, transform .2s; }' +
+'        .metric-card { background: white; border-radius: 10px; padding: 9px 14px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); border: 1px solid #edf1f5; border-top: 3px solid #3182ce; cursor: pointer; transition: box-shadow .2s, transform .2s; }' +
 '        .metric-card:hover { box-shadow: 0 10px 26px rgba(0,0,0,0.09); transform: translateY(-2px); }' +
-'        .metric-icon-badge { width: 30px; height: 30px; border-radius: 8px; display: flex; align-items: center; justify-content: center; margin-bottom: 6px; }' +
-'        .metric-icon-badge svg { width: 16px; height: 16px; }' +
+'        .metric-icon-badge { width: 26px; height: 26px; border-radius: 7px; display: flex; align-items: center; justify-content: center; margin-bottom: 4px; }' +
+'        .metric-icon-badge svg { width: 14px; height: 14px; }' +
 '        .metric-icon-blue { background: #ebf8ff; color: #3182ce; }' +
 '        .metric-icon-green { background: #f0fff4; color: #38a169; }' +
 '        .metric-icon-red { background: #fff5f5; color: #e53e3e; }' +
 '        .metric-icon-amber { background: #fef3c7; color: #d97706; }' +
-'        .metric-subtitle { font-size: 11px; color: #a0aec0; margin-top: 2px; font-weight: 500; }' +
+'        .metric-subtitle { font-size: 10px; color: #a0aec0; margin-top: 1px; font-weight: 500; }' +
 '        .metric-card.resolved { border-top-color: #38a169; }' +
 '        .metric-card.assigned { border-top-color: #e53e3e; }' +
 '        .metric-card.escalated { border-top-color: #d97706; }' +
 '        .metric-label { font-size: 11px; font-weight: 600; color: #718096; text-transform: uppercase; letter-spacing: 0.5px; }' +
-'        .metric-value { font-size: 22px; font-weight: 700; color: #2d3748; margin-top: 2px; }' +
+'        .metric-value { font-size: 20px; font-weight: 700; color: #2d3748; margin-top: 1px; }' +
 '        .ticket-card { background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 24px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); position: relative; border-top: 4px solid #3182ce; }' +
 '        .ticket-card.ticket-resolved { border-top-color: #38a169; }' +
 '        .ticket-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; }' +
@@ -1769,21 +1769,35 @@ app.post('/tickets/:id/escalate', checkUserLogin, async (req, res) => {
     res.json({ success: true });
 });
 
-// Admin reassigns an escalated ticket back to a staff member
+// Only an admin can reassign an escalated ticket. The escalation flag remains set
+// so it is still included in the Escalated Tickets filter for follow-up.
 app.post('/tickets/:id/reallocate', checkAdminLogin, async (req, res) => {
     try {
         const assignTo = (req.body.assignTo || '').trim();
-        if (!assignTo) return res.status(400).json({ error: 'Staff name is required' });
-        const staff = await Staff.findOne({ name: assignTo });
-        if (!staff) return res.status(404).json({ error: 'Staff member not found' });
+        if (!assignTo) {
+            return res.status(400).json({ error: 'Please select a staff member.' });
+        }
+
         const ticket = await Ticket.findById(req.params.id);
-        if (!ticket) return res.status(404).json({ error: 'Ticket not found' });
-        if (!ticket.escalated) return res.status(400).json({ error: 'Only escalated tickets can be reallocated' });
+        if (!ticket) {
+            return res.status(404).json({ error: 'Ticket not found.' });
+        }
+        if (ticket.status === 'Resolved') {
+            return res.status(400).json({ error: 'Resolved tickets cannot be reallocated.' });
+        }
+        if (!ticket.escalated) {
+            return res.status(400).json({ error: 'Only escalated tickets can be reallocated.' });
+        }
+
+        const staff = await Staff.findOne({ name: assignTo });
+        if (!staff) {
+            return res.status(400).json({ error: 'The selected staff member no longer exists.' });
+        }
+
         ticket.assignedTo = staff.name;
-        ticket.escalated = false;
         await ticket.save();
-        await logAudit(req.session.username, 'Reallocate Ticket', `Ticket #${String(ticket.ticketNumber).padStart(4, '0')} reassigned to ${staff.name}`);
-        res.json({ success: true });
+        await logAudit(req.session.username, 'Reallocate Escalated Ticket', `Reallocated ticket #${ticket.ticketNumber} to ${staff.name}`);
+        res.json({ success: true, assignedTo: staff.name });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
