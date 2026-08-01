@@ -1110,8 +1110,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                loadAuditLog();' +
 '            }' +
 '        }' +
-'        // The dashboard starts focused on work that still needs attention.' +
-'        let currentStatusFilter = "default";' +
+'        let currentStatusFilter = "all";' +
 '        function filterByStatus(status) {' +
 '            currentStatusFilter = status;' +
 '            loadTickets();' +
@@ -1133,7 +1132,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            if (sf) sf.value = "";' +
 '            const rf = document.getElementById("filterRegion");' +
 '            if (rf) rf.value = "";' +
-'            currentStatusFilter = "default";' +
+'            currentStatusFilter = "all";' +
 '            loadTickets();' +
 '        }' +
 '        async function loadStaffFilterOptions() {' +
@@ -1195,8 +1194,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            document.getElementById("statResolved").innerText = tickets.filter(t => t.status === "Resolved").length;' +
 '            document.getElementById("statEscalated").innerText = tickets.filter(t => t.escalated).length;' +
 '            document.getElementById("statMine").innerText = tickets.length;' +
-'            if (currentStatusFilter === "default") { tickets = tickets.filter(t => t.status === "Open" || (t.escalated && t.status !== "Resolved")); }' +
-'            else if (currentStatusFilter === "Escalated") { tickets = tickets.filter(t => t.escalated); }' +
+'            if (currentStatusFilter === "Escalated") { tickets = tickets.filter(t => t.escalated); }' +
 '            else if (currentStatusFilter !== "all") { tickets = tickets.filter(t => t.status === currentStatusFilter); }' +
 '            const listDiv = document.getElementById("ticketList");' +
 '            if (tickets.length === 0) {' +
