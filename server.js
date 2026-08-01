@@ -730,19 +730,21 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '        .content-body { padding: 30px; max-width: 1200px; width: 100%; margin: 0 auto; }' +
 '        .dashboard-view { display: none; }' +
 '        .dashboard-view.active { display: block; }' +
-'        .metrics-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 20px; margin-bottom: 30px; }' +
-'        .metric-card { background: white; border-radius: 12px; padding: 22px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); border: 1px solid #edf1f5; border-top: 3px solid #3182ce; cursor: pointer; transition: box-shadow .2s, transform .2s; }' +
+'        .metrics-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 16px; }' +
+'        .metric-card { background: white; border-radius: 10px; padding: 12px 14px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); border: 1px solid #edf1f5; border-top: 3px solid #3182ce; cursor: pointer; transition: box-shadow .2s, transform .2s; }' +
 '        .metric-card:hover { box-shadow: 0 10px 26px rgba(0,0,0,0.09); transform: translateY(-2px); }' +
-'        .metric-icon-badge { width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; margin-bottom: 16px; }' +
-'        .metric-icon-badge svg { width: 20px; height: 20px; }' +
+'        .metric-icon-badge { width: 30px; height: 30px; border-radius: 8px; display: flex; align-items: center; justify-content: center; margin-bottom: 6px; }' +
+'        .metric-icon-badge svg { width: 16px; height: 16px; }' +
 '        .metric-icon-blue { background: #ebf8ff; color: #3182ce; }' +
 '        .metric-icon-green { background: #f0fff4; color: #38a169; }' +
 '        .metric-icon-red { background: #fff5f5; color: #e53e3e; }' +
-'        .metric-subtitle { font-size: 12px; color: #a0aec0; margin-top: 5px; font-weight: 500; }' +
+'        .metric-icon-amber { background: #fef3c7; color: #d97706; }' +
+'        .metric-subtitle { font-size: 11px; color: #a0aec0; margin-top: 2px; font-weight: 500; }' +
 '        .metric-card.resolved { border-top-color: #38a169; }' +
 '        .metric-card.assigned { border-top-color: #e53e3e; }' +
-'        .metric-label { font-size: 13px; font-weight: 600; color: #718096; text-transform: uppercase; letter-spacing: 0.5px; }' +
-'        .metric-value { font-size: 28px; font-weight: 700; color: #2d3748; margin-top: 5px; }' +
+'        .metric-card.escalated { border-top-color: #d97706; }' +
+'        .metric-label { font-size: 11px; font-weight: 600; color: #718096; text-transform: uppercase; letter-spacing: 0.5px; }' +
+'        .metric-value { font-size: 22px; font-weight: 700; color: #2d3748; margin-top: 2px; }' +
 '        .ticket-card { background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 24px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); position: relative; border-top: 4px solid #3182ce; }' +
 '        .ticket-card.ticket-resolved { border-top-color: #38a169; }' +
 '        .ticket-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; }' +
@@ -754,9 +756,12 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '        .p-High { background-color: #fed7d7; color: #9b2c2c; }' +
 '        .status-open { background-color: #ebf8ff; color: #2b6cb0; }' +
 '        .status-resolved { background-color: #c6f6d5; color: #22543d; }' +
+'        .ticket-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }' +
 '        .resolve-btn { background-color: #38a169; color: white; border: none; padding: 8px 16px; font-size: 13px; font-weight: 600; border-radius: 6px; cursor: pointer; transition: background 0.2s; }' +
 '        .resolve-btn:hover { background-color: #2f855a; }' +
-'        .escalate-btn { background-color: #dd6b20; color: white; border: none; padding: 8px 16px; font-size: 13px; font-weight: 600; border-radius: 6px; cursor: pointer; transition: background 0.2s; margin-left: 8px; }' +
+'        .reallocate-btn { background-color: #805ad5; color: white; border: none; padding: 8px 16px; font-size: 13px; font-weight: 600; border-radius: 6px; cursor: pointer; transition: background 0.2s; }' +
+'        .reallocate-btn:hover { background-color: #6b46c1; }' +
+'        .escalate-btn { background-color: #dd6b20; color: white; border: none; padding: 8px 16px; font-size: 13px; font-weight: 600; border-radius: 6px; cursor: pointer; transition: background 0.2s; }' +
 '        .escalate-btn:hover { background-color: #c05621; }' +
 '        .badge-escalated { background-color: #fef3c7; color: #92400e; }' +
 '        .badge-category { background-color: #e6fffa; color: #234e52; }' +
@@ -816,6 +821,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '        <div class="confirm-box">' +
 '            <p id="confirmMessage"></p>' +
 '            <input type="text" id="confirmInput" style="display:none;width:100%;padding:10px;border:1px solid #cbd5e0;border-radius:6px;font-size:14px;margin-bottom:16px;">' +
+'            <select id="confirmStaffSelect" style="display:none;width:100%;padding:10px;border:1px solid #cbd5e0;border-radius:6px;font-size:14px;margin-bottom:16px;"></select>' +
 '            <div class="confirm-actions">' +
 '                <button class="confirm-cancel-btn" onclick="closeConfirmModal(false)">Cancel</button>' +
 '                <button class="confirm-ok-btn" id="confirmOkBtn" onclick="closeConfirmModal(true)">Confirm</button>' +
@@ -858,6 +864,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                <div class="metrics-grid">' +
 '                    <div class="metric-card" onclick="filterByStatus(\'Open\')"><div class="metric-icon-badge metric-icon-blue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg></div><div class="metric-label">Open Issues</div><div class="metric-value" id="statOpen">0</div><div class="metric-subtitle">Needs attention</div></div>' +
 '                    <div class="metric-card resolved" onclick="filterByStatus(\'Resolved\')"><div class="metric-icon-badge metric-icon-green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg></div><div class="metric-label">Resolved Issues</div><div class="metric-value" id="statResolved">0</div><div class="metric-subtitle">Completed successfully</div></div>' +
+'                    <div class="metric-card escalated" onclick="filterByStatus(\'Escalated\')"><div class="metric-icon-badge metric-icon-amber"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg></div><div class="metric-label">Escalated Tickets</div><div class="metric-value" id="statEscalated">0</div><div class="metric-subtitle">Needs admin action</div></div>' +
 '                    <div class="metric-card assigned" onclick="filterByStatus(\'all\')"><div class="metric-icon-badge metric-icon-red"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v2z"></path><line x1="13" y1="5" x2="13" y2="19"></line></svg></div><div class="metric-label">Total Tickets</div><div class="metric-value" id="statMine">0</div><div class="metric-subtitle">All requests in scope</div></div>' +
 '                </div>' +
 '                <div class="branch-panel-card" style="margin-bottom: 20px; display: flex; align-items: flex-end; gap: 14px; flex-wrap: wrap;">' +
@@ -994,11 +1001,14 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '        }' +
 '        let confirmCallback = null;' +
 '        let confirmHasInput = false;' +
+'        let confirmHasSelect = false;' +
 '        function showConfirmModal(message, callback, okLabel) {' +
 '            document.getElementById("confirmMessage").innerText = message;' +
 '            document.getElementById("confirmOkBtn").innerText = okLabel || "Confirm";' +
 '            document.getElementById("confirmInput").style.display = "none";' +
+'            document.getElementById("confirmStaffSelect").style.display = "none";' +
 '            confirmHasInput = false;' +
+'            confirmHasSelect = false;' +
 '            confirmCallback = callback;' +
 '            document.getElementById("confirmOverlay").classList.add("show");' +
 '        }' +
@@ -1007,19 +1017,40 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            document.getElementById("confirmOkBtn").innerText = okLabel || "Save";' +
 '            const input = document.getElementById("confirmInput");' +
 '            input.style.display = "block";' +
+'            document.getElementById("confirmStaffSelect").style.display = "none";' +
 '            input.value = defaultValue || "";' +
 '            confirmHasInput = true;' +
+'            confirmHasSelect = false;' +
 '            confirmCallback = callback;' +
 '            document.getElementById("confirmOverlay").classList.add("show");' +
 '            setTimeout(() => input.focus(), 50);' +
 '        }' +
+'        function showStaffSelectModal(message, staffList, callback, okLabel) {' +
+'            document.getElementById("confirmMessage").innerText = message;' +
+'            document.getElementById("confirmOkBtn").innerText = okLabel || "Reallocate";' +
+'            document.getElementById("confirmInput").style.display = "none";' +
+'            const select = document.getElementById("confirmStaffSelect");' +
+'            select.style.display = "block";' +
+'            select.innerHTML = \'<option value="" disabled selected>Select staff member</option>\';' +
+'            staffList.forEach(s => { select.innerHTML += \'<option value="\'+s.name+\'">\'+s.name+\'</option>\'; });' +
+'            confirmHasInput = false;' +
+'            confirmHasSelect = true;' +
+'            confirmCallback = callback;' +
+'            document.getElementById("confirmOverlay").classList.add("show");' +
+'        }' +
 '        function closeConfirmModal(confirmed) {' +
 '            const inputValue = document.getElementById("confirmInput").value;' +
+'            const selectValue = document.getElementById("confirmStaffSelect").value;' +
 '            const hadInput = confirmHasInput;' +
+'            const hadSelect = confirmHasSelect;' +
 '            document.getElementById("confirmOverlay").classList.remove("show");' +
 '            const cb = confirmCallback;' +
 '            confirmCallback = null;' +
-'            if (confirmed && cb) { hadInput ? cb(inputValue) : cb(); }' +
+'            if (confirmed && cb) {' +
+'                if (hadSelect) { if (selectValue) cb(selectValue); }' +
+'                else if (hadInput) { cb(inputValue); }' +
+'                else { cb(); }' +
+'            }' +
 '        }' +
 '        let adminToastTimer = null;' +
 '        function showAdminToast(message, isError) {' +
@@ -1154,8 +1185,10 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            if (toVal) { const toDate = new Date(toVal + "T23:59:59"); tickets = tickets.filter(t => t.createdAt && new Date(t.createdAt) <= toDate); }' +
 '            document.getElementById("statOpen").innerText = tickets.filter(t => t.status === "Open").length;' +
 '            document.getElementById("statResolved").innerText = tickets.filter(t => t.status === "Resolved").length;' +
+'            document.getElementById("statEscalated").innerText = tickets.filter(t => t.escalated && t.status !== "Resolved").length;' +
 '            document.getElementById("statMine").innerText = tickets.length;' +
-'            if (currentStatusFilter !== "all") { tickets = tickets.filter(t => t.status === currentStatusFilter); }' +
+'            if (currentStatusFilter === "Escalated") { tickets = tickets.filter(t => t.escalated && t.status !== "Resolved"); }' +
+'            else if (currentStatusFilter !== "all") { tickets = tickets.filter(t => t.status === currentStatusFilter); }' +
 '            const listDiv = document.getElementById("ticketList");' +
 '            if (tickets.length === 0) {' +
 '                listDiv.innerHTML = \'<p style="text-align: center; color: #718096; padding: 40px 0;">No support requests logs found.</p>\';' +
@@ -1164,8 +1197,10 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            listDiv.innerHTML = "";' +
 '            tickets.forEach(ticket => {' +
 '                const isResolved = ticket.status === "Resolved";' +
+'                const reallocateBtn = (isAdmin && !isResolved && ticket.escalated) ? \'<button class="reallocate-btn" onclick="reallocateTicket(\\\'\'+ticket._id+\'\\\')">Reallocate</button>\' : "";' +
 '                const actionBtn = isResolved ? "" : \'<button class="resolve-btn" onclick="resolveTicket(\\\'\'+ticket._id+\'\\\')">Resolve Ticket</button>\';' +
-'                const escalateBtn = (!isAdmin && !isResolved && !ticket.escalated) ? \' <button class="escalate-btn" onclick="escalateTicket(\\\'\'+ticket._id+\'\\\')">Escalate to Admin</button>\' : "";' +
+'                const escalateBtn = (!isAdmin && !isResolved && !ticket.escalated) ? \'<button class="escalate-btn" onclick="escalateTicket(\\\'\'+ticket._id+\'\\\')">Escalate to Admin</button>\' : "";' +
+'                const actionsHtml = (reallocateBtn || actionBtn || escalateBtn) ? \'<div class="ticket-actions">\'+reallocateBtn+actionBtn+escalateBtn+\'</div>\' : "";' +
 '                const escalatedBadge = ticket.escalated ? \'<span class="badge badge-escalated">Escalated</span>\' : "";' +
 '                const resolvedLine = (ticket.status === "Resolved" && ticket.resolvedAt) ? \' | <span><strong>Resolved:</strong> \'+new Date(ticket.resolvedAt).toLocaleString()+\'</span>\' : "";' +
 '                const imageHtml = ticket.screenshot ? \'<a href="\'+ticket.screenshot+\'" target="_blank"><img src="\'+ticket.screenshot+\'" class="screenshot-preview"></a>\' : "";' +
@@ -1175,7 +1210,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                        commentListHtml += \'<div class="comment-item"><strong>\'+c.author+\':</strong> \'+c.text+\'</div>\';' +
 '                    });' +
 '                }' +
-'                listDiv.innerHTML += \'<div class="ticket-card \'+(isResolved ? "ticket-resolved" : "")+\'"><div class="ticket-header"><div><h3 class="ticket-title">#\'+String(ticket.ticketNumber).padStart(4,"0")+\' \'+ticket.title+\'</h3><div style="margin-top: 8px;"><span class="badge p-\'+ticket.priority+\'">\'+ticket.priority+\'</span><span class="badge status-\'+ticket.status.toLowerCase()+\'">\'+ticket.status+\'</span><span class="badge badge-category">\'+(ticket.category || "Other")+\'</span>\'+escalatedBadge+\'</div></div>\'+actionBtn+escalateBtn+\'</div><p class="ticket-desc">\'+ticket.description+\'</p>\'+imageHtml+\'<div class="assignment-info"><span><strong>Submitted By:</strong> \'+(ticket.submittedBy || "Unknown")+(ticket.designation ? " ("+ticket.designation+")" : "")+\'</span> | <span><strong>Branch:</strong> \'+ticket.branch+\'</span> | <span><strong>Mobile:</strong> \'+ticket.mobile+\'</span> | <span><strong>Assigned:</strong> \'+ticket.assignedTo+\'</span> | <span><strong>Submitted:</strong> \'+(ticket.createdAt ? new Date(ticket.createdAt).toLocaleString() : "N/A")+\'</span>\'+resolvedLine+\'</div><div class="comments-section"><h4 class="comments-header">Internal Work Notes</h4><div>\'+(commentListHtml || "No updates.")+\'</div><div class="comment-form"><input type="text" id="input-\'+ticket._id+\'" placeholder="Write operational update..."><button onclick="addComment(\\\'\'+ticket._id+\'\\\')">Post</button></div></div></div>\';' +
+'                listDiv.innerHTML += \'<div class="ticket-card \'+(isResolved ? "ticket-resolved" : "")+\'"><div class="ticket-header"><div><h3 class="ticket-title">#\'+String(ticket.ticketNumber).padStart(4,"0")+\' \'+ticket.title+\'</h3><div style="margin-top: 8px;"><span class="badge p-\'+ticket.priority+\'">\'+ticket.priority+\'</span><span class="badge status-\'+ticket.status.toLowerCase()+\'">\'+ticket.status+\'</span><span class="badge badge-category">\'+(ticket.category || "Other")+\'</span>\'+escalatedBadge+\'</div></div>\'+actionsHtml+\'</div><p class="ticket-desc">\'+ticket.description+\'</p>\'+imageHtml+\'<div class="assignment-info"><span><strong>Submitted By:</strong> \'+(ticket.submittedBy || "Unknown")+(ticket.designation ? " ("+ticket.designation+")" : "")+\'</span> | <span><strong>Branch:</strong> \'+ticket.branch+\'</span> | <span><strong>Mobile:</strong> \'+ticket.mobile+\'</span> | <span><strong>Assigned:</strong> \'+ticket.assignedTo+\'</span> | <span><strong>Submitted:</strong> \'+(ticket.createdAt ? new Date(ticket.createdAt).toLocaleString() : "N/A")+\'</span>\'+resolvedLine+\'</div><div class="comments-section"><h4 class="comments-header">Internal Work Notes</h4><div>\'+(commentListHtml || "No updates.")+\'</div><div class="comment-form"><input type="text" id="input-\'+ticket._id+\'" placeholder="Write operational update..."><button onclick="addComment(\\\'\'+ticket._id+\'\\\')">Post</button></div></div></div>\';' +
 '            });' +
 '        }' +
 'async function loadRegionsList() {' +
@@ -1496,6 +1531,20 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                if (response.ok) loadTickets();' +
 '            }, "Escalate");' +
 '        }' +
+'        async function reallocateTicket(id) {' +
+'            const res = await fetch("/tickets/staff-list");' +
+'            const staff = await res.json();' +
+'            if (!staff.length) { showAdminToast("No staff members available to reallocate to.", true); return; }' +
+'            showStaffSelectModal("Select a staff member to reassign this ticket:", staff, async (staffName) => {' +
+'                const response = await fetch("/tickets/" + id + "/reallocate", {' +
+'                    method: "POST",' +
+'                    headers: { "Content-Type": "application/json" },' +
+'                    body: JSON.stringify({ assignTo: staffName })' +
+'                });' +
+'                if (response.ok) { showAdminToast("Ticket reallocated to " + staffName + "."); loadTickets(); }' +
+'                else { const err = await response.json(); showAdminToast(err.error || "Could not reallocate ticket.", true); }' +
+'            }, "Reallocate");' +
+'        }' +
 '        let chartInstances = {};' +
 '        function renderChart(canvasId, config) {' +
 '            const el = document.getElementById(canvasId);' +
@@ -1718,6 +1767,26 @@ app.post('/tickets/:id/resolve', checkUserLogin, async (req, res) => {
 app.post('/tickets/:id/escalate', checkUserLogin, async (req, res) => {
     await Ticket.findByIdAndUpdate(req.params.id, { escalated: true, assignedTo: 'Admin' });
     res.json({ success: true });
+});
+
+// Admin reassigns an escalated ticket back to a staff member
+app.post('/tickets/:id/reallocate', checkAdminLogin, async (req, res) => {
+    try {
+        const assignTo = (req.body.assignTo || '').trim();
+        if (!assignTo) return res.status(400).json({ error: 'Staff name is required' });
+        const staff = await Staff.findOne({ name: assignTo });
+        if (!staff) return res.status(404).json({ error: 'Staff member not found' });
+        const ticket = await Ticket.findById(req.params.id);
+        if (!ticket) return res.status(404).json({ error: 'Ticket not found' });
+        if (!ticket.escalated) return res.status(400).json({ error: 'Only escalated tickets can be reallocated' });
+        ticket.assignedTo = staff.name;
+        ticket.escalated = false;
+        await ticket.save();
+        await logAudit(req.session.username, 'Reallocate Ticket', `Ticket #${String(ticket.ticketNumber).padStart(4, '0')} reassigned to ${staff.name}`);
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
 app.post('/tickets/:id/comment', checkUserLogin, async (req, res) => {
