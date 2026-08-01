@@ -93,6 +93,18 @@ const auditLogSchema = new mongoose.Schema({
 });
 const AuditLog = mongoose.model('AuditLog', auditLogSchema);
 
+// In-app notifications for newly assigned or reallocated tickets.
+const notificationSchema = new mongoose.Schema({
+    recipient: { type: String, required: true },
+    ticketId: { type: mongoose.Schema.Types.ObjectId, ref: 'Ticket', required: true },
+    ticketNumber: { type: Number, required: true },
+    title: { type: String, required: true },
+    message: { type: String, required: true },
+    read: { type: Boolean, default: false },
+    createdAt: { type: Date, default: Date.now }
+});
+const Notification = mongoose.model('Notification', notificationSchema);
+
 async function logAudit(actor, action, details) {
     try {
         await AuditLog.create({ actor, action, details });
@@ -729,6 +741,18 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '        .main-content { flex-grow: 1; display: flex; flex-direction: column; height: 100vh; overflow-y: auto; }' +
 '        .top-navbar { height: 70px; background-color: #fff; border-bottom: 1px solid #e2e8f0; display: flex; align-items: center; justify-content: space-between; padding: 0 30px; }' +
 '        .page-title { font-size: 20px; font-weight: 600; color: #2d3748; }' +
+'        .notification-wrap { position: relative; }' +
+'        .notification-btn { position: relative; width: 40px; height: 40px; border: 1px solid #e2e8f0; border-radius: 50%; background: #fff; color: #2d3748; cursor: pointer; display: flex; align-items: center; justify-content: center; }' +
+'        .notification-btn:hover { background: #f7fafc; }' +
+'        .notification-btn svg { width: 20px; height: 20px; }' +
+'        .notification-count { position: absolute; top: -5px; right: -5px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 10px; background: #e53e3e; color: #fff; font-size: 10px; font-weight: 700; display: none; align-items: center; justify-content: center; }' +
+'        .notification-menu { display: none; position: absolute; top: 48px; right: 0; width: 330px; max-height: 360px; overflow-y: auto; background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; box-shadow: 0 14px 34px rgba(0,0,0,.16); z-index: 3000; }' +
+'        .notification-menu.show { display: block; }' +
+'        .notification-head { padding: 12px 14px; font-size: 14px; font-weight: 700; border-bottom: 1px solid #edf2f7; }' +
+'        .notification-item { padding: 12px 14px; border-bottom: 1px solid #edf2f7; font-size: 12px; color: #4a5568; }' +
+'        .notification-item.unread { background: #ebf8ff; }' +
+'        .notification-item strong { display: block; color: #2d3748; margin-bottom: 3px; }' +
+'        .notification-empty { padding: 20px; text-align: center; color: #718096; font-size: 13px; }' +
 '        .content-body { padding: 30px; max-width: 1200px; width: 100%; margin: 0 auto; }' +
 '        .dashboard-view { display: none; }' +
 '        .dashboard-view.active { display: block; }' +
@@ -860,6 +884,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '        <header class="top-navbar">' +
 '            <button class="hamburger-btn" onclick="toggleSidebar()" aria-label="Menu"><span></span><span></span><span></span></button>' +
 '            <h1 class="page-title" id="panelViewTitle">Helpdesk Operations</h1>' +
+'            <div class="notification-wrap"><button type="button" class="notification-btn" onclick="toggleNotifications()" aria-label="Notifications"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg><span id="notificationCount" class="notification-count">0</span></button><div id="notificationMenu" class="notification-menu"><div class="notification-head">Notifications</div><div id="notificationList" class="notification-empty">No notifications.</div></div></div>' +
 '        </header>' +
 '        <section class="content-body">' +
 '            <div id="viewTickets" class="dashboard-view active">' +
@@ -981,6 +1006,37 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '        const currentUser = "' + dynamicUsername + '";' +
 '        const isAdmin = ' + dynamicIsAdmin + ';' +
 '        document.getElementById("displayUserLabel").innerText = currentUser;' +
+'        let knownNotificationIds = new Set();' +
+'        let notificationsInitialized = false;' +
+'        function playNotificationSound() {' +
+'            try { const audio = new (window.AudioContext || window.webkitAudioContext)(); const oscillator = audio.createOscillator(); const gain = audio.createGain(); oscillator.frequency.value = 880; gain.gain.setValueAtTime(.08, audio.currentTime); oscillator.connect(gain); gain.connect(audio.destination); oscillator.start(); oscillator.stop(audio.currentTime + .18); } catch (err) { console.warn("Notification sound could not play."); }' +
+'        }' +
+'        function toggleNotifications() {' +
+'            const menu = document.getElementById("notificationMenu");' +
+'            menu.classList.toggle("show");' +
+'            if (menu.classList.contains("show")) markNotificationsRead();' +
+'        }' +
+'        async function markNotificationsRead() {' +
+'            const response = await fetch("/notifications/read", { method: "POST" });' +
+'            if (response.ok) document.getElementById("notificationCount").style.display = "none";' +
+'        }' +
+'        async function loadNotifications() {' +
+'            try {' +
+'                const response = await fetch("/notifications");' +
+'                if (!response.ok) return;' +
+'                const notifications = await response.json();' +
+'                const unread = notifications.filter(n => !n.read);' +
+'                const count = document.getElementById("notificationCount");' +
+'                count.innerText = unread.length > 99 ? "99+" : unread.length;' +
+'                count.style.display = unread.length ? "flex" : "none";' +
+'                const list = document.getElementById("notificationList");' +
+'                list.innerHTML = notifications.length ? notifications.map(n => \'<div class="notification-item \'+(!n.read ? "unread" : "")+\'"><strong>Ticket #\'+String(n.ticketNumber).padStart(4,"0")+\' assigned</strong>\'+n.message+\'<br><small>\'+new Date(n.createdAt).toLocaleString()+\'</small></div>\').join("") : \'<div class="notification-empty">No notifications.</div>\';' +
+'                const newUnread = unread.filter(n => !knownNotificationIds.has(n._id));' +
+'                if (newUnread.length) { playNotificationSound(); showAdminToast(newUnread[0].message); }' +
+'                notifications.forEach(n => knownNotificationIds.add(n._id));' +
+'                notificationsInitialized = true;' +
+'            } catch (err) { console.warn("Could not load notifications."); }' +
+'        }' +
 '        let inactivityTimer = null;' +
 '        function resetInactivityTimer() {' +
 '            clearTimeout(inactivityTimer);' +
@@ -1672,6 +1728,8 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            }' +
 '        }' +
 '        document.getElementById("reportMonth").value = new Date().toISOString().slice(0, 7);' +
+'        loadNotifications();' +
+'        setInterval(loadNotifications, 30000);' +
 '        loadStaffFilterOptions();' +
 '        loadRegionFilterOptions();' +
 '        loadTickets();' +
@@ -1694,6 +1752,24 @@ app.get('/tickets', checkUserLogin, async (req, res) => {
     } catch (err) {
         console.error('Could not load tickets:', err.message);
         res.status(500).json({ error: 'Could not load tickets.' });
+    }
+});
+
+app.get('/notifications', checkUserLogin, async (req, res) => {
+    try {
+        const notifications = await Notification.find({ recipient: req.session.username }).sort({ createdAt: -1 }).limit(50);
+        res.json(notifications);
+    } catch (err) {
+        res.status(500).json({ error: 'Could not load notifications.' });
+    }
+});
+
+app.post('/notifications/read', checkUserLogin, async (req, res) => {
+    try {
+        await Notification.updateMany({ recipient: req.session.username, read: false }, { $set: { read: true } });
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: 'Could not update notifications.' });
     }
 });
 
@@ -1823,6 +1899,13 @@ app.post('/tickets/:id/reallocate', checkAdminLogin, async (req, res) => {
 
         ticket.assignedTo = staff.name;
         await ticket.save();
+        await Notification.create({
+            recipient: staff.name,
+            ticketId: ticket._id,
+            ticketNumber: ticket.ticketNumber,
+            title: ticket.title,
+            message: `Ticket #${String(ticket.ticketNumber).padStart(4, '0')} - ${ticket.title} was reallocated to you.`
+        });
         await logAudit(req.session.username, 'Reallocate Escalated Ticket', `Reallocated ticket #${ticket.ticketNumber} to ${staff.name}`);
         res.json({ success: true, assignedTo: staff.name });
     } catch (err) {
@@ -2119,6 +2202,13 @@ app.post('/tickets', (req, res, next) => {
         });
 
         await newTicket.save();
+        await Notification.create({
+            recipient: assignedStaff.name,
+            ticketId: newTicket._id,
+            ticketNumber,
+            title: newTicket.title,
+            message: `Ticket #${String(ticketNumber).padStart(4, '0')} - ${newTicket.title} has been assigned to you.`
+        });
 
         const mailOptions = {
             from: process.env.EMAIL_USER,
