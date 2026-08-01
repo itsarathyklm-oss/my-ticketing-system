@@ -1165,8 +1165,13 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            }' +
 '        }' +
 '        async function loadTickets() {' +
-'            const response = await fetch("/tickets");' +
+'            try {' +
+'            const controller = new AbortController();' +
+'            const timeout = setTimeout(() => controller.abort(), 15000);' +
+'            const response = await fetch("/tickets", { signal: controller.signal });' +
+'            clearTimeout(timeout);' +
 '            if (response.status === 401) { window.location.href = "/login"; return; }' +
+'            if (!response.ok) { throw new Error("Ticket request failed (" + response.status + ")"); }' +
 '            let tickets = await response.json();' +
 '            if (!isAdmin) { tickets = tickets.filter(t => t.assignedTo === currentUser); }' +
 '            const staffFilterEl = document.getElementById("filterStaff");' +
@@ -1217,6 +1222,11 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                }' +
 '                listDiv.innerHTML += \'<div class="ticket-card \'+(isResolved ? "ticket-resolved" : "")+\'"><div class="ticket-header"><div><h3 class="ticket-title">#\'+String(ticket.ticketNumber).padStart(4,"0")+\' \'+ticket.title+\'</h3><div style="margin-top: 8px;"><span class="badge p-\'+ticket.priority+\'">\'+ticket.priority+\'</span><span class="badge status-\'+ticket.status.toLowerCase()+\'">\'+ticket.status+\'</span><span class="badge badge-category">\'+(ticket.category || "Other")+\'</span>\'+escalatedBadge+\'</div></div>\'+actionsHtml+\'</div><p class="ticket-desc">\'+ticket.description+\'</p>\'+imageHtml+\'<div class="assignment-info"><span><strong>Submitted By:</strong> \'+(ticket.submittedBy || "Unknown")+(ticket.designation ? " ("+ticket.designation+")" : "")+\'</span> | <span><strong>Branch:</strong> \'+ticket.branch+\'</span> | <span><strong>Mobile:</strong> \'+ticket.mobile+\'</span> | <span><strong>Assigned:</strong> \'+ticket.assignedTo+\'</span> | <span><strong>Submitted:</strong> \'+(ticket.createdAt ? new Date(ticket.createdAt).toLocaleString() : "N/A")+\'</span>\'+escalationLine+resolvedLine+\'</div><div class="comments-section"><h4 class="comments-header">Internal Work Notes</h4><div>\'+(commentListHtml || "No updates.")+\'</div><div class="comment-form"><input type="text" id="input-\'+ticket._id+\'" placeholder="Write operational update..."><button onclick="addComment(\\\'\'+ticket._id+\'\\\')">Post</button></div></div></div>\';' +
 '            });' +
+'            } catch (err) {' +
+'                console.error("Could not load tickets:", err);' +
+'                const message = err.name === "AbortError" ? "Ticket loading timed out. Check that the MongoDB connection is available." : "Could not load tickets. Please refresh the page. If this continues, check the server connection.";' +
+'                document.getElementById("ticketList").innerHTML = \'<p style="text-align:center;color:#c53030;padding:40px 0;">\'+message+\'</p>\';' +
+'            }' +
 '        }' +
 'async function loadRegionsList() {' +
 '    const response = await fetch("/tickets/regions");' +
@@ -1676,9 +1686,17 @@ app.get('/admin', checkUserLogin, (req, res) => {
 
 // APIs
 app.get('/tickets', checkUserLogin, async (req, res) => {
-    const query = req.session.isAdmin ? {} : { assignedTo: req.session.username };
-    const tickets = await Ticket.find(query).sort({ _id: -1 });
-    res.json(tickets);
+    try {
+        if (mongoose.connection.readyState !== 1) {
+            return res.status(503).json({ error: 'Database connection is not ready.' });
+        }
+        const query = req.session.isAdmin ? {} : { assignedTo: req.session.username };
+        const tickets = await Ticket.find(query).sort({ _id: -1 });
+        res.json(tickets);
+    } catch (err) {
+        console.error('Could not load tickets:', err.message);
+        res.status(500).json({ error: 'Could not load tickets.' });
+    }
 });
 
 // Download a monthly Excel report — staff get only their own tickets, admin gets everyone's
