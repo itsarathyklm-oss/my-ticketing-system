@@ -840,6 +840,14 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '        .admin-toast.error { background: #9b2c2c; }' +
 '        .admin-spinner { width: 13px; height: 13px; border: 2px solid rgba(255,255,255,.4); border-top-color: #fff; border-radius: 50%; display: inline-block; animation: adminspin .7s linear infinite; margin-right: 6px; vertical-align: middle; }' +
 '        @keyframes adminspin { to { transform: rotate(360deg); } }' +
+'        .pagination-bar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; padding: 14px 4px 4px; }' +
+'        .pagination-info { font-size: 13px; color: #718096; }' +
+'        .pagination-controls { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }' +
+'        .page-btn { min-width: 34px; height: 34px; padding: 0 10px; border: 1px solid #e2e8f0; background: #fff; color: #4a5568; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; }' +
+'        .page-btn:hover:not(:disabled) { background: #f7fafc; }' +
+'        .page-btn.active { background: #0056b3; border-color: #0056b3; color: #fff; }' +
+'        .page-btn:disabled { opacity: .5; cursor: not-allowed; }' +
+'        .page-ellipsis { padding: 0 4px; color: #a0aec0; font-size: 13px; }' +
 '    </style>' +
 '</head>' +
 '<body>' +
@@ -904,6 +912,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                    <button class="branch-delete-btn" onclick="clearTicketFilters()">Clear</button>' +
 '                </div>' +
 '                <div id="ticketList">Loading active queue...</div>' +
+'                <div id="ticketPagination" class="pagination-bar" style="display:none;"></div>' +
 '            </div>' +
 '            <div id="viewReports" class="dashboard-view">' +
 '                <div class="branch-panel-card" style="display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 20px;">' +
@@ -1166,9 +1175,12 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                loadAuditLog();' +
 '            }' +
 '        }' +
-'        let currentStatusFilter = "all";' +
+'        let currentStatusFilter = "default-view";' +
+'        let currentPage = 1;' +
+'        const PAGE_SIZE = 10;' +
 '        function filterByStatus(status) {' +
 '            currentStatusFilter = status;' +
+'            currentPage = 1;' +
 '            loadTickets();' +
 '        }' +
 '        async function applyTicketFilters() {' +
@@ -1176,6 +1188,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            const defaultHTML = btn.innerHTML;' +
 '            btn.disabled = true;' +
 '            btn.innerHTML = \'<span class="admin-spinner"></span>Searching...\';' +
+'            currentPage = 1;' +
 '            await loadTickets();' +
 '            btn.disabled = false;' +
 '            btn.innerHTML = defaultHTML;' +
@@ -1188,8 +1201,40 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            if (sf) sf.value = "";' +
 '            const rf = document.getElementById("filterRegion");' +
 '            if (rf) rf.value = "";' +
-'            currentStatusFilter = "all";' +
+'            currentStatusFilter = "default-view";' +
+'            currentPage = 1;' +
 '            loadTickets();' +
+'        }' +
+'        function goToPage(page) {' +
+'            currentPage = page;' +
+'            loadTickets();' +
+'            const mainContentEl = document.querySelector(".main-content");' +
+'            if (mainContentEl) mainContentEl.scrollTop = 0;' +
+'        }' +
+'        function renderPagination(totalItems) {' +
+'            const bar = document.getElementById("ticketPagination");' +
+'            const totalPages = Math.max(1, Math.ceil(totalItems / PAGE_SIZE));' +
+'            if (currentPage > totalPages) currentPage = totalPages;' +
+'            if (totalItems === 0) { bar.style.display = "none"; bar.innerHTML = ""; return; }' +
+'            bar.style.display = "flex";' +
+'            const startItem = (currentPage - 1) * PAGE_SIZE + 1;' +
+'            const endItem = Math.min(currentPage * PAGE_SIZE, totalItems);' +
+'            let pageButtonsHtml = \'<button class="page-btn" \'+(currentPage === 1 ? "disabled" : "")+\' onclick="goToPage(\'+(currentPage - 1)+\')">\u2190 Prev</button>\';' +
+'            const addPageBtn = (p) => { pageButtonsHtml += \'<button class="page-btn \'+(p === currentPage ? "active" : "")+\'" onclick="goToPage(\'+p+\')">\'+p+\'</button>\'; };' +
+'            const addEllipsis = () => { pageButtonsHtml += \'<span class="page-ellipsis">\u2026</span>\'; };' +
+'            const windowSize = 1;' +
+'            let lastPrinted = 0;' +
+'            for (let p = 1; p <= totalPages; p++) {' +
+'                const nearCurrent = Math.abs(p - currentPage) <= windowSize;' +
+'                const isEdge = p === 1 || p === totalPages;' +
+'                if (nearCurrent || isEdge) {' +
+'                    if (p - lastPrinted > 1) addEllipsis();' +
+'                    addPageBtn(p);' +
+'                    lastPrinted = p;' +
+'                }' +
+'            }' +
+'            pageButtonsHtml += \'<button class="page-btn" \'+(currentPage === totalPages ? "disabled" : "")+\' onclick="goToPage(\'+(currentPage + 1)+\')">Next \u2192</button>\';' +
+'            bar.innerHTML = \'<div class="pagination-info">Showing \'+startItem+\' \u2013 \'+endItem+\' of \'+totalItems+\' entries</div><div class="pagination-controls">\'+pageButtonsHtml+\'</div>\';' +
 '        }' +
 '        async function loadStaffFilterOptions() {' +
 '            if (!isAdmin) return;' +
@@ -1250,15 +1295,23 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            document.getElementById("statResolved").innerText = tickets.filter(t => t.status === "Resolved").length;' +
 '            document.getElementById("statEscalated").innerText = tickets.filter(t => t.escalated).length;' +
 '            document.getElementById("statMine").innerText = tickets.length;' +
-'            if (currentStatusFilter === "Escalated") { tickets = tickets.filter(t => t.escalated); }' +
+'            if (currentStatusFilter === "default-view") { tickets = tickets.filter(t => t.status === "Open" || t.escalated); }' +
+'            else if (currentStatusFilter === "Escalated") { tickets = tickets.filter(t => t.escalated); }' +
 '            else if (currentStatusFilter !== "all") { tickets = tickets.filter(t => t.status === currentStatusFilter); }' +
+'            const totalFilteredCount = tickets.length;' +
+'            const totalPages = Math.max(1, Math.ceil(totalFilteredCount / PAGE_SIZE));' +
+'            if (currentPage > totalPages) currentPage = totalPages;' +
+'            if (currentPage < 1) currentPage = 1;' +
+'            const pageStart = (currentPage - 1) * PAGE_SIZE;' +
+'            const pagedTickets = tickets.slice(pageStart, pageStart + PAGE_SIZE);' +
 '            const listDiv = document.getElementById("ticketList");' +
-'            if (tickets.length === 0) {' +
+'            if (pagedTickets.length === 0) {' +
 '                listDiv.innerHTML = \'<p style="text-align: center; color: #718096; padding: 40px 0;">No support requests logs found.</p>\';' +
+'                renderPagination(totalFilteredCount);' +
 '                return;' +
 '            }' +
 '            listDiv.innerHTML = "";' +
-'            tickets.forEach(ticket => {' +
+'            pagedTickets.forEach(ticket => {' +
 '                const isResolved = ticket.status === "Resolved";' +
 '                const reallocateBtn = (isAdmin && !isResolved && ticket.escalated) ? \'<button class="reallocate-btn" onclick="reallocateTicket(\\\'\'+ticket._id+\'\\\')">Reallocate</button>\' : "";' +
 '                const actionBtn = isResolved ? "" : \'<button class="resolve-btn" onclick="resolveTicket(\\\'\'+ticket._id+\'\\\')">Resolve Ticket</button>\';' +
@@ -1276,10 +1329,12 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                }' +
 '                listDiv.innerHTML += \'<div class="ticket-card \'+(isResolved ? "ticket-resolved" : "")+\'"><div class="ticket-header"><div><h3 class="ticket-title">#\'+String(ticket.ticketNumber).padStart(4,"0")+\' \'+ticket.title+\'</h3><div style="margin-top: 8px;"><span class="badge p-\'+ticket.priority+\'">\'+ticket.priority+\'</span><span class="badge status-\'+ticket.status.toLowerCase()+\'">\'+ticket.status+\'</span><span class="badge badge-category">\'+(ticket.category || "Other")+\'</span>\'+escalatedBadge+\'</div></div>\'+actionsHtml+\'</div><p class="ticket-desc">\'+ticket.description+\'</p>\'+imageHtml+\'<div class="assignment-info"><span><strong>Submitted By:</strong> \'+(ticket.submittedBy || "Unknown")+(ticket.designation ? " ("+ticket.designation+")" : "")+\'</span> | <span><strong>Branch:</strong> \'+ticket.branch+\'</span> | <span><strong>Mobile:</strong> \'+ticket.mobile+\'</span> | <span><strong>Assigned:</strong> \'+ticket.assignedTo+\'</span> | <span><strong>Submitted:</strong> \'+(ticket.createdAt ? new Date(ticket.createdAt).toLocaleString() : "N/A")+\'</span>\'+escalationLine+resolvedLine+\'</div><div class="comments-section"><h4 class="comments-header">Internal Work Notes</h4><div>\'+(commentListHtml || "No updates.")+\'</div><div class="comment-form"><input type="text" id="input-\'+ticket._id+\'" placeholder="Write operational update..."><button onclick="addComment(\\\'\'+ticket._id+\'\\\')">Post</button></div></div></div>\';' +
 '            });' +
+'            renderPagination(totalFilteredCount);' +
 '            } catch (err) {' +
 '                console.error("Could not load tickets:", err);' +
 '                const message = err.name === "AbortError" ? "Ticket loading timed out. Check that the MongoDB connection is available." : "Could not load tickets. Please refresh the page. If this continues, check the server connection.";' +
 '                document.getElementById("ticketList").innerHTML = \'<p style="text-align:center;color:#c53030;padding:40px 0;">\'+message+\'</p>\';' +
+'                document.getElementById("ticketPagination").style.display = "none";' +
 '            }' +
 '        }' +
 'async function loadRegionsList() {' +
