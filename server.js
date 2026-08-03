@@ -811,7 +811,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '        .branch-input-group { display: flex; gap: 15px; margin-bottom: 25px; flex-wrap: wrap; }' +
 '        .branch-input-group input { flex-grow: 1; padding: 12px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 14px; }' +
 '        .branch-add-btn { background-color: #0056b3; color: white; border: none; padding: 0 30px; font-size: 14px; font-weight: 600; border-radius: 6px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 4px; }' +
-'        .search-btn { padding: 14px 40px; font-size: 15px; }' +
+'        .search-btn { padding: 9px 22px; font-size: 13.5px; }' +
 '        .branch-add-btn:disabled { opacity: .7; cursor: not-allowed; }' +
 '        .branch-table { width: 100%; border-collapse: collapse; text-align: left; margin-top: 10px; }' +
 '        .branch-table th { background-color: #f7fafc; color: #4a5568; font-size: 13px; font-weight: 600; padding: 12px 16px; border-bottom: 1px solid #e2e8f0; }' +
@@ -908,6 +908,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                    <div class="metric-card assigned" onclick="filterByStatus(\'all\')"><div class="metric-icon-badge metric-icon-red"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v2z"></path><line x1="13" y1="5" x2="13" y2="19"></line></svg></div><div class="metric-label">Total Tickets</div><div class="metric-value" id="statMine">0</div><div class="metric-subtitle">All requests in scope</div></div>' +
 '                </div>' +
 '                <div class="branch-panel-card" style="margin-bottom: 20px; display: flex; align-items: flex-end; gap: 14px; flex-wrap: wrap;">' +
+'                    <div style="flex-grow: 1; min-width: 220px;"><label style="display:block;font-size:12px;font-weight:600;color:#4a5568;margin-bottom:4px;">Search</label><input type="text" id="filterSearchText" placeholder="Ticket #, Submitted By, Branch, Mobile..." style="width:100%; padding: 8px 10px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 14px;" onkeydown="if(event.key===\'Enter\') applyTicketFilters();"></div>' +
 '                    <div><label style="display:block;font-size:12px;font-weight:600;color:#4a5568;margin-bottom:4px;">From Date</label><input type="date" id="filterFromDate" style="padding: 8px 10px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 14px;"></div>' +
 '                    <div><label style="display:block;font-size:12px;font-weight:600;color:#4a5568;margin-bottom:4px;">To Date</label><input type="date" id="filterToDate" style="padding: 8px 10px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 14px;"></div>' +
 '                    <div id="staffFilterWrapper" style="display:none;"><label style="display:block;font-size:12px;font-weight:600;color:#4a5568;margin-bottom:4px;">Staff</label><select id="filterStaff" style="padding: 8px 10px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 14px;"><option value="">All Staff</option></select></div>' +
@@ -1165,6 +1166,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            const catEl = document.getElementById("filterCategory"); if (catEl) catEl.value = "";' +
 '            const sfEl = document.getElementById("filterStaff"); if (sfEl) sfEl.value = "";' +
 '            const rfEl = document.getElementById("filterRegion"); if (rfEl) rfEl.value = "";' +
+'            const searchEl = document.getElementById("filterSearchText"); if (searchEl) searchEl.value = "";' +
 '            switchView("tickets");' +
 '        }' +
 '        function switchView(target) {' +
@@ -1235,6 +1237,8 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            if (sf) sf.value = "";' +
 '            const rf = document.getElementById("filterRegion");' +
 '            if (rf) rf.value = "";' +
+'            const searchEl = document.getElementById("filterSearchText");' +
+'            if (searchEl) searchEl.value = "";' +
 '            currentStatusFilter = "default-view";' +
 '            currentPage = 1;' +
 '            loadTickets();' +
@@ -1320,6 +1324,17 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            }' +
 '            const categoryFilterValue = document.getElementById("filterCategory").value;' +
 '            if (categoryFilterValue) { tickets = tickets.filter(t => (t.category || "Other") === categoryFilterValue); }' +
+'            const searchTextValue = document.getElementById("filterSearchText").value.trim().toLowerCase();' +
+'            if (searchTextValue) {' +
+'                tickets = tickets.filter(t => {' +
+'                    const ticketNumStr = String(t.ticketNumber || "").toLowerCase();' +
+'                    const ticketNumPadded = String(t.ticketNumber || "").padStart(4, "0").toLowerCase();' +
+'                    const submittedBy = (t.submittedBy || "").toLowerCase();' +
+'                    const branch = (t.branch || "").toLowerCase();' +
+'                    const mobile = (t.mobile || "").toLowerCase();' +
+'                    return ticketNumStr.includes(searchTextValue) || ticketNumPadded.includes(searchTextValue) || submittedBy.includes(searchTextValue) || branch.includes(searchTextValue) || mobile.includes(searchTextValue);' +
+'                });' +
+'            }' +
 '            const fromVal = document.getElementById("filterFromDate").value;' +
 '            const toVal = document.getElementById("filterToDate").value;' +
 '            if (fromVal) { const fromDate = new Date(fromVal + "T00:00:00"); tickets = tickets.filter(t => t.createdAt && new Date(t.createdAt) >= fromDate); }' +
