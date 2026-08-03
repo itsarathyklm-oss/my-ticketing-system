@@ -1344,7 +1344,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            document.getElementById("statEscalated").innerText = tickets.filter(t => t.escalated).length;' +
 '            document.getElementById("statMine").innerText = tickets.length;' +
 '            if (currentStatusFilter === "default-view") { tickets = tickets.filter(t => t.status === "Open"); }' +
-'            else if (currentStatusFilter === "Escalated") { tickets = tickets.filter(t => t.escalated); tickets.sort((a, b) => (a.status === "Resolved" ? 1 : 0) - (b.status === "Resolved" ? 1 : 0)); }' +
+'            else if (currentStatusFilter === "Escalated") { tickets = tickets.filter(t => t.escalated && t.status !== "Resolved"); }' +
 '            else if (currentStatusFilter !== "all") { tickets = tickets.filter(t => t.status === currentStatusFilter); }' +
 '            const totalFilteredCount = tickets.length;' +
 '            const totalPages = Math.max(1, Math.ceil(totalFilteredCount / PAGE_SIZE));' +
