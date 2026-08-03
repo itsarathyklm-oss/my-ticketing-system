@@ -1341,10 +1341,10 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            if (toVal) { const toDate = new Date(toVal + "T23:59:59"); tickets = tickets.filter(t => t.createdAt && new Date(t.createdAt) <= toDate); }' +
 '            document.getElementById("statOpen").innerText = tickets.filter(t => t.status === "Open").length;' +
 '            document.getElementById("statResolved").innerText = tickets.filter(t => t.status === "Resolved").length;' +
-'            document.getElementById("statEscalated").innerText = tickets.filter(t => t.escalated).length;' +
+'            document.getElementById("statEscalated").innerText = tickets.filter(t => t.escalated && t.status !== "Resolved").length;' +
 '            document.getElementById("statMine").innerText = tickets.length;' +
 '            if (currentStatusFilter === "default-view") { tickets = tickets.filter(t => t.status === "Open"); }' +
-'            else if (currentStatusFilter === "Escalated") { tickets = tickets.filter(t => t.escalated && t.status !== "Resolved"); }' +
+'            else if (currentStatusFilter === "Escalated") { tickets = tickets.filter(t => t.escalated); tickets.sort((a, b) => (a.status === "Resolved" ? 1 : 0) - (b.status === "Resolved" ? 1 : 0)); }' +
 '            else if (currentStatusFilter !== "all") { tickets = tickets.filter(t => t.status === currentStatusFilter); }' +
 '            const totalFilteredCount = tickets.length;' +
 '            const totalPages = Math.max(1, Math.ceil(totalFilteredCount / PAGE_SIZE));' +
