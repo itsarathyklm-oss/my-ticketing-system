@@ -70,6 +70,7 @@ const ticketSchema = new mongoose.Schema({
     escalationReason: { type: String, default: '' },
     createdAt: { type: Date, default: Date.now },
     resolvedAt: { type: Date },
+    resolvedBy: { type: String, default: '' },
     comments: [{
         author: String,
         text: String,
@@ -1306,7 +1307,6 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            if (response.status === 401) { window.location.href = "/login"; return; }' +
 '            if (!response.ok) { throw new Error("Ticket request failed (" + response.status + ")"); }' +
 '            let tickets = await response.json();' +
-'            if (!isAdmin) { tickets = tickets.filter(t => t.assignedTo === currentUser); }' +
 '            const staffFilterEl = document.getElementById("filterStaff");' +
 '            const staffFilterValue = staffFilterEl ? staffFilterEl.value : "";' +
 '            if (staffFilterValue) { tickets = tickets.filter(t => t.assignedTo === staffFilterValue); }' +
@@ -1329,7 +1329,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            document.getElementById("statEscalated").innerText = tickets.filter(t => t.escalated).length;' +
 '            document.getElementById("statMine").innerText = tickets.length;' +
 '            if (currentStatusFilter === "default-view") { tickets = tickets.filter(t => t.status === "Open"); }' +
-'            else if (currentStatusFilter === "Escalated") { tickets = tickets.filter(t => t.escalated); }' +
+'            else if (currentStatusFilter === "Escalated") { tickets = tickets.filter(t => t.escalated); tickets.sort((a, b) => (a.status === "Resolved" ? 1 : 0) - (b.status === "Resolved" ? 1 : 0)); }' +
 '            else if (currentStatusFilter !== "all") { tickets = tickets.filter(t => t.status === currentStatusFilter); }' +
 '            const totalFilteredCount = tickets.length;' +
 '            const totalPages = Math.max(1, Math.ceil(totalFilteredCount / PAGE_SIZE));' +
@@ -1346,12 +1346,14 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            listDiv.innerHTML = "";' +
 '            pagedTickets.forEach(ticket => {' +
 '                const isResolved = ticket.status === "Resolved";' +
+'                const isMineOrAdmin = isAdmin || ticket.assignedTo === currentUser;' +
 '                const reallocateBtn = (isAdmin && !isResolved && ticket.escalated) ? \'<button class="reallocate-btn" onclick="reallocateTicket(\\\'\'+ticket._id+\'\\\')">Reallocate</button>\' : "";' +
-'                const actionBtn = isResolved ? "" : \'<button class="resolve-btn" onclick="resolveTicket(\\\'\'+ticket._id+\'\\\')">Resolve Ticket</button>\';' +
-'                const escalateBtn = (!isAdmin && !isResolved && !ticket.escalated) ? \'<button class="escalate-btn" onclick="escalateTicket(\\\'\'+ticket._id+\'\\\')">Escalate to Admin</button>\' : "";' +
-'                const actionsHtml = (reallocateBtn || actionBtn || escalateBtn) ? \'<div class="ticket-actions">\'+reallocateBtn+actionBtn+escalateBtn+\'</div>\' : "";' +
+'                const actionBtn = (!isResolved && isMineOrAdmin) ? \'<button class="resolve-btn" onclick="resolveTicket(\\\'\'+ticket._id+\'\\\')">Resolve Ticket</button>\' : "";' +
+'                const escalateBtn = (!isAdmin && !isResolved && !ticket.escalated && ticket.assignedTo === currentUser) ? \'<button class="escalate-btn" onclick="escalateTicket(\\\'\'+ticket._id+\'\\\')">Escalate to Admin</button>\' : "";' +
+'                const waitingNote = (!isAdmin && !isResolved && !isMineOrAdmin) ? \'<span class="badge" style="background:#fef3c7;color:#92400e;">Waiting on Admin</span>\' : "";' +
+'                const actionsHtml = (reallocateBtn || actionBtn || escalateBtn || waitingNote) ? \'<div class="ticket-actions">\'+reallocateBtn+actionBtn+escalateBtn+waitingNote+\'</div>\' : "";' +
 '                const escalatedBadge = ticket.escalated ? \'<span class="badge badge-escalated">Escalated</span>\' : "";' +
-'                const resolvedLine = (ticket.status === "Resolved" && ticket.resolvedAt) ? \' | <span><strong>Resolved:</strong> \'+new Date(ticket.resolvedAt).toLocaleString()+\'</span>\' : "";' +
+'                const resolvedLine = (ticket.status === "Resolved" && ticket.resolvedAt) ? \' | <span><strong>Resolved:</strong> \'+new Date(ticket.resolvedAt).toLocaleString()+(ticket.resolvedBy ? \' by \'+ticket.resolvedBy : "")+\'</span>\' : "";' +
 '                const escalationLine = ticket.escalated ? \' | <span><strong>Escalation Status:</strong> \'+ticket.status+\' (\'+(ticket.escalatedBy || "Staff")+\' escalated\'+(ticket.escalatedAt ? " on "+new Date(ticket.escalatedAt).toLocaleString() : "")+\')</span>\'+(ticket.escalationReason ? \' | <span><strong>Escalation Reason:</strong> \'+ticket.escalationReason+\'</span>\' : "") : "";' +
 '                const cardStateClass = isResolved ? "ticket-resolved" : (ticket.priority === "High" ? "ticket-high-priority" : (ticket.escalated ? "ticket-escalated" : ""));' +
 '                const imageHtml = ticket.screenshot ? \'<a href="\'+ticket.screenshot+\'" target="_blank"><img src="\'+ticket.screenshot+\'" class="screenshot-preview"></a>\' : "";' +
@@ -1680,7 +1682,8 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '        async function resolveTicket(id) {' +
 '            showConfirmModal("Mark this ticket as resolved? This action can\'t be undone.", async () => {' +
 '                const response = await fetch("/tickets/" + id + "/resolve", { method: "POST" });' +
-'                if (response.ok) loadTickets();' +
+'                if (response.ok) { loadTickets(); }' +
+'                else { const err = await response.json(); showAdminToast(err.error || "Could not resolve ticket.", true); }' +
 '            }, "Mark Resolved");' +
 '        }' +
 '        async function escalateTicket(id) {' +
@@ -1720,7 +1723,6 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            const response = await fetch("/tickets");' +
 '            if (response.status === 401) { window.location.href = "/login"; return; }' +
 '            let tickets = await response.json();' +
-'            if (!isAdmin) { tickets = tickets.filter(t => t.assignedTo === currentUser); }' +
 '' +
 '            const openCount = tickets.filter(t => t.status === "Open").length;' +
 '            const resolvedCount = tickets.filter(t => t.status === "Resolved").length;' +
@@ -1841,7 +1843,9 @@ app.get('/tickets', checkUserLogin, async (req, res) => {
         if (mongoose.connection.readyState !== 1) {
             return res.status(503).json({ error: 'Database connection is not ready.' });
         }
-        const query = req.session.isAdmin ? {} : { assignedTo: req.session.username };
+        const query = req.session.isAdmin
+            ? {}
+            : { $or: [{ assignedTo: req.session.username }, { escalatedBy: req.session.username }] };
         const tickets = await Ticket.find(query).sort({ _id: -1 });
         res.json(tickets);
     } catch (err) {
@@ -1894,7 +1898,7 @@ app.get('/tickets/report', checkUserLogin, async (req, res) => {
 
         const query = { createdAt: { $gte: startDate, $lte: endDate } };
         if (!req.session.isAdmin) {
-            query.assignedTo = req.session.username;
+            query.$or = [{ assignedTo: req.session.username }, { escalatedBy: req.session.username }];
         }
         let regionLabel = '';
         if (req.query.region) {
@@ -1952,8 +1956,20 @@ app.get('/tickets/report', checkUserLogin, async (req, res) => {
 });
 
 app.post('/tickets/:id/resolve', checkUserLogin, async (req, res) => {
-    await Ticket.findByIdAndUpdate(req.params.id, { status: 'Resolved', resolvedAt: new Date() });
-    res.json({ success: true });
+    try {
+        const ticket = await Ticket.findById(req.params.id);
+        if (!ticket) return res.status(404).json({ error: 'Ticket not found.' });
+        if (!req.session.isAdmin && ticket.assignedTo !== req.session.username) {
+            return res.status(403).json({ error: 'This ticket is no longer assigned to you, so you cannot resolve it.' });
+        }
+        ticket.status = 'Resolved';
+        ticket.resolvedAt = new Date();
+        ticket.resolvedBy = req.session.username;
+        await ticket.save();
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
 // Escalate a ticket to Level 2 (Admin) — reassigns it, flags it as escalated, and
