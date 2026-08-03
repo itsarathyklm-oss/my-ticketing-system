@@ -67,6 +67,7 @@ const ticketSchema = new mongoose.Schema({
     escalated: { type: Boolean, default: false },
     escalatedBy: { type: String, default: '' },
     escalatedAt: { type: Date },
+    escalationReason: { type: String, default: '' },
     createdAt: { type: Date, default: Date.now },
     resolvedAt: { type: Date },
     comments: [{
@@ -773,6 +774,9 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '        .metric-value { font-size: 20px; font-weight: 700; color: #2d3748; margin-top: 1px; }' +
 '        .ticket-card { background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 24px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); position: relative; border-top: 4px solid #3182ce; }' +
 '        .ticket-card.ticket-resolved { border-top-color: #38a169; }' +
+'        .ticket-card.ticket-escalated { border-top-color: #dd6b20; background: #fffaf0; }' +
+'        .ticket-card.ticket-high-priority { background: #fff5f5; border: 2px solid #e53e3e; border-top: 4px solid #e53e3e; }' +
+'        .ticket-card.ticket-high-priority .ticket-title { color: #c53030; }' +
 '        .ticket-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; }' +
 '        .ticket-title { font-size: 18px; font-weight: 600; color: #2d3748; }' +
 '        .ticket-desc { color: #4a5568; font-size: 14px; line-height: 1.5; margin-bottom: 16px; }' +
@@ -866,13 +870,13 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '    <div class="sidebar-backdrop" id="sidebarBackdrop" onclick="closeSidebar()"></div>' +
 '    <aside class="sidebar" id="sidebar">' +
 '        <div>' +
-'            <div class="sidebar-brand">' +
+'            <div class="sidebar-brand" style="cursor:pointer;" onclick="window.location.href=\'/admin\'" title="Refresh dashboard">' +
 '                <img src="/logo.png" alt="Logo" class="sidebar-logo" onerror="this.style.display=\'none\'">' +
 '                <span class="sidebar-title">SARATHY IT</span>' +
 '            </div>' +
 '            <div class="menu-category">Navigation</div>' +
 '            <ul class="sidebar-menu">' +
-'                <li class="menu-item active" id="tabTicketsLink" onclick="switchView(\'tickets\')"><svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v2z"></path><line x1="13" y1="5" x2="13" y2="19"></line></svg>Tickets System</li>' +
+'                <li class="menu-item active" id="tabTicketsLink" onclick="refreshTicketsDashboard()"><svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v2z"></path><line x1="13" y1="5" x2="13" y2="19"></line></svg>Tickets System</li>' +
 (isAdminUser ? '                <li class="menu-item" id="tabBranchesLink" onclick="switchView(\'branches\')"><svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>Manage Branches</li>' : '') +
 (isAdminUser ? '                <li class="menu-item" id="tabStaffLink" onclick="switchView(\'staff\')"><svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>Manage IT Staff</li>' : '') +
 (isAdminUser ? '                <li class="menu-item" id="tabAuditLink" onclick="switchView(\'audit\')"><svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"></path><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg>Audit Log</li>' : '') +
@@ -1152,6 +1156,16 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            clearTimeout(adminToastTimer);' +
 '            adminToastTimer = setTimeout(() => { toast.classList.remove("show"); }, 4000);' +
 '        }' +
+'        function refreshTicketsDashboard() {' +
+'            currentStatusFilter = "default-view";' +
+'            currentPage = 1;' +
+'            const fromEl = document.getElementById("filterFromDate"); if (fromEl) fromEl.value = "";' +
+'            const toEl = document.getElementById("filterToDate"); if (toEl) toEl.value = "";' +
+'            const catEl = document.getElementById("filterCategory"); if (catEl) catEl.value = "";' +
+'            const sfEl = document.getElementById("filterStaff"); if (sfEl) sfEl.value = "";' +
+'            const rfEl = document.getElementById("filterRegion"); if (rfEl) rfEl.value = "";' +
+'            switchView("tickets");' +
+'        }' +
 '        function switchView(target) {' +
 '            closeSidebar();' +
 '            if ((target === "branches" || target === "staff" || target === "audit") && !isAdmin) {' +
@@ -1338,7 +1352,8 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                const actionsHtml = (reallocateBtn || actionBtn || escalateBtn) ? \'<div class="ticket-actions">\'+reallocateBtn+actionBtn+escalateBtn+\'</div>\' : "";' +
 '                const escalatedBadge = ticket.escalated ? \'<span class="badge badge-escalated">Escalated</span>\' : "";' +
 '                const resolvedLine = (ticket.status === "Resolved" && ticket.resolvedAt) ? \' | <span><strong>Resolved:</strong> \'+new Date(ticket.resolvedAt).toLocaleString()+\'</span>\' : "";' +
-'                const escalationLine = ticket.escalated ? \' | <span><strong>Escalation Status:</strong> \'+ticket.status+\' (\'+(ticket.escalatedBy || "Staff")+\' escalated\'+(ticket.escalatedAt ? " on "+new Date(ticket.escalatedAt).toLocaleString() : "")+\')</span>\' : "";' +
+'                const escalationLine = ticket.escalated ? \' | <span><strong>Escalation Status:</strong> \'+ticket.status+\' (\'+(ticket.escalatedBy || "Staff")+\' escalated\'+(ticket.escalatedAt ? " on "+new Date(ticket.escalatedAt).toLocaleString() : "")+\')</span>\'+(ticket.escalationReason ? \' | <span><strong>Escalation Reason:</strong> \'+ticket.escalationReason+\'</span>\' : "") : "";' +
+'                const cardStateClass = isResolved ? "ticket-resolved" : (ticket.priority === "High" ? "ticket-high-priority" : (ticket.escalated ? "ticket-escalated" : ""));' +
 '                const imageHtml = ticket.screenshot ? \'<a href="\'+ticket.screenshot+\'" target="_blank"><img src="\'+ticket.screenshot+\'" class="screenshot-preview"></a>\' : "";' +
 '                let commentListHtml = "";' +
 '                if (ticket.comments) {' +
@@ -1346,7 +1361,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                        commentListHtml += \'<div class="comment-item"><strong>\'+c.author+\':</strong> \'+c.text+\'</div>\';' +
 '                    });' +
 '                }' +
-'                listDiv.innerHTML += \'<div class="ticket-card \'+(isResolved ? "ticket-resolved" : "")+\'"><div class="ticket-header"><div><h3 class="ticket-title">#\'+String(ticket.ticketNumber).padStart(4,"0")+\' \'+ticket.title+\'</h3><div style="margin-top: 8px;"><span class="badge p-\'+ticket.priority+\'">\'+ticket.priority+\'</span><span class="badge status-\'+ticket.status.toLowerCase()+\'">\'+ticket.status+\'</span><span class="badge badge-category">\'+(ticket.category || "Other")+\'</span>\'+escalatedBadge+\'</div></div>\'+actionsHtml+\'</div><p class="ticket-desc">\'+ticket.description+\'</p>\'+imageHtml+\'<div class="assignment-info"><span><strong>Submitted By:</strong> \'+(ticket.submittedBy || "Unknown")+(ticket.designation ? " ("+ticket.designation+")" : "")+\'</span> | <span><strong>Branch:</strong> \'+ticket.branch+\'</span> | <span><strong>Mobile:</strong> \'+ticket.mobile+\'</span> | <span><strong>Assigned:</strong> \'+ticket.assignedTo+\'</span> | <span><strong>Submitted:</strong> \'+(ticket.createdAt ? new Date(ticket.createdAt).toLocaleString() : "N/A")+\'</span>\'+escalationLine+resolvedLine+\'</div><div class="comments-section"><h4 class="comments-header">Internal Work Notes</h4><div>\'+(commentListHtml || "No updates.")+\'</div><div class="comment-form"><input type="text" id="input-\'+ticket._id+\'" placeholder="Write operational update..."><button onclick="addComment(\\\'\'+ticket._id+\'\\\')">Post</button></div></div></div>\';' +
+'                listDiv.innerHTML += \'<div class="ticket-card \'+cardStateClass+\'"><div class="ticket-header"><div><h3 class="ticket-title">#\'+String(ticket.ticketNumber).padStart(4,"0")+\' \'+ticket.title+\'</h3><div style="margin-top: 8px;"><span class="badge p-\'+ticket.priority+\'">\'+ticket.priority+\'</span><span class="badge status-\'+ticket.status.toLowerCase()+\'">\'+ticket.status+\'</span><span class="badge badge-category">\'+(ticket.category || "Other")+\'</span>\'+escalatedBadge+\'</div></div>\'+actionsHtml+\'</div><p class="ticket-desc">\'+ticket.description+\'</p>\'+imageHtml+\'<div class="assignment-info"><span><strong>Submitted By:</strong> \'+(ticket.submittedBy || "Unknown")+(ticket.designation ? " ("+ticket.designation+")" : "")+\'</span> | <span><strong>Branch:</strong> \'+ticket.branch+\'</span> | <span><strong>Mobile:</strong> \'+ticket.mobile+\'</span> | <span><strong>Assigned:</strong> \'+ticket.assignedTo+\'</span> | <span><strong>Submitted:</strong> \'+(ticket.createdAt ? new Date(ticket.createdAt).toLocaleString() : "N/A")+\'</span>\'+escalationLine+resolvedLine+\'</div><div class="comments-section"><h4 class="comments-header">Internal Work Notes</h4><div>\'+(commentListHtml || "No updates.")+\'</div><div class="comment-form"><input type="text" id="input-\'+ticket._id+\'" placeholder="Write operational update..."><button onclick="addComment(\\\'\'+ticket._id+\'\\\')">Post</button></div></div></div>\';' +
 '            });' +
 '            renderPagination(totalFilteredCount);' +
 '            } catch (err) {' +
@@ -1669,9 +1684,15 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            }, "Mark Resolved");' +
 '        }' +
 '        async function escalateTicket(id) {' +
-'            showConfirmModal("Escalate this ticket to Admin (Level 2)?", async () => {' +
-'                const response = await fetch("/tickets/" + id + "/escalate", { method: "POST" });' +
-'                if (response.ok) loadTickets();' +
+'            showPromptModal("Enter the reason for escalating this ticket to Admin:", "", async (reason) => {' +
+'                if (!reason || !reason.trim()) { showAdminToast("Please provide a reason for escalation.", true); return; }' +
+'                const response = await fetch("/tickets/" + id + "/escalate", {' +
+'                    method: "POST",' +
+'                    headers: { "Content-Type": "application/json" },' +
+'                    body: JSON.stringify({ reason: reason.trim() })' +
+'                });' +
+'                if (response.ok) { showAdminToast("Ticket escalated to Admin."); loadTickets(); }' +
+'                else { const err = await response.json(); showAdminToast(err.error || "Could not escalate ticket.", true); }' +
 '            }, "Escalate");' +
 '        }' +
 '        async function reallocateTicket(id) {' +
@@ -1935,15 +1956,42 @@ app.post('/tickets/:id/resolve', checkUserLogin, async (req, res) => {
     res.json({ success: true });
 });
 
-// Escalate a ticket to Level 2 (Admin) — reassigns it and flags it as escalated
+// Escalate a ticket to Level 2 (Admin) — reassigns it, flags it as escalated, and
+// notifies Admin (the notification bell + sound already picks this up automatically).
 app.post('/tickets/:id/escalate', checkUserLogin, async (req, res) => {
-    await Ticket.findByIdAndUpdate(req.params.id, {
-        escalated: true,
-        escalatedBy: req.session.username,
-        escalatedAt: new Date(),
-        assignedTo: 'Admin'
-    });
-    res.json({ success: true });
+    try {
+        const reason = (req.body.reason || '').trim();
+        if (!reason) {
+            return res.status(400).json({ error: 'Please provide a reason for escalation.' });
+        }
+        const ticket = await Ticket.findById(req.params.id);
+        if (!ticket) {
+            return res.status(404).json({ error: 'Ticket not found.' });
+        }
+        if (ticket.status === 'Resolved') {
+            return res.status(400).json({ error: 'Resolved tickets cannot be escalated.' });
+        }
+
+        ticket.escalated = true;
+        ticket.escalatedBy = req.session.username;
+        ticket.escalatedAt = new Date();
+        ticket.escalationReason = reason;
+        ticket.assignedTo = 'Admin';
+        await ticket.save();
+
+        await Notification.create({
+            recipient: 'Admin',
+            ticketId: ticket._id,
+            ticketNumber: ticket.ticketNumber,
+            title: ticket.title,
+            message: `Ticket #${String(ticket.ticketNumber).padStart(4, '0')} - ${ticket.title} was escalated to you by ${req.session.username}. Reason: ${reason}`
+        });
+        await logAudit(req.session.username, 'Escalate Ticket', `Escalated ticket #${ticket.ticketNumber} to Admin. Reason: ${reason}`);
+
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
 // Only an admin can reassign an escalated ticket. The escalation flag remains set
