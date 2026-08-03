@@ -258,7 +258,7 @@ app.use(session({
     rolling: true, // resets the expiry on every request, so it's truly inactivity-based
     saveUninitialized: true,
     cookie: {
-        maxAge: 600000, // 10 minutes of inactivity logs the user out
+        maxAge: 4 * 60 * 60 * 1000, // 4 hours of inactivity logs the user out
         httpOnly: true,
         sameSite: 'lax',
         secure: process.env.NODE_ENV === 'production'
@@ -1017,8 +1017,27 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '        document.getElementById("displayUserLabel").innerText = currentUser;' +
 '        let knownNotificationIds = new Set();' +
 '        let notificationsInitialized = false;' +
+'        let notifAudioCtx = null;' +
 '        function playNotificationSound() {' +
-'            try { const audio = new (window.AudioContext || window.webkitAudioContext)(); const oscillator = audio.createOscillator(); const gain = audio.createGain(); oscillator.frequency.value = 880; gain.gain.setValueAtTime(.08, audio.currentTime); oscillator.connect(gain); gain.connect(audio.destination); oscillator.start(); oscillator.stop(audio.currentTime + .18); } catch (err) { console.warn("Notification sound could not play."); }' +
+'            try {' +
+'                if (!notifAudioCtx) notifAudioCtx = new (window.AudioContext || window.webkitAudioContext)();' +
+'                const ctx = notifAudioCtx;' +
+'                const now = ctx.currentTime;' +
+'                [880, 1175].forEach((freq, i) => {' +
+'                    const osc = ctx.createOscillator();' +
+'                    const gain = ctx.createGain();' +
+'                    osc.type = "square";' +
+'                    osc.frequency.value = freq;' +
+'                    const start = now + i * 0.15;' +
+'                    gain.gain.setValueAtTime(0.0001, start);' +
+'                    gain.gain.exponentialRampToValueAtTime(0.5, start + 0.02);' +
+'                    gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.22);' +
+'                    osc.connect(gain);' +
+'                    gain.connect(ctx.destination);' +
+'                    osc.start(start);' +
+'                    osc.stop(start + 0.25);' +
+'                });' +
+'            } catch (err) { console.warn("Notification sound could not play."); }' +
 '        }' +
 '        function toggleNotifications() {' +
 '            const menu = document.getElementById("notificationMenu");' +
@@ -1049,7 +1068,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '        let inactivityTimer = null;' +
 '        function resetInactivityTimer() {' +
 '            clearTimeout(inactivityTimer);' +
-'            inactivityTimer = setTimeout(() => { window.location.href = "/logout"; }, 10 * 60 * 1000);' +
+'            inactivityTimer = setTimeout(() => { window.location.href = "/logout"; }, 4 * 60 * 60 * 1000);' +
 '        }' +
 '        function handleLogoutClick() {' +
 '            document.getElementById("logoutBtn").innerHTML = \'<span class="admin-spinner"></span>Logging out...\';' +
@@ -1295,7 +1314,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            document.getElementById("statResolved").innerText = tickets.filter(t => t.status === "Resolved").length;' +
 '            document.getElementById("statEscalated").innerText = tickets.filter(t => t.escalated).length;' +
 '            document.getElementById("statMine").innerText = tickets.length;' +
-'            if (currentStatusFilter === "default-view") { tickets = tickets.filter(t => t.status === "Open" || t.escalated); }' +
+'            if (currentStatusFilter === "default-view") { tickets = tickets.filter(t => t.status === "Open"); }' +
 '            else if (currentStatusFilter === "Escalated") { tickets = tickets.filter(t => t.escalated); }' +
 '            else if (currentStatusFilter !== "all") { tickets = tickets.filter(t => t.status === currentStatusFilter); }' +
 '            const totalFilteredCount = tickets.length;' +
