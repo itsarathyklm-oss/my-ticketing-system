@@ -166,9 +166,37 @@ const staffSchema = new mongoose.Schema({
     staffId: { type: String, required: true, unique: true },
     name: { type: String, required: true },
     password: { type: String, required: true },
-    email: { type: String, required: true }
+    email: { type: String, required: true },
+    region: { type: String, default: '' } // '' = unassigned/global, visible only to Super Admin until assigned
 });
 const Staff = mongoose.model('Staff', staffSchema);
+
+// Region Admin Schema — a region-scoped admin account created by the Super Admin.
+// Can see/manage tickets, branches, and staff within their own region only.
+const regionAdminSchema = new mongoose.Schema({
+    name: { type: String, required: true },
+    username: { type: String, required: true, unique: true },
+    password: { type: String, required: true },
+    region: { type: String, required: true },
+    enabled: { type: Boolean, default: true }
+});
+const RegionAdmin = mongoose.model('RegionAdmin', regionAdminSchema);
+
+// Inbox — a lightweight staff-to-admin messaging/request system. Any admin (Super or Region)
+// can view and reply; staff only see their own messages and any reply.
+const inboxMessageSchema = new mongoose.Schema({
+    sender: { type: String, required: true },
+    subject: { type: String, required: true },
+    body: { type: String, required: true },
+    status: { type: String, default: 'Open' }, // 'Open' | 'Replied'
+    reply: { type: String, default: '' },
+    repliedBy: { type: String, default: '' },
+    repliedAt: { type: Date },
+    adminRead: { type: Boolean, default: false },
+    staffRead: { type: Boolean, default: true }, // false once an admin reply hasn't been seen yet
+    createdAt: { type: Date, default: Date.now }
+});
+const InboxMessage = mongoose.model('InboxMessage', inboxMessageSchema);
 
 // One-time seed of the original IT staff accounts, only if the collection is empty
 async function seedInitialStaff() {
@@ -197,6 +225,12 @@ async function getNextStaffId() {
         if (match) maxNum = Math.max(maxNum, parseInt(match[1], 10));
     });
     return 'IT' + String(maxNum + 1).padStart(3, '0');
+}
+
+// Returns the branch names that belong to a given region — used to scope tickets,
+// staff, and reports for a Region Admin.
+async function getBranchNamesForRegion(regionName) {
+    return Branch.find({ region: regionName }).distinct('name');
 }
 
 // Configure Email Transporter
@@ -299,6 +333,16 @@ function checkAdminLogin(req, res, next) {
         next();
     } else {
         res.status(403).json({ error: 'Access Denied' });
+    }
+}
+
+// Super Admin only — Region Admins are blocked with the exact message the UI expects
+// so the client can show it verbatim instead of a generic error.
+function checkSuperAdminLogin(req, res, next) {
+    if (req.session && req.session.isAdmin && req.session.isSuperAdmin) {
+        next();
+    } else {
+        res.status(403).json({ error: 'You are not authorized to access this page.' });
     }
 }
 
@@ -643,10 +687,30 @@ app.post('/login', loginRateLimiter, async (req, res) => {
     }
     if (username === adminUser && password === adminPass) {
         req.session.isAdmin = true;
+        req.session.isSuperAdmin = true;
         req.session.isStaff = false;
+        req.session.region = null;
         req.session.username = 'Admin';
         return res.json({ success: true, redirect: '/admin' });
     }
+
+    const regionAdmin = await RegionAdmin.findOne({ username: username.trim() });
+    if (regionAdmin && regionAdmin.enabled && await verifyPassword(password, regionAdmin.password)) {
+        if (!regionAdmin.password.startsWith('$2')) {
+            regionAdmin.password = await bcrypt.hash(password, 10);
+            await regionAdmin.save();
+        }
+        req.session.isAdmin = true;
+        req.session.isSuperAdmin = false;
+        req.session.isStaff = false;
+        req.session.region = regionAdmin.region;
+        req.session.username = regionAdmin.name;
+        return res.json({ success: true, redirect: '/admin' });
+    }
+    if (regionAdmin && !regionAdmin.enabled) {
+        return res.status(401).json({ error: 'This admin account has been disabled. Contact your Super Admin.' });
+    }
+
     const allStaff = await Staff.find();
     const staffUser = allStaff.find(s => s.name.toLowerCase() === username.toLowerCase());
     if (staffUser && await verifyPassword(password, staffUser.password)) {
@@ -656,7 +720,9 @@ app.post('/login', loginRateLimiter, async (req, res) => {
             await staffUser.save();
         }
         req.session.isAdmin = false;
+        req.session.isSuperAdmin = false;
         req.session.isStaff = true;
+        req.session.region = null;
         req.session.username = staffUser.name;
         return res.json({ success: true, redirect: '/admin' });
     }
@@ -699,7 +765,9 @@ app.post('/change-password', checkUserLogin, async (req, res) => {
 app.get('/admin', checkUserLogin, (req, res) => {
     const dynamicUsername = req.session.username || 'User';
     const dynamicIsAdmin = req.session.isAdmin ? 'true' : 'false';
+    const dynamicIsSuperAdmin = req.session.isSuperAdmin ? 'true' : 'false';
     const isAdminUser = !!req.session.isAdmin;
+    const isSuperAdminUser = !!req.session.isSuperAdmin;
 
     let html = '<!DOCTYPE html>' +
 '<html lang="en">' +
@@ -806,6 +874,14 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '        .comment-form { display: flex; gap: 10px; margin-top: 12px; }' +
 '        .comment-form input { flex-grow: 1; padding: 8px 12px; border: 1px solid #e2e8f0; border-radius: 6px; font-size: 13px; }' +
 '        .comment-form button { background-color: #3182ce; color: white; border: none; padding: 8px 16px; font-size: 13px; font-weight: 600; border-radius: 6px; cursor: pointer; }' +
+'        .inbox-card { background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); border-left: 4px solid #cbd5e0; }' +
+'        .inbox-card.inbox-unread { border-left-color: #e53e3e; background: #fffafa; }' +
+'        .inbox-subject { font-size: 16px; font-weight: 700; color: #2d3748; }' +
+'        .inbox-meta { font-size: 12px; color: #a0aec0; margin-top: 2px; }' +
+'        .inbox-body { font-size: 14px; color: #4a5568; margin-top: 10px; line-height: 1.5; white-space: pre-wrap; }' +
+'        .inbox-reply-box { margin-top: 14px; padding-top: 14px; border-top: 1px solid #edf2f7; }' +
+'        .inbox-reply-box textarea { width: 100%; padding: 10px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 13px; resize: vertical; }' +
+'        .inbox-reply-shown { margin-top: 14px; padding: 12px 14px; background: #f0fff4; border-radius: 6px; font-size: 13px; color: #234e52; }' +
 '        .branch-panel-card { background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }' +
 '        .branch-panel-card h2 { font-size: 16px; font-weight: 600; color: #2d3748; margin-bottom: 20px; }' +
 '        .branch-input-group { display: flex; gap: 15px; margin-bottom: 25px; flex-wrap: wrap; }' +
@@ -878,10 +954,12 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            <div class="menu-category">Navigation</div>' +
 '            <ul class="sidebar-menu">' +
 '                <li class="menu-item active" id="tabTicketsLink" onclick="refreshTicketsDashboard()"><svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v2z"></path><line x1="13" y1="5" x2="13" y2="19"></line></svg>Tickets System</li>' +
+(isSuperAdminUser ? '                <li class="menu-item" id="tabAdminsLink" onclick="switchView(\'admins\')"><svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l3 6 6.5 1-5 4.5 1.5 6.5-6-3.5-6 3.5 1.5-6.5-5-4.5 6.5-1z"></path></svg>Manage Admins</li>' : '') +
 (isAdminUser ? '                <li class="menu-item" id="tabBranchesLink" onclick="switchView(\'branches\')"><svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>Manage Branches</li>' : '') +
 (isAdminUser ? '                <li class="menu-item" id="tabStaffLink" onclick="switchView(\'staff\')"><svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>Manage IT Staff</li>' : '') +
 (isAdminUser ? '                <li class="menu-item" id="tabAuditLink" onclick="switchView(\'audit\')"><svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"></path><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg>Audit Log</li>' : '') +
 '                <li class="menu-item" id="tabReportsLink" onclick="switchView(\'reports\')"><svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>Reports</li>' +
+'                <li class="menu-item" id="tabInboxLink" onclick="switchView(\'inbox\')"><svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-6l-2 3h-4l-2-3H2"></path><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"></path></svg>Inbox<span id="inboxUnreadBadge" style="display:none;margin-left:auto;background:#e53e3e;color:#fff;font-size:10px;font-weight:700;border-radius:10px;min-width:16px;height:16px;padding:0 5px;align-items:center;justify-content:center;"></span></li>' +
 '                <li class="menu-item" id="tabPasswordLink" onclick="switchView(\'password\')"><svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>Change Password</li>' +
 '            </ul>' +
 '        </div>' +
@@ -897,7 +975,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '        <header class="top-navbar">' +
 '            <button class="hamburger-btn" onclick="toggleSidebar()" aria-label="Menu"><span></span><span></span><span></span></button>' +
 '            <h1 class="page-title" id="panelViewTitle">Helpdesk Operations</h1>' +
-'            <div class="notification-wrap"><button type="button" class="notification-btn" onclick="toggleNotifications()" aria-label="Notifications"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg><span id="notificationCount" class="notification-count">0</span></button><div id="notificationMenu" class="notification-menu"><div class="notification-head">Notifications</div><div id="notificationList" class="notification-empty">No notifications.</div></div></div>' +
+'            <div class="notification-wrap"><button type="button" class="notification-btn" onclick="toggleNotifications(event)" aria-label="Notifications"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg><span id="notificationCount" class="notification-count">0</span></button><div id="notificationMenu" class="notification-menu"><div class="notification-head" style="display:flex;align-items:center;justify-content:space-between;">Notifications <button type="button" onclick="clearAllNotifications()" style="background:none;border:none;color:#e53e3e;font-size:12px;font-weight:600;cursor:pointer;padding:0;">Clear</button></div><div id="notificationList" class="notification-empty">No notifications.</div></div></div>' +
 '        </header>' +
 '        <section class="content-body">' +
 '            <div id="viewTickets" class="dashboard-view active">' +
@@ -965,7 +1043,29 @@ app.get('/admin', checkUserLogin, (req, res) => {
 ) +
 '                </div>' +
 '            </div>' +
+(isSuperAdminUser ?
+'            <div id="viewAdmins" class="dashboard-view">' +
+'                <div class="branch-panel-card" style="margin-bottom: 20px;">' +
+'                    <h2>Add Region Admin</h2>' +
+'                    <div class="branch-input-group">' +
+'                        <input type="text" id="newAdminName" placeholder="Full Name">' +
+'                        <input type="text" id="newAdminUsername" placeholder="Username">' +
+'                        <input type="text" id="newAdminPassword" placeholder="Password">' +
+'                        <select id="newAdminRegion" style="flex-grow: 1; padding: 12px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 14px;"><option value="" disabled selected>Select Region</option></select>' +
+'                        <button class="branch-add-btn" id="addAdminBtn" onclick="addNewRegionAdmin()">Add Admin</button>' +
+'                    </div>' +
+'                </div>' +
+'                <div class="branch-panel-card">' +
+'                    <h2>Region Admins</h2>' +
+'                    <table class="branch-table">' +
+'                        <thead><tr><th>Name</th><th>Username</th><th>Region</th><th>Status</th><th>Edit</th><th>Delete</th></tr></thead>' +
+'                        <tbody id="regionAdminsTableBody"></tbody>' +
+'                    </table>' +
+'                </div>' +
+'            </div>'
+: '') +
 '            <div id="viewBranches" class="dashboard-view">' +
+(isSuperAdminUser ?
 '                <div class="branch-panel-card" style="margin-bottom: 20px;">' +
 '                    <h2>Manage Regions</h2>' +
 '                    <div class="branch-input-group">' +
@@ -976,12 +1076,17 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                        <thead><tr><th>Region Name</th><th>Edit</th><th>Delete</th></tr></thead>' +
 '                        <tbody id="regionTableBody"></tbody>' +
 '                    </table>' +
-'                </div>' +
+'                </div>'
+: '') +
 '                <div class="branch-panel-card">' +
 '                    <h2>Create New Branch Location</h2>' +
 '                    <div class="branch-input-group">' +
 '                        <input type="text" id="newBranchName" placeholder="Enter Branch Name">' +
-'                        <select id="newBranchRegion" style="flex-grow: 1; padding: 12px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 14px;"><option value="" disabled selected>Select Region</option></select>' +
+(isSuperAdminUser ?
+'                        <select id="newBranchRegion" style="flex-grow: 1; padding: 12px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 14px;"><option value="" disabled selected>Select Region</option></select>'
+:
+'                        <input type="text" value="' + (req.session.region || '') + '" disabled style="flex-grow: 1; padding: 12px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 14px; background:#f1f0ee; color:#718096;">'
+) +
 '                        <button class="branch-add-btn" id="addBranchBtn" onclick="addNewBranch()">Add Branch</button>' +
 '                    </div>' +
 '                    <div id="branchGroupsContainer"></div>' +
@@ -995,13 +1100,16 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                        <input type="text" id="newStaffId" placeholder="Staff ID (optional)">' +
 '                        <input type="text" id="newStaffPassword" placeholder="Password">' +
 '                        <input type="email" id="newStaffEmail" placeholder="Email">' +
+(isSuperAdminUser ?
+'                        <select id="newStaffRegion" style="flex-grow: 1; padding: 12px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 14px;"><option value="">Unassigned (global)</option></select>'
+: '') +
 '                        <button class="branch-add-btn" id="addStaffBtn" onclick="addNewStaff()">Add Staff</button>' +
 '                    </div>' +
 '                </div>' +
 '                <div class="branch-panel-card">' +
 '                    <h2>Active Helpdesk Personnel</h2>' +
 '                    <table class="branch-table">' +
-'                        <thead><tr><th>Staff ID</th><th>Name Tag</th><th>Operational Route Email</th><th>Assigned Branches</th><th>Edit</th><th>Delete</th></tr></thead>' +
+'                        <thead><tr><th>Staff ID</th><th>Name Tag</th><th>Operational Route Email</th>' + (isSuperAdminUser ? '<th>Region</th>' : '') + '<th>Assigned Branches</th><th>Edit</th><th>Delete</th></tr></thead>' +
 '                        <tbody id="staffTableBody"></tbody>' +
 '                    </table>' +
 '                </div>' +
@@ -1015,11 +1123,27 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                    </table>' +
 '                </div>' +
 '            </div>' +
+'            <div id="viewInbox" class="dashboard-view">' +
+(isAdminUser ? '' :
+'                <div class="branch-panel-card" style="margin-bottom: 20px;">' +
+'                    <h2>Send a Message to Admin</h2>' +
+'                    <div style="max-width:520px;">' +
+'                        <label style="display:block;font-size:12px;font-weight:600;color:#4a5568;margin-bottom:4px;">Subject</label>' +
+'                        <input type="text" id="inboxSubject" style="width:100%;padding:10px;border:1px solid #cbd5e0;border-radius:6px;font-size:14px;margin-bottom:12px;">' +
+'                        <label style="display:block;font-size:12px;font-weight:600;color:#4a5568;margin-bottom:4px;">Message</label>' +
+'                        <textarea id="inboxBody" rows="4" style="width:100%;padding:10px;border:1px solid #cbd5e0;border-radius:6px;font-size:14px;resize:vertical;"></textarea>' +
+'                        <button class="branch-add-btn" id="sendInboxBtn" onclick="sendInboxMessage()" style="margin-top:12px;">Send Message</button>' +
+'                    </div>' +
+'                </div>'
+) +
+'                <div id="inboxList">Loading messages...</div>' +
+'            </div>' +
 '        </section>' +
 '    </main>' +
 '    <script>' +
 '        const currentUser = "' + dynamicUsername + '";' +
 '        const isAdmin = ' + dynamicIsAdmin + ';' +
+'        const isSuperAdmin = ' + dynamicIsSuperAdmin + ';' +
 '        document.getElementById("displayUserLabel").innerText = currentUser;' +
 '        let knownNotificationIds = new Set();' +
 '        let notificationsInitialized = false;' +
@@ -1045,14 +1169,25 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                });' +
 '            } catch (err) { console.warn("Notification sound could not play."); }' +
 '        }' +
-'        function toggleNotifications() {' +
+'        function toggleNotifications(event) {' +
+'            if (event) event.stopPropagation();' +
 '            const menu = document.getElementById("notificationMenu");' +
 '            menu.classList.toggle("show");' +
-'            if (menu.classList.contains("show")) markNotificationsRead();' +
 '        }' +
-'        async function markNotificationsRead() {' +
-'            const response = await fetch("/notifications/read", { method: "POST" });' +
-'            if (response.ok) document.getElementById("notificationCount").style.display = "none";' +
+'        document.addEventListener("click", (e) => {' +
+'            const wrap = document.querySelector(".notification-wrap");' +
+'            const menu = document.getElementById("notificationMenu");' +
+'            if (menu && menu.classList.contains("show") && wrap && !wrap.contains(e.target)) {' +
+'                menu.classList.remove("show");' +
+'            }' +
+'        });' +
+'        async function markNotificationRead(id) {' +
+'            await fetch("/notifications/" + id + "/read", { method: "POST" });' +
+'            loadNotifications();' +
+'        }' +
+'        async function clearAllNotifications() {' +
+'            await fetch("/notifications", { method: "DELETE" });' +
+'            loadNotifications();' +
 '        }' +
 '        async function loadNotifications() {' +
 '            try {' +
@@ -1064,9 +1199,9 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                count.innerText = unread.length > 99 ? "99+" : unread.length;' +
 '                count.style.display = unread.length ? "flex" : "none";' +
 '                const list = document.getElementById("notificationList");' +
-'                list.innerHTML = notifications.length ? notifications.map(n => \'<div class="notification-item \'+(!n.read ? "unread" : "")+\'"><strong>Ticket #\'+String(n.ticketNumber).padStart(4,"0")+\' assigned</strong>\'+n.message+\'<br><small>\'+new Date(n.createdAt).toLocaleString()+\'</small></div>\').join("") : \'<div class="notification-empty">No notifications.</div>\';' +
+'                list.innerHTML = notifications.length ? notifications.map(n => \'<div class="notification-item \'+(!n.read ? "unread" : "")+\'"><div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;"><div><strong>Ticket #\'+String(n.ticketNumber).padStart(4,"0")+\' assigned</strong>\'+n.message+\'<br><small>\'+new Date(n.createdAt).toLocaleString()+\'</small></div>\'+(!n.read ? \'<button onclick="markNotificationRead(\\\'\'+n._id+\'\\\')" style="flex-shrink:0;background:none;border:1px solid #cbd5e0;border-radius:5px;padding:3px 8px;font-size:10px;font-weight:600;color:#4a5568;cursor:pointer;">Mark as read</button>\' : "")+\'</div></div>\').join("") : \'<div class="notification-empty">No notifications.</div>\';' +
 '                const newUnread = unread.filter(n => !knownNotificationIds.has(n._id));' +
-'                if (newUnread.length) { playNotificationSound(); showAdminToast(newUnread[0].message); }' +
+'                if (newUnread.length && notificationsInitialized) { playNotificationSound(); showAdminToast(newUnread[0].message); }' +
 '                notifications.forEach(n => knownNotificationIds.add(n._id));' +
 '                notificationsInitialized = true;' +
 '            } catch (err) { console.warn("Could not load notifications."); }' +
@@ -1175,6 +1310,10 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                alert("Access Denied: Admins only.");' +
 '                return;' +
 '            }' +
+'            if (target === "admins" && !isSuperAdmin) {' +
+'                alert("You are not authorized to access this page.");' +
+'                return;' +
+'            }' +
 '            const mainContentEl = document.querySelector(".main-content");' +
 '            if (mainContentEl) mainContentEl.scrollTop = 0;' +
 '            document.querySelectorAll(".dashboard-view").forEach(el => el.classList.remove("active"));' +
@@ -1209,6 +1348,16 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                document.getElementById("tabAuditLink").classList.add("active");' +
 '                document.getElementById("panelViewTitle").innerText = "Recent Admin Activity";' +
 '                loadAuditLog();' +
+'            } else if (target === "admins") {' +
+'                document.getElementById("viewAdmins").classList.add("active");' +
+'                document.getElementById("tabAdminsLink").classList.add("active");' +
+'                document.getElementById("panelViewTitle").innerText = "Manage Region Admins";' +
+'                loadRegionAdminsList();' +
+'            } else if (target === "inbox") {' +
+'                document.getElementById("viewInbox").classList.add("active");' +
+'                document.getElementById("tabInboxLink").classList.add("active");' +
+'                document.getElementById("panelViewTitle").innerText = "Inbox";' +
+'                loadInbox();' +
 '            }' +
 '        }' +
 '        let currentStatusFilter = "default-view";' +
@@ -1392,20 +1541,24 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '    const response = await fetch("/tickets/regions");' +
 '    const regions = await response.json();' +
 '    const tbody = document.getElementById("regionTableBody");' +
-'    tbody.innerHTML = "";' +
-'    if (regions.length === 0) {' +
-'        tbody.innerHTML = \'<tr><td colspan="3" style="text-align: center; color: #a0aec0; padding: 20px;">No regions added yet.</td></tr>\';' +
-'    } else {' +
-'        regions.forEach(r => {' +
-'            const safeName = r.name.replace(/\'/g, "\\\\\'");' +
-'            tbody.innerHTML += \'<tr><td>\'+r.name+\'</td><td><button class="branch-delete-btn" onclick="editRegion(\\\'\'+r._id+\'\\\', \\\'\'+safeName+\'\\\')">Edit</button></td><td><button class="branch-delete-btn" onclick="deleteRegion(\\\'\'+r._id+\'\\\')">Delete</button></td></tr>\';' +
-'        });' +
+'    if (tbody) {' +
+'        tbody.innerHTML = "";' +
+'        if (regions.length === 0) {' +
+'            tbody.innerHTML = \'<tr><td colspan="3" style="text-align: center; color: #a0aec0; padding: 20px;">No regions added yet.</td></tr>\';' +
+'        } else {' +
+'            regions.forEach(r => {' +
+'                const safeName = r.name.replace(/\'/g, "\\\\\'");' +
+'                tbody.innerHTML += \'<tr><td>\'+r.name+\'</td><td><button class="branch-delete-btn" onclick="editRegion(\\\'\'+r._id+\'\\\', \\\'\'+safeName+\'\\\')">Edit</button></td><td><button class="branch-delete-btn" onclick="deleteRegion(\\\'\'+r._id+\'\\\')">Delete</button></td></tr>\';' +
+'            });' +
+'        }' +
 '    }' +
 '    const select = document.getElementById("newBranchRegion");' +
-'    select.innerHTML = \'<option value="" disabled selected>Select Region</option>\';' +
-'    regions.forEach(r => {' +
-'        select.innerHTML += \'<option value="\'+r.name+\'">\'+r.name+\'</option>\';' +
-'    });' +
+'    if (select) {' +
+'        select.innerHTML = \'<option value="" disabled selected>Select Region</option>\';' +
+'        regions.forEach(r => {' +
+'            select.innerHTML += \'<option value="\'+r.name+\'">\'+r.name+\'</option>\';' +
+'        });' +
+'    }' +
 '}' +
 'async function addNewRegion() {' +
 '    const input = document.getElementById("newRegionName");' +
@@ -1493,8 +1646,8 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '    const input = document.getElementById("newBranchName");' +
 '    const regionSelect = document.getElementById("newBranchRegion");' +
 '    const name = input.value.trim();' +
-'    const region = regionSelect.value;' +
-'    if (!name || !region) { showAdminToast("Please enter a branch name and select a region.", true); return; }' +
+'    const region = regionSelect ? regionSelect.value : "";' +
+'    if (!name || (isSuperAdmin && !region)) { showAdminToast("Please enter a branch name and select a region.", true); return; }' +
 '    const btn = document.getElementById("addBranchBtn");' +
 '    const defaultHTML = btn.innerHTML;' +
 '    btn.disabled = true;' +
@@ -1507,7 +1660,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '        });' +
 '        if (response.ok) {' +
 '            input.value = "";' +
-'            regionSelect.value = "";' +
+'            if (regionSelect) regionSelect.value = "";' +
 '            showAdminToast("Branch added successfully.");' +
 '            loadBranchesList();' +
 '        } else {' +
@@ -1556,6 +1709,15 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            const staff = await staffRes.json();' +
 '            const branches = await branchRes.json();' +
 '            const assignments = await assignRes.json();' +
+'            if (isSuperAdmin) {' +
+'                const regionSelectEl = document.getElementById("newStaffRegion");' +
+'                if (regionSelectEl && !regionSelectEl.dataset.loaded) {' +
+'                    const regionsRes = await fetch("/tickets/regions");' +
+'                    const regionsList = await regionsRes.json();' +
+'                    regionsList.forEach(r => { regionSelectEl.innerHTML += \'<option value="\'+r.name+\'">\'+r.name+\'</option>\'; });' +
+'                    regionSelectEl.dataset.loaded = "1";' +
+'                }' +
+'            }' +
 '            const tbody = document.getElementById("staffTableBody");' +
 '            tbody.innerHTML = "";' +
 '            staff.forEach(s => {' +
@@ -1590,7 +1752,8 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                    editCell = \'<button class="branch-delete-btn" onclick="toggleEditStaff(\\\'\'+s.id+\'\\\')">Edit</button>\';' +
 '                    deleteCell = \'<button class="branch-delete-btn" onclick="deleteStaff(\\\'\'+s.id+\'\\\')">Delete</button>\';' +
 '                }' +
-'                tbody.innerHTML += \'<tr><td>\'+s.id+\'</td><td>\'+nameCell+\'</td><td>\'+emailCell+\'</td><td>\'+checkboxesHtml+\'</td><td>\'+editCell+\'</td><td>\'+deleteCell+\'</td></tr>\';' +
+'                const regionCell = isSuperAdmin ? \'<td>\'+(s.region || "Unassigned")+\'</td>\' : "";' +
+'                tbody.innerHTML += \'<tr><td>\'+s.id+\'</td><td>\'+nameCell+\'</td><td>\'+emailCell+\'</td>\'+regionCell+\'<td>\'+checkboxesHtml+\'</td><td>\'+editCell+\'</td><td>\'+deleteCell+\'</td></tr>\';' +
 '            });' +
 '        }' +
 '        let editingStaffIds = new Set();' +
@@ -1625,10 +1788,123 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                else alert("Could not delete staff member.");' +
 '            }, "Delete");' +
 '        }' +
+'        let editingAdminIds = new Set();' +
+'        async function loadRegionAdminsList() {' +
+'            const [adminsRes, regionsRes] = await Promise.all([fetch("/region-admins"), fetch("/tickets/regions")]);' +
+'            const admins = await adminsRes.json();' +
+'            const regions = await regionsRes.json();' +
+'            const regionSelectEl = document.getElementById("newAdminRegion");' +
+'            if (regionSelectEl && !regionSelectEl.dataset.loaded) {' +
+'                regions.forEach(r => { regionSelectEl.innerHTML += \'<option value="\'+r.name+\'">\'+r.name+\'</option>\'; });' +
+'                regionSelectEl.dataset.loaded = "1";' +
+'            }' +
+'            const tbody = document.getElementById("regionAdminsTableBody");' +
+'            tbody.innerHTML = "";' +
+'            if (admins.length === 0) {' +
+'                tbody.innerHTML = \'<tr><td colspan="6" style="text-align: center; color: #a0aec0; padding: 20px;">No region admins added yet.</td></tr>\';' +
+'                return;' +
+'            }' +
+'            admins.forEach(a => {' +
+'                let nameCell, regionCell, editCell;' +
+'                if (editingAdminIds.has(a.id)) {' +
+'                    nameCell = \'<input type="text" id="editAdminName-\'+a.id+\'" value="\'+a.name+\'" style="width:100%;padding:6px;border:1px solid #cbd5e0;border-radius:4px;">\';' +
+'                    let regionOptionsHtml = "";' +
+'                    regions.forEach(r => { regionOptionsHtml += \'<option value="\'+r.name+\'"\'+(r.name === a.region ? \' selected\' : \'\')+\'>\'+r.name+\'</option>\'; });' +
+'                    regionCell = \'<select id="editAdminRegion-\'+a.id+\'" style="padding:6px;border:1px solid #cbd5e0;border-radius:4px;">\'+regionOptionsHtml+\'</select>\';' +
+'                    editCell = \'<input type="text" id="editAdminPassword-\'+a.id+\'" placeholder="New password (optional)" style="width:100%;padding:6px;border:1px solid #cbd5e0;border-radius:4px;margin-bottom:4px;"><button class="resolve-btn" onclick="saveRegionAdminEdit(\\\'\'+a.id+\'\\\')">Save</button> <button class="branch-delete-btn" onclick="toggleEditRegionAdmin(\\\'\'+a.id+\'\\\')">Cancel</button>\';' +
+'                } else {' +
+'                    nameCell = a.name;' +
+'                    regionCell = a.region;' +
+'                    editCell = \'<button class="branch-delete-btn" onclick="toggleEditRegionAdmin(\\\'\'+a.id+\'\\\')">Edit</button>\';' +
+'                }' +
+'                const statusBadge = a.enabled ? \'<span class="badge status-resolved">Enabled</span>\' : \'<span class="badge p-High">Disabled</span>\';' +
+'                const toggleBtn = \'<button class="branch-delete-btn" onclick="toggleRegionAdminEnabled(\\\'\'+a.id+\'\\\', \'+(!a.enabled)+\')">\'+ (a.enabled ? "Disable" : "Enable") +\'</button>\';' +
+'                tbody.innerHTML += \'<tr><td>\'+nameCell+\'</td><td>\'+a.username+\'</td><td>\'+regionCell+\'</td><td>\'+statusBadge+\' \'+toggleBtn+\'</td><td>\'+editCell+\'</td><td><button class="branch-delete-btn" onclick="deleteRegionAdmin(\\\'\'+a.id+\'\\\')">Delete</button></td></tr>\';' +
+'            });' +
+'        }' +
+'        function toggleEditRegionAdmin(id) {' +
+'            if (editingAdminIds.has(id)) editingAdminIds.delete(id);' +
+'            else editingAdminIds.add(id);' +
+'            loadRegionAdminsList();' +
+'        }' +
+'        async function saveRegionAdminEdit(id) {' +
+'            const name = document.getElementById("editAdminName-" + id).value.trim();' +
+'            const region = document.getElementById("editAdminRegion-" + id).value;' +
+'            const password = document.getElementById("editAdminPassword-" + id).value.trim();' +
+'            if (!name || !region) { showAdminToast("Name and region are required.", true); return; }' +
+'            const body = { name, region };' +
+'            if (password) body.password = password;' +
+'            const response = await fetch("/region-admins/" + id, {' +
+'                method: "PUT",' +
+'                headers: { "Content-Type": "application/json" },' +
+'                body: JSON.stringify(body)' +
+'            });' +
+'            if (response.ok) { editingAdminIds.delete(id); showAdminToast("Region admin updated."); loadRegionAdminsList(); }' +
+'            else { const err = await response.json(); showAdminToast(err.error || "Could not update region admin.", true); }' +
+'        }' +
+'        async function toggleRegionAdminEnabled(id, enabled) {' +
+'            const response = await fetch("/region-admins/" + id, {' +
+'                method: "PUT",' +
+'                headers: { "Content-Type": "application/json" },' +
+'                body: JSON.stringify({ enabled })' +
+'            });' +
+'            if (response.ok) { showAdminToast(enabled ? "Admin enabled." : "Admin disabled."); loadRegionAdminsList(); }' +
+'            else { showAdminToast("Could not update region admin.", true); }' +
+'        }' +
+'        async function deleteRegionAdmin(id) {' +
+'            showConfirmModal("Remove this region admin? This cannot be undone.", async () => {' +
+'                const response = await fetch("/region-admins/" + id, { method: "DELETE" });' +
+'                if (response.ok) { showAdminToast("Region admin removed."); loadRegionAdminsList(); }' +
+'                else showAdminToast("Could not delete region admin.", true);' +
+'            }, "Delete");' +
+'        }' +
+'        async function addNewRegionAdmin() {' +
+'            const name = document.getElementById("newAdminName").value.trim();' +
+'            const username = document.getElementById("newAdminUsername").value.trim();' +
+'            const password = document.getElementById("newAdminPassword").value.trim();' +
+'            const region = document.getElementById("newAdminRegion").value;' +
+'            if (!name || !username || !password || !region) { showAdminToast("Please fill in name, username, password, and region.", true); return; }' +
+'            const btn = document.getElementById("addAdminBtn");' +
+'            const defaultHTML = btn.innerHTML;' +
+'            btn.disabled = true;' +
+'            btn.innerHTML = \'<span class="admin-spinner"></span>Adding...\';' +
+'            try {' +
+'                const response = await fetch("/region-admins", {' +
+'                    method: "POST",' +
+'                    headers: { "Content-Type": "application/json" },' +
+'                    body: JSON.stringify({ name, username, password, region })' +
+'                });' +
+'                if (response.ok) {' +
+'                    document.getElementById("newAdminName").value = "";' +
+'                    document.getElementById("newAdminUsername").value = "";' +
+'                    document.getElementById("newAdminPassword").value = "";' +
+'                    document.getElementById("newAdminRegion").value = "";' +
+'                    showAdminToast("Region admin added successfully.");' +
+'                    loadRegionAdminsList();' +
+'                } else {' +
+'                    const err = await response.json();' +
+'                    showAdminToast(err.error || "Could not add region admin.", true);' +
+'                }' +
+'            } catch (err) {' +
+'                showAdminToast("Something went wrong. Please try again.", true);' +
+'            } finally {' +
+'                btn.disabled = false;' +
+'                btn.innerHTML = defaultHTML;' +
+'            }' +
+'        }' +
 '        async function loadAuditLog() {' +
-'            const response = await fetch("/audit-log");' +
-'            const entries = await response.json();' +
 '            const tbody = document.getElementById("auditLogTableBody");' +
+'            if (!isSuperAdmin) {' +
+'                tbody.innerHTML = \'<tr><td colspan="4" style="text-align: center; color: #c53030; padding: 30px; font-weight: 600;">You are not authorized to access this page.</td></tr>\';' +
+'                return;' +
+'            }' +
+'            const response = await fetch("/audit-log");' +
+'            if (!response.ok) {' +
+'                const err = await response.json().catch(() => ({}));' +
+'                tbody.innerHTML = \'<tr><td colspan="4" style="text-align: center; color: #c53030; padding: 30px; font-weight: 600;">\'+(err.error || "You are not authorized to access this page.")+\'</td></tr>\';' +
+'                return;' +
+'            }' +
+'            const entries = await response.json();' +
 '            tbody.innerHTML = "";' +
 '            if (entries.length === 0) {' +
 '                tbody.innerHTML = \'<tr><td colspan="4" style="text-align: center; color: #a0aec0; padding: 20px;">No activity recorded yet.</td></tr>\';' +
@@ -1637,6 +1913,94 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            entries.forEach(e => {' +
 '                tbody.innerHTML += \'<tr><td>\'+new Date(e.createdAt).toLocaleString()+\'</td><td>\'+e.actor+\'</td><td>\'+e.action+\'</td><td>\'+(e.details || "")+\'</td></tr>\';' +
 '            });' +
+'        }' +
+'        async function sendInboxMessage() {' +
+'            const subject = document.getElementById("inboxSubject").value.trim();' +
+'            const body = document.getElementById("inboxBody").value.trim();' +
+'            if (!subject || !body) { showAdminToast("Please fill in both subject and message.", true); return; }' +
+'            const btn = document.getElementById("sendInboxBtn");' +
+'            const defaultHTML = btn.innerHTML;' +
+'            btn.disabled = true;' +
+'            btn.innerHTML = \'<span class="admin-spinner"></span>Sending...\';' +
+'            try {' +
+'                const response = await fetch("/inbox", {' +
+'                    method: "POST",' +
+'                    headers: { "Content-Type": "application/json" },' +
+'                    body: JSON.stringify({ subject, body })' +
+'                });' +
+'                if (response.ok) {' +
+'                    document.getElementById("inboxSubject").value = "";' +
+'                    document.getElementById("inboxBody").value = "";' +
+'                    showAdminToast("Message sent to Admin.");' +
+'                    loadInbox();' +
+'                } else {' +
+'                    const err = await response.json();' +
+'                    showAdminToast(err.error || "Could not send message.", true);' +
+'                }' +
+'            } catch (err) {' +
+'                showAdminToast("Something went wrong. Please try again.", true);' +
+'            } finally {' +
+'                btn.disabled = false;' +
+'                btn.innerHTML = defaultHTML;' +
+'            }' +
+'        }' +
+'        async function markInboxRead(id) {' +
+'            await fetch("/inbox/" + id + "/read", { method: "POST" });' +
+'            loadInbox();' +
+'        }' +
+'        async function replyInboxMessage(id) {' +
+'            const reply = document.getElementById("inboxReplyInput-" + id).value.trim();' +
+'            if (!reply) { showAdminToast("Please write a reply first.", true); return; }' +
+'            const response = await fetch("/inbox/" + id + "/reply", {' +
+'                method: "POST",' +
+'                headers: { "Content-Type": "application/json" },' +
+'                body: JSON.stringify({ reply })' +
+'            });' +
+'            if (response.ok) { showAdminToast("Reply sent."); loadInbox(); }' +
+'            else { const err = await response.json(); showAdminToast(err.error || "Could not send reply.", true); }' +
+'        }' +
+'        async function loadInbox() {' +
+'            const listDiv = document.getElementById("inboxList");' +
+'            try {' +
+'                const response = await fetch("/inbox");' +
+'                if (!response.ok) { listDiv.innerHTML = \'<p style="text-align:center;color:#c53030;padding:30px 0;">Could not load messages.</p>\'; return; }' +
+'                const messages = await response.json();' +
+'                if (messages.length === 0) {' +
+'                    listDiv.innerHTML = \'<p style="text-align: center; color: #718096; padding: 40px 0;">\'+(isAdmin ? "No messages from staff yet." : "You have not sent any messages yet.")+\'</p>\';' +
+'                    updateInboxBadge(messages);' +
+'                    return;' +
+'                }' +
+'                listDiv.innerHTML = "";' +
+'                messages.forEach(m => {' +
+'                    const isUnread = isAdmin ? !m.adminRead : !m.staffRead;' +
+'                    const statusBadge = m.status === "Replied" ? \'<span class="badge status-resolved">Replied</span>\' : \'<span class="badge status-open">Open</span>\';' +
+'                    const senderLine = isAdmin ? \'<div class="inbox-meta">From: <strong>\'+m.sender+\'</strong> \u2014 \'+new Date(m.createdAt).toLocaleString()+\'</div>\' : \'<div class="inbox-meta">\'+new Date(m.createdAt).toLocaleString()+\'</div>\';' +
+'                    const markReadBtn = isUnread ? \'<button class="branch-delete-btn" onclick="markInboxRead(\\\'\'+m._id+\'\\\')">Mark as read</button>\' : "";' +
+'                    let replySection = "";' +
+'                    if (m.status === "Replied") {' +
+'                        replySection = \'<div class="inbox-reply-shown"><strong>Reply from \'+m.repliedBy+\':</strong> \'+m.reply+\'<div class="inbox-meta">\'+new Date(m.repliedAt).toLocaleString()+\'</div></div>\';' +
+'                    } else if (isAdmin) {' +
+'                        replySection = \'<div class="inbox-reply-box"><textarea id="inboxReplyInput-\'+m._id+\'" rows="2" placeholder="Write a reply..."></textarea><button class="branch-add-btn" style="margin-top:8px;" onclick="replyInboxMessage(\\\'\'+m._id+\'\\\')">Send Reply</button></div>\';' +
+'                    }' +
+'                    listDiv.innerHTML += \'<div class="inbox-card \'+(isUnread ? "inbox-unread" : "")+\'"><div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;"><div><div class="inbox-subject">\'+m.subject+\'</div>\'+senderLine+\'</div><div style="display:flex;align-items:center;gap:8px;">\'+statusBadge+\' \'+markReadBtn+\'</div></div><div class="inbox-body">\'+m.body+\'</div>\'+replySection+\'</div>\';' +
+'                });' +
+'                updateInboxBadge(messages);' +
+'            } catch (err) {' +
+'                listDiv.innerHTML = \'<p style="text-align:center;color:#c53030;padding:30px 0;">Could not load messages.</p>\';' +
+'            }' +
+'        }' +
+'        function updateInboxBadge(messages) {' +
+'            const badge = document.getElementById("inboxUnreadBadge");' +
+'            if (!badge) return;' +
+'            const unreadCount = messages.filter(m => isAdmin ? !m.adminRead : !m.staffRead).length;' +
+'            badge.innerText = unreadCount > 99 ? "99+" : unreadCount;' +
+'            badge.style.display = unreadCount ? "flex" : "none";' +
+'        }' +
+'        async function pollInboxBadge() {' +
+'            try {' +
+'                const response = await fetch("/inbox");' +
+'                if (response.ok) { const messages = await response.json(); updateInboxBadge(messages); }' +
+'            } catch (err) { /* ignore */ }' +
 '        }' +
 '        async function updateStaffBranches(staffId) {' +
 '            const checks = document.querySelectorAll(".branch-check-" + staffId);' +
@@ -1652,6 +2016,8 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            const staffId = document.getElementById("newStaffId").value.trim();' +
 '            const password = document.getElementById("newStaffPassword").value.trim();' +
 '            const email = document.getElementById("newStaffEmail").value.trim();' +
+'            const regionEl = document.getElementById("newStaffRegion");' +
+'            const region = regionEl ? regionEl.value : undefined;' +
 '            if (!name || !password || !email) { showAdminToast("Please fill in name, password, and email.", true); return; }' +
 '            const btn = document.getElementById("addStaffBtn");' +
 '            const defaultHTML = btn.innerHTML;' +
@@ -1661,7 +2027,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                const response = await fetch("/tickets/staff", {' +
 '                    method: "POST",' +
 '                    headers: { "Content-Type": "application/json" },' +
-'                    body: JSON.stringify({ name, staffId, password, email })' +
+'                    body: JSON.stringify({ name, staffId, password, email, region })' +
 '                });' +
 '                if (response.ok) {' +
 '                    const result = await response.json();' +
@@ -1669,6 +2035,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                    document.getElementById("newStaffId").value = "";' +
 '                    document.getElementById("newStaffPassword").value = "";' +
 '                    document.getElementById("newStaffEmail").value = "";' +
+'                    if (regionEl) regionEl.value = "";' +
 '                    showAdminToast("Staff member added successfully (" + result.staffId + ").");' +
 '                    loadStaffList();' +
 '                } else {' +
@@ -1842,6 +2209,8 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '        document.getElementById("reportMonth").value = new Date().toISOString().slice(0, 7);' +
 '        loadNotifications();' +
 '        setInterval(loadNotifications, 30000);' +
+'        pollInboxBadge();' +
+'        setInterval(pollInboxBadge, 30000);' +
 '        loadStaffFilterOptions();' +
 '        loadRegionFilterOptions();' +
 '        loadTickets();' +
@@ -1858,9 +2227,15 @@ app.get('/tickets', checkUserLogin, async (req, res) => {
         if (mongoose.connection.readyState !== 1) {
             return res.status(503).json({ error: 'Database connection is not ready.' });
         }
-        const query = req.session.isAdmin
-            ? {}
-            : { $or: [{ assignedTo: req.session.username }, { escalatedBy: req.session.username }] };
+        let query;
+        if (req.session.isSuperAdmin) {
+            query = {};
+        } else if (req.session.isAdmin) {
+            const regionBranchNames = await getBranchNamesForRegion(req.session.region);
+            query = { branch: { $in: regionBranchNames } };
+        } else {
+            query = { $or: [{ assignedTo: req.session.username }, { escalatedBy: req.session.username }] };
+        }
         const tickets = await Ticket.find(query).sort({ _id: -1 });
         res.json(tickets);
     } catch (err) {
@@ -1884,6 +2259,27 @@ app.post('/notifications/read', checkUserLogin, async (req, res) => {
         res.json({ success: true });
     } catch (err) {
         res.status(500).json({ error: 'Could not update notifications.' });
+    }
+});
+
+app.post('/notifications/:id/read', checkUserLogin, async (req, res) => {
+    try {
+        await Notification.findOneAndUpdate(
+            { _id: req.params.id, recipient: req.session.username },
+            { $set: { read: true } }
+        );
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: 'Could not update notification.' });
+    }
+});
+
+app.delete('/notifications', checkUserLogin, async (req, res) => {
+    try {
+        await Notification.deleteMany({ recipient: req.session.username });
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: 'Could not clear notifications.' });
     }
 });
 
@@ -1914,12 +2310,18 @@ app.get('/tickets/report', checkUserLogin, async (req, res) => {
         const query = { createdAt: { $gte: startDate, $lte: endDate } };
         if (!req.session.isAdmin) {
             query.$or = [{ assignedTo: req.session.username }, { escalatedBy: req.session.username }];
+        } else if (!req.session.isSuperAdmin) {
+            // Region Admin: always scoped to their own region, regardless of any ?region= param
+            const ownRegionBranches = await getBranchNamesForRegion(req.session.region);
+            query.branch = { $in: ownRegionBranches };
         }
         let regionLabel = '';
-        if (req.query.region) {
+        if (req.query.region && (req.session.isSuperAdmin || !req.session.isAdmin)) {
             const branchNamesInRegion = await Branch.find({ region: req.query.region }).distinct('name');
             query.branch = { $in: branchNamesInRegion };
             regionLabel = '-' + req.query.region.replace(/\s+/g, '-');
+        } else if (!req.session.isSuperAdmin && req.session.isAdmin) {
+            regionLabel = '-' + req.session.region.replace(/\s+/g, '-');
         }
         const tickets = await Ticket.find(query).sort({ ticketNumber: 1 });
         const allStaffForReport = await Staff.find();
@@ -1977,6 +2379,12 @@ app.post('/tickets/:id/resolve', checkUserLogin, async (req, res) => {
         if (!req.session.isAdmin && ticket.assignedTo !== req.session.username) {
             return res.status(403).json({ error: 'This ticket is no longer assigned to you, so you cannot resolve it.' });
         }
+        if (req.session.isAdmin && !req.session.isSuperAdmin) {
+            const ownRegionBranches = await getBranchNamesForRegion(req.session.region);
+            if (!ownRegionBranches.includes(ticket.branch)) {
+                return res.status(403).json({ error: 'This ticket is outside your region.' });
+            }
+        }
         ticket.status = 'Resolved';
         ticket.resolvedAt = new Date();
         ticket.resolvedBy = req.session.username;
@@ -2002,22 +2410,36 @@ app.post('/tickets/:id/escalate', checkUserLogin, async (req, res) => {
         if (ticket.status === 'Resolved') {
             return res.status(400).json({ error: 'Resolved tickets cannot be escalated.' });
         }
+        if (!req.session.isAdmin && ticket.assignedTo !== req.session.username) {
+            return res.status(403).json({ error: 'This ticket is not assigned to you.' });
+        }
+
+        // Route to the Region Admin who owns this ticket's branch, if one exists —
+        // otherwise fall back to the Super Admin (single-admin / unassigned-region setups).
+        let recipientName = 'Admin';
+        const branchDoc = await Branch.findOne({ name: ticket.branch });
+        if (branchDoc && branchDoc.region) {
+            const regionAdmin = await RegionAdmin.findOne({ region: branchDoc.region, enabled: true });
+            if (regionAdmin) {
+                recipientName = regionAdmin.name;
+            }
+        }
 
         ticket.escalated = true;
         ticket.escalatedBy = req.session.username;
         ticket.escalatedAt = new Date();
         ticket.escalationReason = reason;
-        ticket.assignedTo = 'Admin';
+        ticket.assignedTo = recipientName;
         await ticket.save();
 
         await Notification.create({
-            recipient: 'Admin',
+            recipient: recipientName,
             ticketId: ticket._id,
             ticketNumber: ticket.ticketNumber,
             title: ticket.title,
             message: `Ticket #${String(ticket.ticketNumber).padStart(4, '0')} - ${ticket.title} was escalated to you by ${req.session.username}. Reason: ${reason}`
         });
-        await logAudit(req.session.username, 'Escalate Ticket', `Escalated ticket #${ticket.ticketNumber} to Admin. Reason: ${reason}`);
+        await logAudit(req.session.username, 'Escalate Ticket', `Escalated ticket #${ticket.ticketNumber} to ${recipientName}. Reason: ${reason}`);
 
         res.json({ success: true });
     } catch (err) {
@@ -2050,6 +2472,16 @@ app.post('/tickets/:id/reallocate', checkAdminLogin, async (req, res) => {
             return res.status(400).json({ error: 'The selected staff member no longer exists.' });
         }
 
+        if (!req.session.isSuperAdmin) {
+            const ownRegionBranches = await getBranchNamesForRegion(req.session.region);
+            if (!ownRegionBranches.includes(ticket.branch)) {
+                return res.status(403).json({ error: 'This ticket is outside your region.' });
+            }
+            if (staff.region !== req.session.region) {
+                return res.status(403).json({ error: 'That staff member is not in your region.' });
+            }
+        }
+
         ticket.assignedTo = staff.name;
         await ticket.save();
         await Notification.create({
@@ -2077,20 +2509,26 @@ app.post('/tickets/:id/comment', checkUserLogin, async (req, res) => {
 
 app.get('/public-branches', async (req, res) => {
     try {
-        const branches = await Branch.find().sort({ region: 1, name: 1 });
+        let query = {};
+        if (req.session && req.session.isAdmin && !req.session.isSuperAdmin && req.session.region) {
+            query = { region: req.session.region };
+        }
+        const branches = await Branch.find(query).sort({ region: 1, name: 1 });
         res.json(branches);
     } catch(err) {
         res.status(500).json([]);
     }
 });
 
-// Regions (admin only — used to organize the branch list into groups)
+// Regions (admin only — used to organize the branch list into groups). Region Admins only
+// see their own region here; only the Super Admin can create/rename/delete whole regions.
 app.get('/tickets/regions', checkAdminLogin, async (req, res) => {
-    const regions = await Region.find().sort({ name: 1 });
+    const query = req.session.isSuperAdmin ? {} : { name: req.session.region };
+    const regions = await Region.find(query).sort({ name: 1 });
     res.json(regions);
 });
 
-app.post('/tickets/regions', checkAdminLogin, async (req, res) => {
+app.post('/tickets/regions', checkSuperAdminLogin, async (req, res) => {
     try {
         const name = (req.body.name || '').trim();
         if (!name) return res.status(400).json({ error: 'Region name is required' });
@@ -2103,7 +2541,7 @@ app.post('/tickets/regions', checkAdminLogin, async (req, res) => {
     }
 });
 
-app.put('/tickets/regions/:id', checkAdminLogin, async (req, res) => {
+app.put('/tickets/regions/:id', checkSuperAdminLogin, async (req, res) => {
     try {
         const name = (req.body.name || '').trim();
         if (!name) return res.status(400).json({ error: 'Region name is required' });
@@ -2114,6 +2552,8 @@ app.put('/tickets/regions/:id', checkAdminLogin, async (req, res) => {
         await region.save();
         if (oldName !== name) {
             await Branch.updateMany({ region: oldName }, { $set: { region: name } });
+            await RegionAdmin.updateMany({ region: oldName }, { $set: { region: name } });
+            await Staff.updateMany({ region: oldName }, { $set: { region: name } });
         }
         await logAudit(req.session.username, 'Edit Region', `Renamed region "${oldName}" to "${name}"`);
         res.json({ success: true });
@@ -2122,13 +2562,17 @@ app.put('/tickets/regions/:id', checkAdminLogin, async (req, res) => {
     }
 });
 
-app.delete('/tickets/regions/:id', checkAdminLogin, async (req, res) => {
+app.delete('/tickets/regions/:id', checkSuperAdminLogin, async (req, res) => {
     try {
         const region = await Region.findById(req.params.id);
         if (!region) return res.status(404).json({ error: 'Region not found' });
         const branchCount = await Branch.countDocuments({ region: region.name });
         if (branchCount > 0) {
             return res.status(400).json({ error: `Cannot delete — ${branchCount} branch(es) still belong to this region. Reassign or remove them first.` });
+        }
+        const adminCount = await RegionAdmin.countDocuments({ region: region.name });
+        if (adminCount > 0) {
+            return res.status(400).json({ error: `Cannot delete — ${adminCount} region admin(s) are assigned to this region. Reassign or remove them first.` });
         }
         await Region.findByIdAndDelete(req.params.id);
         await logAudit(req.session.username, 'Delete Region', `Removed region "${region.name}"`);
@@ -2155,7 +2599,10 @@ app.get('/tickets/lookup', async (req, res) => {
 app.post('/tickets/branches', checkAdminLogin, async (req, res) => {
     try {
         const name = (req.body.name || '').trim();
-        const region = (req.body.region || '').trim();
+        let region = (req.body.region || '').trim();
+        if (!req.session.isSuperAdmin) {
+            region = req.session.region; // Region Admins can only add branches to their own region
+        }
         if (!name || !region) {
             return res.status(400).json({ error: 'Branch name and region are both required' });
         }
@@ -2170,6 +2617,9 @@ app.post('/tickets/branches', checkAdminLogin, async (req, res) => {
 
 app.delete('/tickets/branches/:id', checkAdminLogin, async (req, res) => {
     const branch = await Branch.findById(req.params.id);
+    if (branch && !req.session.isSuperAdmin && branch.region !== req.session.region) {
+        return res.status(403).json({ error: 'You can only manage branches in your own region.' });
+    }
     await Branch.findByIdAndDelete(req.params.id);
     if (branch) {
         await StaffBranch.updateMany({}, { $pull: { branches: branch.name } });
@@ -2183,6 +2633,9 @@ app.put('/tickets/branches/:id', checkAdminLogin, async (req, res) => {
     try {
         const branch = await Branch.findById(req.params.id);
         if (!branch) return res.status(404).json({ error: 'Branch not found' });
+        if (!req.session.isSuperAdmin && branch.region !== req.session.region) {
+            return res.status(403).json({ error: 'You can only manage branches in your own region.' });
+        }
         const oldName = branch.name;
         const oldRegion = branch.region;
 
@@ -2190,7 +2643,8 @@ app.put('/tickets/branches/:id', checkAdminLogin, async (req, res) => {
             if (!req.body.name.trim()) return res.status(400).json({ error: 'Branch name cannot be empty' });
             branch.name = req.body.name.trim();
         }
-        if (req.body.region !== undefined && req.body.region.trim()) {
+        // Only the Super Admin can move a branch to a different region
+        if (req.session.isSuperAdmin && req.body.region !== undefined && req.body.region.trim()) {
             branch.region = req.body.region.trim();
         }
         await branch.save();
@@ -2213,12 +2667,13 @@ app.put('/tickets/branches/:id', checkAdminLogin, async (req, res) => {
 });
 
 app.get('/tickets/staff-list', checkAdminLogin, async (req, res) => {
-    const staff = await Staff.find().sort({ staffId: 1 });
-    res.json(staff.map(s => ({ id: s.staffId, name: s.name, email: s.email })));
+    const query = req.session.isSuperAdmin ? {} : { region: req.session.region };
+    const staff = await Staff.find(query).sort({ staffId: 1 });
+    res.json(staff.map(s => ({ id: s.staffId, name: s.name, email: s.email, region: s.region })));
 });
 
 // Recent admin activity — staff/branch changes
-app.get('/audit-log', checkAdminLogin, async (req, res) => {
+app.get('/audit-log', checkSuperAdminLogin, async (req, res) => {
     const entries = await AuditLog.find().sort({ createdAt: -1 }).limit(200);
     res.json(entries);
 });
@@ -2239,10 +2694,12 @@ app.post('/tickets/staff', checkAdminLogin, async (req, res) => {
         } else {
             staffId = await getNextStaffId();
         }
+        // Region Admins can only add staff to their own region; Super Admin can optionally set one
+        const region = req.session.isSuperAdmin ? (req.body.region || '').trim() : req.session.region;
         const hashedPassword = await bcrypt.hash(password, 10);
-        const newStaff = new Staff({ staffId, name, password: hashedPassword, email });
+        const newStaff = new Staff({ staffId, name, password: hashedPassword, email, region });
         await newStaff.save();
-        await logAudit(req.session.username, 'Add Staff', `Added staff ${name} (${staffId})`);
+        await logAudit(req.session.username, 'Add Staff', `Added staff ${name} (${staffId})${region ? ' — region: ' + region : ''}`);
         res.status(201).json({ success: true, staffId });
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -2256,9 +2713,18 @@ app.put('/tickets/staff/:staffId', checkAdminLogin, async (req, res) => {
         if (!name || !email) {
             return res.status(400).json({ error: 'Name and email are required' });
         }
+        const existingStaff = await Staff.findOne({ staffId: req.params.staffId });
+        if (!existingStaff) return res.status(404).json({ error: 'Staff member not found' });
+        if (!req.session.isSuperAdmin && existingStaff.region !== req.session.region) {
+            return res.status(403).json({ error: 'You can only manage staff in your own region.' });
+        }
         const update = { name, email };
         if (password) {
             update.password = await bcrypt.hash(password, 10);
+        }
+        // Only the Super Admin can move a staff member to a different region
+        if (req.session.isSuperAdmin && req.body.region !== undefined) {
+            update.region = (req.body.region || '').trim();
         }
         await Staff.findOneAndUpdate({ staffId: req.params.staffId }, update);
         await logAudit(req.session.username, 'Edit Staff', `Updated staff ${req.params.staffId}${password ? ' (password reset)' : ''}`);
@@ -2271,6 +2737,11 @@ app.put('/tickets/staff/:staffId', checkAdminLogin, async (req, res) => {
 // Remove a staff member (their existing tickets keep their historical assignedTo name)
 app.delete('/tickets/staff/:staffId', checkAdminLogin, async (req, res) => {
     try {
+        const existingStaff = await Staff.findOne({ staffId: req.params.staffId });
+        if (!existingStaff) return res.status(404).json({ error: 'Staff member not found' });
+        if (!req.session.isSuperAdmin && existingStaff.region !== req.session.region) {
+            return res.status(403).json({ error: 'You can only manage staff in your own region.' });
+        }
         await Staff.findOneAndDelete({ staffId: req.params.staffId });
         await StaffBranch.findOneAndDelete({ staffId: req.params.staffId });
         await logAudit(req.session.username, 'Delete Staff', `Removed staff ${req.params.staffId}`);
@@ -2284,8 +2755,14 @@ app.delete('/tickets/staff/:staffId', checkAdminLogin, async (req, res) => {
 app.get('/tickets/staff-branches', checkAdminLogin, async (req, res) => {
     try {
         const assignments = await StaffBranch.find();
-        const map = {};
+        let map = {};
         assignments.forEach(a => { map[a.staffId] = a.branches; });
+        if (!req.session.isSuperAdmin) {
+            const regionStaffIds = (await Staff.find({ region: req.session.region }).distinct('staffId'));
+            const scopedMap = {};
+            regionStaffIds.forEach(id => { if (map[id]) scopedMap[id] = map[id]; });
+            map = scopedMap;
+        }
         res.json(map);
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -2296,12 +2773,152 @@ app.get('/tickets/staff-branches', checkAdminLogin, async (req, res) => {
 app.post('/tickets/staff-branches', checkAdminLogin, async (req, res) => {
     try {
         const { staffId, branches } = req.body;
+        if (!req.session.isSuperAdmin) {
+            const targetStaff = await Staff.findOne({ staffId });
+            if (!targetStaff || targetStaff.region !== req.session.region) {
+                return res.status(403).json({ error: 'You can only manage staff in your own region.' });
+            }
+            const ownRegionBranches = await getBranchNamesForRegion(req.session.region);
+            const invalidBranch = (branches || []).find(b => !ownRegionBranches.includes(b));
+            if (invalidBranch) {
+                return res.status(403).json({ error: `"${invalidBranch}" is outside your region.` });
+            }
+        }
         await StaffBranch.findOneAndUpdate(
             { staffId },
             { staffId, branches },
             { upsert: true, returnDocument: 'after' }
         );
         await logAudit(req.session.username, 'Update Branch Assignment', `Set branches for staff ${staffId}: ${branches && branches.length ? branches.join(', ') : 'none'}`);
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// --- Region Admin management (Super Admin only) ---
+app.get('/region-admins', checkSuperAdminLogin, async (req, res) => {
+    try {
+        const admins = await RegionAdmin.find().sort({ region: 1, name: 1 });
+        res.json(admins.map(a => ({ id: a._id, name: a.name, username: a.username, region: a.region, enabled: a.enabled })));
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.post('/region-admins', checkSuperAdminLogin, async (req, res) => {
+    try {
+        const name = (req.body.name || '').trim();
+        const username = (req.body.username || '').trim();
+        const password = req.body.password || '';
+        const region = (req.body.region || '').trim();
+        if (!name || !username || !password || !region) {
+            return res.status(400).json({ error: 'Name, username, password, and region are all required.' });
+        }
+        const existing = await RegionAdmin.findOne({ username });
+        if (existing) {
+            return res.status(400).json({ error: `Username "${username}" is already in use.` });
+        }
+        const hashedPassword = await bcrypt.hash(password, 10);
+        const newAdmin = new RegionAdmin({ name, username, password: hashedPassword, region, enabled: true });
+        await newAdmin.save();
+        await logAudit(req.session.username, 'Add Region Admin', `Added region admin ${name} (${username}) for region "${region}"`);
+        res.status(201).json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.put('/region-admins/:id', checkSuperAdminLogin, async (req, res) => {
+    try {
+        const admin = await RegionAdmin.findById(req.params.id);
+        if (!admin) return res.status(404).json({ error: 'Region admin not found.' });
+        if (req.body.name !== undefined && req.body.name.trim()) admin.name = req.body.name.trim();
+        if (req.body.region !== undefined && req.body.region.trim()) admin.region = req.body.region.trim();
+        if (req.body.password) admin.password = await bcrypt.hash(req.body.password, 10);
+        if (req.body.enabled !== undefined) admin.enabled = !!req.body.enabled;
+        await admin.save();
+        await logAudit(req.session.username, 'Edit Region Admin', `Updated region admin ${admin.username}${req.body.password ? ' (password reset)' : ''}`);
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.delete('/region-admins/:id', checkSuperAdminLogin, async (req, res) => {
+    try {
+        const admin = await RegionAdmin.findByIdAndDelete(req.params.id);
+        if (admin) {
+            await logAudit(req.session.username, 'Delete Region Admin', `Removed region admin ${admin.username}`);
+        }
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// --- Inbox: staff can message any admin; any admin (Super or Region) can reply ---
+app.get('/inbox', checkUserLogin, async (req, res) => {
+    try {
+        const query = req.session.isAdmin ? {} : { sender: req.session.username };
+        const messages = await InboxMessage.find(query).sort({ createdAt: -1 });
+        res.json(messages);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.post('/inbox', checkUserLogin, async (req, res) => {
+    try {
+        const subject = (req.body.subject || '').trim();
+        const body = (req.body.body || '').trim();
+        if (!subject || !body) {
+            return res.status(400).json({ error: 'Subject and message are both required.' });
+        }
+        const message = await InboxMessage.create({
+            sender: req.session.username,
+            subject,
+            body,
+            adminRead: false,
+            staffRead: true
+        });
+        res.status(201).json({ success: true, id: message._id });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.post('/inbox/:id/reply', checkAdminLogin, async (req, res) => {
+    try {
+        const reply = (req.body.reply || '').trim();
+        if (!reply) return res.status(400).json({ error: 'Reply message is required.' });
+        const message = await InboxMessage.findById(req.params.id);
+        if (!message) return res.status(404).json({ error: 'Message not found.' });
+        message.reply = reply;
+        message.repliedBy = req.session.username;
+        message.repliedAt = new Date();
+        message.status = 'Replied';
+        message.adminRead = true;
+        message.staffRead = false;
+        await message.save();
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.post('/inbox/:id/read', checkUserLogin, async (req, res) => {
+    try {
+        const message = await InboxMessage.findById(req.params.id);
+        if (!message) return res.status(404).json({ error: 'Message not found.' });
+        if (req.session.isAdmin) {
+            message.adminRead = true;
+        } else if (message.sender === req.session.username) {
+            message.staffRead = true;
+        } else {
+            return res.status(403).json({ error: 'Access Denied' });
+        }
+        await message.save();
         res.json({ success: true });
     } catch (err) {
         res.status(500).json({ error: err.message });
