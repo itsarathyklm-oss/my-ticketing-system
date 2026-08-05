@@ -1807,14 +1807,14 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                    idCell = isSuperAdmin ? \'<input type="text" id="editStaffId-\'+s.id+\'" value="\'+s.id+\'" style="width:100%;padding:6px;border:1px solid #cbd5e0;border-radius:4px;">\' : s.id;' +
 '                    nameCell = \'<input type="text" id="editName-\'+s.id+\'" value="\'+s.name+\'" style="width:100%;padding:6px;border:1px solid #cbd5e0;border-radius:4px;">\';' +
 '                    emailCell = \'<input type="email" id="editEmail-\'+s.id+\'" value="\'+s.email+\'" style="width:100%;padding:6px;border:1px solid #cbd5e0;border-radius:4px;margin-bottom:4px;"><input type="text" id="editPassword-\'+s.id+\'" placeholder="New password (optional)" style="width:100%;padding:6px;border:1px solid #cbd5e0;border-radius:4px;">\';' +
-'                    editCell = \'<button class="resolve-btn" onclick="saveStaffEdit(\\\'\'+s.id+\'\\\')">Save</button>\';' +
-'                    deleteCell = \'<button class="branch-delete-btn" onclick="toggleEditStaff(\\\'\'+s.id+\'\\\')">Cancel</button>\';' +
+'                    editCell = \'<button type="button" class="resolve-btn" onclick="saveStaffEdit(\\\'\'+s.id+\'\\\')">Save</button>\';' +
+'                    deleteCell = \'<button type="button" class="branch-delete-btn" onclick="toggleEditStaff(\\\'\'+s.id+\'\\\')">Cancel</button>\';' +
 '                } else {' +
 '                    idCell = s.id;' +
 '                    nameCell = s.name;' +
 '                    emailCell = s.email;' +
-'                    editCell = \'<button class="branch-delete-btn" onclick="toggleEditStaff(\\\'\'+s.id+\'\\\')">Edit</button>\';' +
-'                    deleteCell = \'<button class="branch-delete-btn" onclick="deleteStaff(\\\'\'+s.id+\'\\\')">Delete</button>\';' +
+'                    editCell = \'<button type="button" class="branch-delete-btn" onclick="toggleEditStaff(\\\'\'+s.id+\'\\\')">Edit</button>\';' +
+'                    deleteCell = \'<button type="button" class="branch-delete-btn" onclick="deleteStaff(\\\'\'+s.id+\'\\\')">Delete</button>\';' +
 '                }' +
 '                let regionCell = "";' +
 '                if (isSuperAdmin) {' +
@@ -1832,14 +1832,21 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '        let editingStaffIds = new Set();' +
 '        function getMainScroll() {' +
 '            const mainEl = document.querySelector(".main-content");' +
-'            return mainEl ? mainEl.scrollTop : 0;' +
+'            return { main: mainEl ? mainEl.scrollTop : 0, win: window.scrollY || document.documentElement.scrollTop || 0 };' +
 '        }' +
 '        function setMainScroll(pos) {' +
 '            const mainEl = document.querySelector(".main-content");' +
-'            if (mainEl) mainEl.scrollTop = pos;' +
+'            const apply = () => {' +
+'                if (mainEl) mainEl.scrollTop = pos.main;' +
+'                window.scrollTo(0, pos.win);' +
+'            };' +
+'            apply();' +
+'            requestAnimationFrame(() => { apply(); requestAnimationFrame(apply); });' +
+'            setTimeout(apply, 50);' +
 '        }' +
 '        function toggleEditStaff(staffId) {' +
 '            const scrollPos = getMainScroll();' +
+'            if (document.activeElement && document.activeElement.blur) document.activeElement.blur();' +
 '            if (editingStaffIds.has(staffId)) editingStaffIds.delete(staffId);' +
 '            else editingStaffIds.add(staffId);' +
 '            renderStaffTable();' +
@@ -1847,6 +1854,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '        }' +
 '        async function saveStaffEdit(staffId) {' +
 '            const scrollPos = getMainScroll();' +
+'            if (document.activeElement && document.activeElement.blur) document.activeElement.blur();' +
 '            const name = document.getElementById("editName-" + staffId).value.trim();' +
 '            const email = document.getElementById("editEmail-" + staffId).value.trim();' +
 '            const password = document.getElementById("editPassword-" + staffId).value.trim();' +
@@ -1910,15 +1918,15 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                    let regionOptionsHtml = "";' +
 '                    regions.forEach(r => { regionOptionsHtml += \'<option value="\'+r.name+\'"\'+(r.name === a.region ? \' selected\' : \'\')+\'>\'+r.name+\'</option>\'; });' +
 '                    regionCell = \'<select id="editAdminRegion-\'+a.id+\'" style="padding:6px;border:1px solid #cbd5e0;border-radius:4px;">\'+regionOptionsHtml+\'</select>\';' +
-'                    editCell = \'<input type="text" id="editAdminPassword-\'+a.id+\'" placeholder="New password (optional)" style="width:100%;padding:6px;border:1px solid #cbd5e0;border-radius:4px;margin-bottom:4px;"><button class="resolve-btn" onclick="saveRegionAdminEdit(\\\'\'+a.id+\'\\\')">Save</button> <button class="branch-delete-btn" onclick="toggleEditRegionAdmin(\\\'\'+a.id+\'\\\')">Cancel</button>\';' +
+'                    editCell = \'<input type="text" id="editAdminPassword-\'+a.id+\'" placeholder="New password (optional)" style="width:100%;padding:6px;border:1px solid #cbd5e0;border-radius:4px;margin-bottom:4px;"><button type="button" class="resolve-btn" onclick="saveRegionAdminEdit(\\\'\'+a.id+\'\\\')">Save</button> <button type="button" class="branch-delete-btn" onclick="toggleEditRegionAdmin(\\\'\'+a.id+\'\\\')">Cancel</button>\';' +
 '                } else {' +
 '                    nameCell = a.name;' +
 '                    regionCell = a.region;' +
-'                    editCell = \'<button class="branch-delete-btn" onclick="toggleEditRegionAdmin(\\\'\'+a.id+\'\\\')">Edit</button>\';' +
+'                    editCell = \'<button type="button" class="branch-delete-btn" onclick="toggleEditRegionAdmin(\\\'\'+a.id+\'\\\')">Edit</button>\';' +
 '                }' +
 '                const statusBadge = a.enabled ? \'<span class="badge status-resolved">Enabled</span>\' : \'<span class="badge p-High">Disabled</span>\';' +
 '                const toggleBtn = \'<button class="branch-delete-btn" onclick="toggleRegionAdminEnabled(\\\'\'+a.id+\'\\\', \'+(!a.enabled)+\')">\'+ (a.enabled ? "Disable" : "Enable") +\'</button>\';' +
-'                tbody.innerHTML += \'<tr><td>\'+nameCell+\'</td><td>\'+a.username+\'</td><td>\'+regionCell+\'</td><td>\'+statusBadge+\' \'+toggleBtn+\'</td><td>\'+editCell+\'</td><td><button class="branch-delete-btn" onclick="deleteRegionAdmin(\\\'\'+a.id+\'\\\')">Delete</button></td></tr>\';' +
+'                tbody.innerHTML += \'<tr><td>\'+nameCell+\'</td><td>\'+a.username+\'</td><td>\'+regionCell+\'</td><td>\'+statusBadge+\' \'+toggleBtn+\'</td><td>\'+editCell+\'</td><td><button type="button" class="branch-delete-btn" onclick="deleteRegionAdmin(\\\'\'+a.id+\'\\\')">Delete</button></td></tr>\';' +
 '            });' +
 '        }' +
 '        function toggleEditRegionAdmin(id) {' +
