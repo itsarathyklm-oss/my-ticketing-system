@@ -74,6 +74,7 @@ const ticketSchema = new mongoose.Schema({
     comments: [{
         author: String,
         text: String,
+        attachment: { type: String, default: null },
         createdAt: { type: Date, default: Date.now }
     }]
 });
@@ -157,6 +158,20 @@ function uploadFileFilter(req, file, cb) {
 
 const upload = multer({
     storage: storage,
+    limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
+    fileFilter: uploadFileFilter
+});
+
+// Separate storage/upload for optional attachments on internal work note comments
+const commentAttachmentStorage = new CloudinaryStorage({
+    cloudinary: cloudinary,
+    params: {
+        folder: 'helpdesk_comment_attachments',
+        allowed_formats: ['jpg', 'png', 'jpeg', 'webp', 'gif', 'pdf']
+    }
+});
+const commentUpload = multer({
+    storage: commentAttachmentStorage,
     limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
     fileFilter: uploadFileFilter
 });
@@ -796,7 +811,11 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            .ticket-header { flex-direction: column; align-items: flex-start; gap: 10px; }' +
 '        }' +
 '        .sidebar { width: 260px; height: 100vh; background-color: #1e2229; color: #fff; display: flex; flex-direction: column; justify-content: space-between; overflow: hidden; }' +
-'        .sidebar-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; }' +
+'        .sidebar-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; scrollbar-width: thin; scrollbar-color: #3a4150 transparent; }' +
+'        .sidebar-scroll::-webkit-scrollbar { width: 6px; }' +
+'        .sidebar-scroll::-webkit-scrollbar-track { background: transparent; }' +
+'        .sidebar-scroll::-webkit-scrollbar-thumb { background: #3a4150; border-radius: 10px; }' +
+'        .sidebar-scroll::-webkit-scrollbar-thumb:hover { background: #4a5568; }' +
 '        .sidebar-brand { padding: 24px; display: flex; align-items: center; gap: 12px; border-bottom: 1px solid #2d323e; }' +
 '        .sidebar-logo { height: 35px; width: auto; object-fit: contain; }' +
 '        .sidebar-title { font-size: 18px; font-weight: 700; color: #fff; letter-spacing: 0.5px; }' +
@@ -810,7 +829,11 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '        .user-info strong { color: #fff; display: block; font-size: 14px; margin-bottom: 2px; }' +
 '        .logout-btn { display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%; background-color: #e53e3e; color: white; text-decoration: none; padding: 10px; border-radius: 6px; font-size: 14px; font-weight: 600; transition: background 0.2s; }' +
 '        .logout-btn:hover { background-color: #c53030; }' +
-'        .main-content { flex-grow: 1; display: flex; flex-direction: column; height: 100vh; overflow-y: auto; }' +
+'        .main-content { flex-grow: 1; display: flex; flex-direction: column; height: 100vh; overflow-y: auto; scrollbar-width: thin; scrollbar-color: #cbd5e0 #f8f9fa; }' +
+'        .main-content::-webkit-scrollbar { width: 8px; }' +
+'        .main-content::-webkit-scrollbar-track { background: #f8f9fa; }' +
+'        .main-content::-webkit-scrollbar-thumb { background: #cbd5e0; border-radius: 10px; }' +
+'        .main-content::-webkit-scrollbar-thumb:hover { background: #a0aec0; }' +
 '        .top-navbar { height: 70px; background-color: #fff; border-bottom: 1px solid #e2e8f0; display: flex; align-items: center; justify-content: space-between; padding: 0 30px; }' +
 '        .page-title { font-size: 20px; font-weight: 600; color: #2d3748; }' +
 '        .notification-wrap { position: relative; }' +
@@ -818,7 +841,10 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '        .notification-btn:hover { background: #f7fafc; }' +
 '        .notification-btn svg { width: 20px; height: 20px; }' +
 '        .notification-count { position: absolute; top: -5px; right: -5px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 10px; background: #e53e3e; color: #fff; font-size: 10px; font-weight: 700; display: none; align-items: center; justify-content: center; }' +
-'        .notification-menu { display: none; position: absolute; top: 48px; right: 0; width: 330px; max-height: 360px; overflow-y: auto; background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; box-shadow: 0 14px 34px rgba(0,0,0,.16); z-index: 3000; }' +
+'        .notification-menu { display: none; position: absolute; top: 48px; right: 0; width: 330px; max-height: 360px; overflow-y: auto; background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; box-shadow: 0 14px 34px rgba(0,0,0,.16); z-index: 3000; scrollbar-width: thin; scrollbar-color: #cbd5e0 #fff; }' +
+'        .notification-menu::-webkit-scrollbar { width: 6px; }' +
+'        .notification-menu::-webkit-scrollbar-track { background: #fff; }' +
+'        .notification-menu::-webkit-scrollbar-thumb { background: #cbd5e0; border-radius: 10px; }' +
 '        .notification-menu.show { display: block; }' +
 '        .notification-head { padding: 12px 14px; font-size: 14px; font-weight: 700; border-bottom: 1px solid #edf2f7; }' +
 '        .notification-item { padding: 12px 14px; border-bottom: 1px solid #edf2f7; font-size: 12px; color: #4a5568; }' +
@@ -873,9 +899,12 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '        .comments-header { font-size: 12px; font-weight: 700; color: #718096; text-transform: uppercase; margin-bottom: 10px; letter-spacing: 0.5px; }' +
 '        .comment-item { padding: 8px 0; border-bottom: 1px solid #edf2f7; font-size: 13px; color: #4a5568; }' +
 '        .comment-item strong { color: #2d3748; }' +
-'        .comment-form { display: flex; gap: 10px; margin-top: 12px; }' +
+'        .comment-form { display: flex; gap: 10px; margin-top: 12px; flex-wrap: wrap; align-items: center; }' +
 '        .comment-form input { flex-grow: 1; padding: 8px 12px; border: 1px solid #e2e8f0; border-radius: 6px; font-size: 13px; }' +
 '        .comment-form button { background-color: #3182ce; color: white; border: none; padding: 8px 16px; font-size: 13px; font-weight: 600; border-radius: 6px; cursor: pointer; }' +
+'        .comment-attach-btn { display: flex; align-items: center; justify-content: center; padding: 8px 12px; border: 1px solid #e2e8f0; border-radius: 6px; background: #f7fafc; cursor: pointer; font-size: 14px; flex-shrink: 0; }' +
+'        .comment-attach-btn:hover { background: #edf2f7; }' +
+'        .attachment-name-tag { font-size: 11px; color: #718096; max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; align-self: center; }' +
 '        .inbox-card { background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); border-left: 4px solid #cbd5e0; }' +
 '        .inbox-card.inbox-unread { border-left-color: #e53e3e; background: #fffafa; }' +
 '        .inbox-subject { font-size: 16px; font-weight: 700; color: #2d3748; }' +
@@ -987,7 +1016,10 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                    <div class="metric-card escalated" onclick="filterByStatus(\'Escalated\')"><div class="metric-icon-badge metric-icon-amber"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg></div><div class="metric-label">Escalated Tickets</div><div class="metric-value" id="statEscalated">0</div><div class="metric-subtitle">Needs admin action</div></div>' +
 '                    <div class="metric-card assigned" onclick="filterByStatus(\'all\')"><div class="metric-icon-badge metric-icon-red"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v2z"></path><line x1="13" y1="5" x2="13" y2="19"></line></svg></div><div class="metric-label">Total Tickets</div><div class="metric-value" id="statMine">0</div><div class="metric-subtitle">All requests in scope</div></div>' +
 '                </div>' +
-'                <div class="branch-panel-card" style="margin-bottom: 20px; display: flex; align-items: flex-end; gap: 14px; flex-wrap: wrap;">' +
+'                <div style="margin-bottom: 12px;">' +
+'                    <button type="button" id="toggleFilterBtn" class="branch-add-btn" onclick="toggleFilterPanel()" style="display:inline-flex; align-items:center; gap:8px; padding: 9px 18px;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>Filters</button>' +
+'                </div>' +
+'                <div class="branch-panel-card" id="ticketFilterPanel" style="display:none; margin-bottom: 20px; align-items: flex-end; gap: 14px; flex-wrap: wrap;">' +
 '                    <div style="flex-grow: 1; min-width: 220px;"><label style="display:block;font-size:12px;font-weight:600;color:#4a5568;margin-bottom:4px;">Search</label><input type="text" id="filterSearchText" placeholder="Ticket #, Submitted By, Branch, Mobile..." style="width:100%; padding: 8px 10px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 14px;" onkeydown="if(event.key===\'Enter\') applyTicketFilters();"></div>' +
 '                    <div><label style="display:block;font-size:12px;font-weight:600;color:#4a5568;margin-bottom:4px;">From Date</label><input type="date" id="filterFromDate" style="padding: 8px 10px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 14px;"></div>' +
 '                    <div><label style="display:block;font-size:12px;font-weight:600;color:#4a5568;margin-bottom:4px;">To Date</label><input type="date" id="filterToDate" style="padding: 8px 10px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 14px;"></div>' +
@@ -1298,6 +1330,13 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            clearTimeout(adminToastTimer);' +
 '            adminToastTimer = setTimeout(() => { toast.classList.remove("show"); }, 4000);' +
 '        }' +
+'        function toggleFilterPanel() {' +
+'            const panel = document.getElementById("ticketFilterPanel");' +
+'            const btn = document.getElementById("toggleFilterBtn");' +
+'            const isOpen = panel.style.display !== "none";' +
+'            panel.style.display = isOpen ? "none" : "flex";' +
+'            if (btn) btn.innerHTML = (isOpen ? \'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>Filters\' : \'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>Hide Filters\');' +
+'        }' +
 '        function refreshTicketsDashboard() {' +
 '            currentStatusFilter = "default-view";' +
 '            currentPage = 1;' +
@@ -1529,10 +1568,10 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                let commentListHtml = "";' +
 '                if (ticket.comments) {' +
 '                    ticket.comments.forEach(c => {' +
-'                        commentListHtml += \'<div class="comment-item"><strong>\'+c.author+\':</strong> \'+c.text+\'</div>\';' +
+'                        commentListHtml += \'<div class="comment-item"><strong>\'+c.author+\':</strong> \'+c.text+(c.attachment ? \' <a href="\'+c.attachment+\'" target="_blank">\uD83D\uDCCE Attachment</a>\' : "")+\'</div>\';' +
 '                    });' +
 '                }' +
-'                listDiv.innerHTML += \'<div class="ticket-card \'+cardStateClass+\'"><div class="ticket-header"><div><h3 class="ticket-title">#\'+String(ticket.ticketNumber).padStart(4,"0")+\' \'+ticket.title+\'</h3><div style="margin-top: 8px;"><span class="badge p-\'+ticket.priority+\'">\'+ticket.priority+\'</span><span class="badge status-\'+ticket.status.toLowerCase()+\'">\'+ticket.status+\'</span><span class="badge badge-category">\'+(ticket.category || "Other")+\'</span>\'+escalatedBadge+\'</div></div>\'+actionsHtml+\'</div><p class="ticket-desc">\'+ticket.description+\'</p>\'+imageHtml+\'<div class="assignment-info"><span><strong>Submitted By:</strong> \'+(ticket.submittedBy || "Unknown")+(ticket.designation ? " ("+ticket.designation+")" : "")+\'</span> | <span><strong>Branch:</strong> \'+ticket.branch+\'</span> | <span><strong>Mobile:</strong> \'+ticket.mobile+\'</span> | <span><strong>Assigned:</strong> \'+ticket.assignedTo+\'</span> | <span><strong>Submitted:</strong> \'+(ticket.createdAt ? new Date(ticket.createdAt).toLocaleString() : "N/A")+\'</span>\'+escalationLine+resolvedLine+\'</div><div class="comments-section"><h4 class="comments-header">Internal Work Notes</h4><div>\'+(commentListHtml || "No updates.")+\'</div><div class="comment-form"><input type="text" id="input-\'+ticket._id+\'" placeholder="Write operational update..."><button onclick="addComment(\\\'\'+ticket._id+\'\\\')">Post</button></div></div></div>\';' +
+'                listDiv.innerHTML += \'<div class="ticket-card \'+cardStateClass+\'"><div class="ticket-header"><div><h3 class="ticket-title">#\'+String(ticket.ticketNumber).padStart(4,"0")+\' \'+ticket.title+\'</h3><div style="margin-top: 8px;"><span class="badge p-\'+ticket.priority+\'">\'+ticket.priority+\'</span><span class="badge status-\'+ticket.status.toLowerCase()+\'">\'+ticket.status+\'</span><span class="badge badge-category">\'+(ticket.category || "Other")+\'</span>\'+escalatedBadge+\'</div></div>\'+actionsHtml+\'</div><p class="ticket-desc">\'+ticket.description+\'</p>\'+imageHtml+\'<div class="assignment-info"><span><strong>Submitted By:</strong> \'+(ticket.submittedBy || "Unknown")+(ticket.designation ? " ("+ticket.designation+")" : "")+\'</span> | <span><strong>Branch:</strong> \'+ticket.branch+\'</span> | <span><strong>Mobile:</strong> \'+ticket.mobile+\'</span> | <span><strong>Assigned:</strong> \'+ticket.assignedTo+\'</span> | <span><strong>Submitted:</strong> \'+(ticket.createdAt ? new Date(ticket.createdAt).toLocaleString() : "N/A")+\'</span>\'+escalationLine+resolvedLine+\'</div><div class="comments-section"><h4 class="comments-header">Internal Work Notes</h4><div>\'+(commentListHtml || "No updates.")+\'</div><div class="comment-form"><input type="text" id="input-\'+ticket._id+\'" placeholder="Write operational update..."><label class="comment-attach-btn" title="Attach a file (optional)">📎<input type="file" id="attachment-\'+ticket._id+\'" style="display:none;" accept="image/jpeg,image/png,image/webp,image/gif,application/pdf,.jpg,.jpeg,.png,.webp,.gif,.pdf" onchange="updateAttachmentLabel(\\\'\'+ticket._id+\'\\\')"></label><span id="attachmentName-\'+ticket._id+\'" class="attachment-name-tag"></span><button onclick="addComment(\\\'\'+ticket._id+\'\\\')">Post</button></div></div></div>\';' +
 '            });' +
 '            renderPagination(totalFilteredCount);' +
 '            } catch (err) {' +
@@ -1791,12 +1830,23 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            });' +
 '        }' +
 '        let editingStaffIds = new Set();' +
+'        function getMainScroll() {' +
+'            const mainEl = document.querySelector(".main-content");' +
+'            return mainEl ? mainEl.scrollTop : 0;' +
+'        }' +
+'        function setMainScroll(pos) {' +
+'            const mainEl = document.querySelector(".main-content");' +
+'            if (mainEl) mainEl.scrollTop = pos;' +
+'        }' +
 '        function toggleEditStaff(staffId) {' +
+'            const scrollPos = getMainScroll();' +
 '            if (editingStaffIds.has(staffId)) editingStaffIds.delete(staffId);' +
 '            else editingStaffIds.add(staffId);' +
 '            renderStaffTable();' +
+'            setMainScroll(scrollPos);' +
 '        }' +
 '        async function saveStaffEdit(staffId) {' +
+'            const scrollPos = getMainScroll();' +
 '            const name = document.getElementById("editName-" + staffId).value.trim();' +
 '            const email = document.getElementById("editEmail-" + staffId).value.trim();' +
 '            const password = document.getElementById("editPassword-" + staffId).value.trim();' +
@@ -1821,17 +1871,20 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            if (response.ok) {' +
 '                editingStaffIds.delete(staffId);' +
 '                showAdminToast("Staff member updated.");' +
-'                loadStaffList();' +
+'                await loadStaffList();' +
+'                setMainScroll(scrollPos);' +
 '            } else {' +
 '                const err = await response.json().catch(() => ({}));' +
 '                showAdminToast(err.error || "Could not update staff member.", true);' +
+'                setMainScroll(scrollPos);' +
 '            }' +
 '        }' +
 '        async function deleteStaff(staffId) {' +
 '            showConfirmModal("Remove this staff member? This cannot be undone.", async () => {' +
+'                const scrollPos = getMainScroll();' +
 '                const response = await fetch("/tickets/staff/" + staffId, { method: "DELETE" });' +
-'                if (response.ok) loadStaffList();' +
-'                else alert("Could not delete staff member.");' +
+'                if (response.ok) { await loadStaffList(); setMainScroll(scrollPos); }' +
+'                else showAdminToast("Could not delete staff member.", true);' +
 '            }, "Delete");' +
 '        }' +
 '        let editingAdminIds = new Set();' +
@@ -1869,11 +1922,13 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            });' +
 '        }' +
 '        function toggleEditRegionAdmin(id) {' +
+'            const scrollPos = getMainScroll();' +
 '            if (editingAdminIds.has(id)) editingAdminIds.delete(id);' +
 '            else editingAdminIds.add(id);' +
-'            loadRegionAdminsList();' +
+'            loadRegionAdminsList().then(() => setMainScroll(scrollPos));' +
 '        }' +
 '        async function saveRegionAdminEdit(id) {' +
+'            const scrollPos = getMainScroll();' +
 '            const name = document.getElementById("editAdminName-" + id).value.trim();' +
 '            const region = document.getElementById("editAdminRegion-" + id).value;' +
 '            const password = document.getElementById("editAdminPassword-" + id).value.trim();' +
@@ -1885,23 +1940,28 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                headers: { "Content-Type": "application/json" },' +
 '                body: JSON.stringify(body)' +
 '            });' +
-'            if (response.ok) { editingAdminIds.delete(id); showAdminToast("Region admin updated."); loadRegionAdminsList(); }' +
+'            if (response.ok) { editingAdminIds.delete(id); showAdminToast("Region admin updated."); await loadRegionAdminsList(); }' +
 '            else { const err = await response.json(); showAdminToast(err.error || "Could not update region admin.", true); }' +
+'            setMainScroll(scrollPos);' +
 '        }' +
 '        async function toggleRegionAdminEnabled(id, enabled) {' +
+'            const scrollPos = getMainScroll();' +
 '            const response = await fetch("/region-admins/" + id, {' +
 '                method: "PUT",' +
 '                headers: { "Content-Type": "application/json" },' +
 '                body: JSON.stringify({ enabled })' +
 '            });' +
-'            if (response.ok) { showAdminToast(enabled ? "Admin enabled." : "Admin disabled."); loadRegionAdminsList(); }' +
+'            if (response.ok) { showAdminToast(enabled ? "Admin enabled." : "Admin disabled."); await loadRegionAdminsList(); }' +
 '            else { showAdminToast("Could not update region admin.", true); }' +
+'            setMainScroll(scrollPos);' +
 '        }' +
 '        async function deleteRegionAdmin(id) {' +
 '            showConfirmModal("Remove this region admin? This cannot be undone.", async () => {' +
+'                const scrollPos = getMainScroll();' +
 '                const response = await fetch("/region-admins/" + id, { method: "DELETE" });' +
-'                if (response.ok) { showAdminToast("Region admin removed."); loadRegionAdminsList(); }' +
+'                if (response.ok) { showAdminToast("Region admin removed."); await loadRegionAdminsList(); }' +
 '                else showAdminToast("Could not delete region admin.", true);' +
+'                setMainScroll(scrollPos);' +
 '            }, "Delete");' +
 '        }' +
 '        async function addNewRegionAdmin() {' +
@@ -2095,17 +2155,35 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                btn.innerHTML = defaultHTML;' +
 '            }' +
 '        }' +
+'        function updateAttachmentLabel(id) {' +
+'            const fileInput = document.getElementById("attachment-" + id);' +
+'            const nameTag = document.getElementById("attachmentName-" + id);' +
+'            if (!fileInput || !nameTag) return;' +
+'            nameTag.innerText = (fileInput.files && fileInput.files[0]) ? fileInput.files[0].name : "";' +
+'        }' +
 '        async function addComment(id) {' +
 '            const textInput = document.getElementById("input-" + id);' +
+'            const fileInput = document.getElementById("attachment-" + id);' +
+'            const nameTag = document.getElementById("attachmentName-" + id);' +
 '            const text = textInput.value.trim();' +
-'            if(!text) return;' +
-'            await fetch("/tickets/" + id + "/comment", {' +
+'            const file = fileInput && fileInput.files && fileInput.files[0];' +
+'            if (!text && !file) return;' +
+'            const formData = new FormData();' +
+'            formData.append("text", text);' +
+'            if (file) formData.append("attachment", file);' +
+'            const response = await fetch("/tickets/" + id + "/comment", {' +
 '                method: "POST",' +
-'                headers: { "Content-Type": "application/json" },' +
-'                body: JSON.stringify({ text })' +
+'                body: formData' +
 '            });' +
-'            textInput.value = "";' +
-'            loadTickets();' +
+'            if (response.ok) {' +
+'                textInput.value = "";' +
+'                if (fileInput) fileInput.value = "";' +
+'                if (nameTag) nameTag.innerText = "";' +
+'                loadTickets();' +
+'            } else {' +
+'                const err = await response.json().catch(() => ({}));' +
+'                showAdminToast(err.error || "Could not post update.", true);' +
+'            }' +
 '        }' +
 '        async function resolveTicket(id) {' +
 '            showConfirmModal("Mark this ticket as resolved? This action can\'t be undone.", async () => {' +
@@ -2544,13 +2622,31 @@ app.post('/tickets/:id/reallocate', checkAdminLogin, async (req, res) => {
     }
 });
 
-app.post('/tickets/:id/comment', checkUserLogin, async (req, res) => {
-    const { text } = req.body;
-    const author = req.session.username;
-    await Ticket.findByIdAndUpdate(req.params.id, {
-        $push: { comments: { author, text } }
+app.post('/tickets/:id/comment', checkUserLogin, (req, res, next) => {
+    commentUpload.single('attachment')(req, res, (err) => {
+        if (err) {
+            if (err.code === 'LIMIT_FILE_SIZE') {
+                return res.status(400).json({ error: 'Attachment is too large. Maximum allowed size is 5MB.' });
+            }
+            return res.status(400).json({ error: err.message || 'Invalid file upload.' });
+        }
+        next();
     });
-    res.json({ success: true });
+}, async (req, res) => {
+    try {
+        const text = (req.body.text || '').trim();
+        const attachment = req.file ? req.file.path : null;
+        if (!text && !attachment) {
+            return res.status(400).json({ error: 'Please write an update or attach a file.' });
+        }
+        const author = req.session.username;
+        await Ticket.findByIdAndUpdate(req.params.id, {
+            $push: { comments: { author, text, attachment } }
+        });
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
 app.get('/public-branches', async (req, res) => {
