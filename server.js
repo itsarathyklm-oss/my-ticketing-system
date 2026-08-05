@@ -186,6 +186,7 @@ const RegionAdmin = mongoose.model('RegionAdmin', regionAdminSchema);
 // can view and reply; staff only see their own messages and any reply.
 const inboxMessageSchema = new mongoose.Schema({
     sender: { type: String, required: true },
+    senderStaffId: { type: String, default: '' },
     subject: { type: String, required: true },
     body: { type: String, required: true },
     status: { type: String, default: 'Open' }, // 'Open' | 'Replied'
@@ -794,16 +795,17 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            .branch-table { display: block; overflow-x: auto; white-space: nowrap; }' +
 '            .ticket-header { flex-direction: column; align-items: flex-start; gap: 10px; }' +
 '        }' +
-'        .sidebar { width: 260px; background-color: #1e2229; color: #fff; display: flex; flex-direction: column; justify-content: space-between; }' +
+'        .sidebar { width: 260px; height: 100vh; background-color: #1e2229; color: #fff; display: flex; flex-direction: column; justify-content: space-between; overflow: hidden; }' +
+'        .sidebar-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; }' +
 '        .sidebar-brand { padding: 24px; display: flex; align-items: center; gap: 12px; border-bottom: 1px solid #2d323e; }' +
 '        .sidebar-logo { height: 35px; width: auto; object-fit: contain; }' +
 '        .sidebar-title { font-size: 18px; font-weight: 700; color: #fff; letter-spacing: 0.5px; }' +
-'        .sidebar-menu { list-style: none; padding: 20px 0; flex-grow: 1; }' +
+'        .sidebar-menu { list-style: none; padding: 20px 0; }' +
 '        .menu-category { font-size: 11px; font-weight: 700; text-transform: uppercase; color: #4a5568; padding: 10px 24px 5px 24px; letter-spacing: 0.5px; }' +
 '        .menu-item { padding: 12px 24px; display: flex; align-items: center; gap: 12px; color: #a0aec0; text-decoration: none; font-size: 14px; font-weight: 500; cursor: pointer; transition: all 0.2s; border-left: 4px solid transparent; }' +
 '        .menu-icon { width: 17px; height: 17px; flex-shrink: 0; }' +
 '        .menu-item:hover, .menu-item.active { background-color: #2d323e; color: #fff; border-left-color: #0056b3; }' +
-'        .sidebar-footer { padding: 20px; border-top: 1px solid #2d323e; }' +
+'        .sidebar-footer { padding: 20px; border-top: 1px solid #2d323e; flex-shrink: 0; }' +
 '        .user-info { font-size: 12px; color: #a0aec0; margin-bottom: 12px; }' +
 '        .user-info strong { color: #fff; display: block; font-size: 14px; margin-bottom: 2px; }' +
 '        .logout-btn { display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%; background-color: #e53e3e; color: white; text-decoration: none; padding: 10px; border-radius: 6px; font-size: 14px; font-weight: 600; transition: background 0.2s; }' +
@@ -946,7 +948,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '    <div id="adminToast" class="admin-toast"></div>' +
 '    <div class="sidebar-backdrop" id="sidebarBackdrop" onclick="closeSidebar()"></div>' +
 '    <aside class="sidebar" id="sidebar">' +
-'        <div>' +
+'        <div class="sidebar-scroll">' +
 '            <div class="sidebar-brand" style="cursor:pointer;" onclick="window.location.href=\'/admin\'" title="Refresh dashboard">' +
 '                <img src="/logo.png" alt="Logo" class="sidebar-logo" onerror="this.style.display=\'none\'">' +
 '                <span class="sidebar-title">SARATHY IT</span>' +
@@ -1107,7 +1109,10 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                    </div>' +
 '                </div>' +
 '                <div class="branch-panel-card">' +
-'                    <h2>Active Helpdesk Personnel</h2>' +
+'                    <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; margin-bottom:20px;">' +
+'                        <h2 style="margin-bottom:0;">Active Helpdesk Personnel</h2>' +
+'                        <input type="text" id="staffSearchInput" placeholder="Search by name, staff ID, email, or region..." oninput="renderStaffTable()" style="padding: 8px 12px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 13px; width: 300px; max-width: 100%;">' +
+'                    </div>' +
 '                    <table class="branch-table">' +
 '                        <thead><tr><th>Staff ID</th><th>Name Tag</th><th>Operational Route Email</th>' + (isSuperAdminUser ? '<th>Region</th>' : '') + '<th>Assigned Branches</th><th>Edit</th><th>Delete</th></tr></thead>' +
 '                        <tbody id="staffTableBody"></tbody>' +
@@ -1702,23 +1707,41 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '    if (response.ok) { showAdminToast("Branch moved to " + newRegion + "."); loadBranchesList(); }' +
 '    else { showAdminToast("Could not move branch to that region.", true); }' +
 '}' +
+'        let cachedStaffList = [];' +
+'        let cachedStaffBranches = [];' +
+'        let cachedStaffAssignments = {};' +
+'        let cachedRegionsForStaff = [];' +
 '        async function loadStaffList() {' +
-'            const [staffRes, branchRes, assignRes] = await Promise.all([' +
-'                fetch("/tickets/staff-list"), fetch("/public-branches"), fetch("/tickets/staff-branches")' +
-'            ]);' +
-'            const staff = await staffRes.json();' +
-'            const branches = await branchRes.json();' +
-'            const assignments = await assignRes.json();' +
+'            const requests = [fetch("/tickets/staff-list"), fetch("/public-branches"), fetch("/tickets/staff-branches")];' +
+'            if (isSuperAdmin) requests.push(fetch("/tickets/regions"));' +
+'            const responses = await Promise.all(requests);' +
+'            cachedStaffList = await responses[0].json();' +
+'            cachedStaffBranches = await responses[1].json();' +
+'            cachedStaffAssignments = await responses[2].json();' +
 '            if (isSuperAdmin) {' +
+'                cachedRegionsForStaff = await responses[3].json();' +
 '                const regionSelectEl = document.getElementById("newStaffRegion");' +
 '                if (regionSelectEl && !regionSelectEl.dataset.loaded) {' +
-'                    const regionsRes = await fetch("/tickets/regions");' +
-'                    const regionsList = await regionsRes.json();' +
-'                    regionsList.forEach(r => { regionSelectEl.innerHTML += \'<option value="\'+r.name+\'">\'+r.name+\'</option>\'; });' +
+'                    cachedRegionsForStaff.forEach(r => { regionSelectEl.innerHTML += \'<option value="\'+r.name+\'">\'+r.name+\'</option>\'; });' +
 '                    regionSelectEl.dataset.loaded = "1";' +
 '                }' +
 '            }' +
+'            renderStaffTable();' +
+'        }' +
+'        function renderStaffTable() {' +
+'            const searchInput = document.getElementById("staffSearchInput");' +
+'            const searchValue = searchInput ? searchInput.value.trim().toLowerCase() : "";' +
+'            const staff = searchValue' +
+'                ? cachedStaffList.filter(s => (s.name||"").toLowerCase().includes(searchValue) || (s.id||"").toLowerCase().includes(searchValue) || (s.email||"").toLowerCase().includes(searchValue) || (s.region||"").toLowerCase().includes(searchValue))' +
+'                : cachedStaffList;' +
+'            const branches = cachedStaffBranches;' +
+'            const assignments = cachedStaffAssignments;' +
 '            const tbody = document.getElementById("staffTableBody");' +
+'            if (staff.length === 0) {' +
+'                const colspan = isSuperAdmin ? 7 : 6;' +
+'                tbody.innerHTML = \'<tr><td colspan="\'+colspan+\'" style="text-align:center;color:#a0aec0;padding:20px;">No staff match your search.</td></tr>\';' +
+'                return;' +
+'            }' +
 '            tbody.innerHTML = "";' +
 '            staff.forEach(s => {' +
 '                const assigned = assignments[s.id] || [];' +
@@ -1740,35 +1763,56 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                        });' +
 '                    });' +
 '                }' +
-'                let nameCell, emailCell, editCell, deleteCell;' +
+'                let idCell, nameCell, emailCell, editCell, deleteCell;' +
 '                if (editingStaffIds.has(s.id)) {' +
+'                    idCell = isSuperAdmin ? \'<input type="text" id="editStaffId-\'+s.id+\'" value="\'+s.id+\'" style="width:100%;padding:6px;border:1px solid #cbd5e0;border-radius:4px;">\' : s.id;' +
 '                    nameCell = \'<input type="text" id="editName-\'+s.id+\'" value="\'+s.name+\'" style="width:100%;padding:6px;border:1px solid #cbd5e0;border-radius:4px;">\';' +
 '                    emailCell = \'<input type="email" id="editEmail-\'+s.id+\'" value="\'+s.email+\'" style="width:100%;padding:6px;border:1px solid #cbd5e0;border-radius:4px;margin-bottom:4px;"><input type="text" id="editPassword-\'+s.id+\'" placeholder="New password (optional)" style="width:100%;padding:6px;border:1px solid #cbd5e0;border-radius:4px;">\';' +
 '                    editCell = \'<button class="resolve-btn" onclick="saveStaffEdit(\\\'\'+s.id+\'\\\')">Save</button>\';' +
 '                    deleteCell = \'<button class="branch-delete-btn" onclick="toggleEditStaff(\\\'\'+s.id+\'\\\')">Cancel</button>\';' +
 '                } else {' +
+'                    idCell = s.id;' +
 '                    nameCell = s.name;' +
 '                    emailCell = s.email;' +
 '                    editCell = \'<button class="branch-delete-btn" onclick="toggleEditStaff(\\\'\'+s.id+\'\\\')">Edit</button>\';' +
 '                    deleteCell = \'<button class="branch-delete-btn" onclick="deleteStaff(\\\'\'+s.id+\'\\\')">Delete</button>\';' +
 '                }' +
-'                const regionCell = isSuperAdmin ? \'<td>\'+(s.region || "Unassigned")+\'</td>\' : "";' +
-'                tbody.innerHTML += \'<tr><td>\'+s.id+\'</td><td>\'+nameCell+\'</td><td>\'+emailCell+\'</td>\'+regionCell+\'<td>\'+checkboxesHtml+\'</td><td>\'+editCell+\'</td><td>\'+deleteCell+\'</td></tr>\';' +
+'                let regionCell = "";' +
+'                if (isSuperAdmin) {' +
+'                    if (editingStaffIds.has(s.id)) {' +
+'                        let regionOptionsHtml = \'<option value="">Unassigned</option>\';' +
+'                        cachedRegionsForStaff.forEach(r => { regionOptionsHtml += \'<option value="\'+r.name+\'"\'+(r.name === s.region ? \' selected\' : \'\')+\'>\'+r.name+\'</option>\'; });' +
+'                        regionCell = \'<td><select id="editStaffRegion-\'+s.id+\'" style="padding:6px;border:1px solid #cbd5e0;border-radius:4px;">\'+regionOptionsHtml+\'</select></td>\';' +
+'                    } else {' +
+'                        regionCell = \'<td>\'+(s.region || "Unassigned")+\'</td>\';' +
+'                    }' +
+'                }' +
+'                tbody.innerHTML += \'<tr><td>\'+idCell+\'</td><td>\'+nameCell+\'</td><td>\'+emailCell+\'</td>\'+regionCell+\'<td>\'+checkboxesHtml+\'</td><td>\'+editCell+\'</td><td>\'+deleteCell+\'</td></tr>\';' +
 '            });' +
 '        }' +
 '        let editingStaffIds = new Set();' +
 '        function toggleEditStaff(staffId) {' +
 '            if (editingStaffIds.has(staffId)) editingStaffIds.delete(staffId);' +
 '            else editingStaffIds.add(staffId);' +
-'            loadStaffList();' +
+'            renderStaffTable();' +
 '        }' +
 '        async function saveStaffEdit(staffId) {' +
 '            const name = document.getElementById("editName-" + staffId).value.trim();' +
 '            const email = document.getElementById("editEmail-" + staffId).value.trim();' +
 '            const password = document.getElementById("editPassword-" + staffId).value.trim();' +
-'            if (!name || !email) { alert("Name and email are required."); return; }' +
+'            if (!name || !email) { showAdminToast("Name and email are required.", true); return; }' +
 '            const body = { name, email };' +
 '            if (password) body.password = password;' +
+'            if (isSuperAdmin) {' +
+'                const regionEl = document.getElementById("editStaffRegion-" + staffId);' +
+'                if (regionEl) body.region = regionEl.value;' +
+'                const idEl = document.getElementById("editStaffId-" + staffId);' +
+'                if (idEl) {' +
+'                    const newId = idEl.value.trim();' +
+'                    if (!newId) { showAdminToast("Staff ID cannot be empty.", true); return; }' +
+'                    body.newStaffId = newId;' +
+'                }' +
+'            }' +
 '            const response = await fetch("/tickets/staff/" + staffId, {' +
 '                method: "PUT",' +
 '                headers: { "Content-Type": "application/json" },' +
@@ -1776,9 +1820,11 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            });' +
 '            if (response.ok) {' +
 '                editingStaffIds.delete(staffId);' +
+'                showAdminToast("Staff member updated.");' +
 '                loadStaffList();' +
 '            } else {' +
-'                alert("Could not update staff member.");' +
+'                const err = await response.json().catch(() => ({}));' +
+'                showAdminToast(err.error || "Could not update staff member.", true);' +
 '            }' +
 '        }' +
 '        async function deleteStaff(staffId) {' +
@@ -1974,7 +2020,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                messages.forEach(m => {' +
 '                    const isUnread = isAdmin ? !m.adminRead : !m.staffRead;' +
 '                    const statusBadge = m.status === "Replied" ? \'<span class="badge status-resolved">Replied</span>\' : \'<span class="badge status-open">Open</span>\';' +
-'                    const senderLine = isAdmin ? \'<div class="inbox-meta">From: <strong>\'+m.sender+\'</strong> \u2014 \'+new Date(m.createdAt).toLocaleString()+\'</div>\' : \'<div class="inbox-meta">\'+new Date(m.createdAt).toLocaleString()+\'</div>\';' +
+'                    const senderLine = isAdmin ? \'<div class="inbox-meta">From: <strong>\'+m.sender+\'</strong>\'+(m.senderStaffId ? \' (\'+m.senderStaffId+\')\' : "")+\' \u2014 \'+new Date(m.createdAt).toLocaleString()+\'</div>\' : \'<div class="inbox-meta">\'+new Date(m.createdAt).toLocaleString()+\'</div>\';' +
 '                    const markReadBtn = isUnread ? \'<button class="branch-delete-btn" onclick="markInboxRead(\\\'\'+m._id+\'\\\')">Mark as read</button>\' : "";' +
 '                    let replySection = "";' +
 '                    if (m.status === "Replied") {' +
@@ -2726,9 +2772,26 @@ app.put('/tickets/staff/:staffId', checkAdminLogin, async (req, res) => {
         if (req.session.isSuperAdmin && req.body.region !== undefined) {
             update.region = (req.body.region || '').trim();
         }
+        // Only the Super Admin can change the Staff ID itself
+        let newStaffId = null;
+        if (req.session.isSuperAdmin && req.body.newStaffId !== undefined) {
+            const trimmedNewId = (req.body.newStaffId || '').trim();
+            if (trimmedNewId && trimmedNewId !== existingStaff.staffId) {
+                const idTaken = await Staff.findOne({ staffId: trimmedNewId });
+                if (idTaken) {
+                    return res.status(400).json({ error: `Staff ID "${trimmedNewId}" is already in use.` });
+                }
+                newStaffId = trimmedNewId;
+                update.staffId = newStaffId;
+            }
+        }
         await Staff.findOneAndUpdate({ staffId: req.params.staffId }, update);
-        await logAudit(req.session.username, 'Edit Staff', `Updated staff ${req.params.staffId}${password ? ' (password reset)' : ''}`);
-        res.json({ success: true });
+        if (newStaffId) {
+            // Keep branch coverage assignments pointing at the same staff member under their new ID
+            await StaffBranch.findOneAndUpdate({ staffId: req.params.staffId }, { staffId: newStaffId });
+        }
+        await logAudit(req.session.username, 'Edit Staff', `Updated staff ${req.params.staffId}${newStaffId ? ' (ID changed to ' + newStaffId + ')' : ''}${password ? ' (password reset)' : ''}`);
+        res.json({ success: true, staffId: newStaffId || req.params.staffId });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
@@ -2875,8 +2938,14 @@ app.post('/inbox', checkUserLogin, async (req, res) => {
         if (!subject || !body) {
             return res.status(400).json({ error: 'Subject and message are both required.' });
         }
+        let senderStaffId = '';
+        if (!req.session.isAdmin) {
+            const senderStaff = await Staff.findOne({ name: req.session.username });
+            if (senderStaff) senderStaffId = senderStaff.staffId;
+        }
         const message = await InboxMessage.create({
             sender: req.session.username,
+            senderStaffId,
             subject,
             body,
             adminRead: false,
