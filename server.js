@@ -1495,6 +1495,12 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                regions.forEach(r => { reportSelect.innerHTML += \'<option value="\'+r.name+\'">\'+r.name+\'</option>\'; });' +
 '            }' +
 '        }' +
+'        function sortOpenFirstThenResolvedByRecency(list) {' +
+'            const openTickets = list.filter(t => t.status !== "Resolved");' +
+'            const resolvedTickets = list.filter(t => t.status === "Resolved");' +
+'            resolvedTickets.sort((a, b) => new Date(b.resolvedAt || 0) - new Date(a.resolvedAt || 0));' +
+'            return openTickets.concat(resolvedTickets);' +
+'        }' +
 '        async function loadTickets() {' +
 '            try {' +
 '            const controller = new AbortController();' +
@@ -1537,7 +1543,9 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            document.getElementById("statEscalated").innerText = tickets.filter(t => t.escalated && t.status !== "Resolved").length;' +
 '            document.getElementById("statMine").innerText = tickets.length;' +
 '            if (currentStatusFilter === "default-view") { tickets = tickets.filter(t => t.status === "Open"); }' +
-'            else if (currentStatusFilter === "Escalated") { tickets = tickets.filter(t => t.escalated); tickets.sort((a, b) => (a.status === "Resolved" ? 1 : 0) - (b.status === "Resolved" ? 1 : 0)); }' +
+'            else if (currentStatusFilter === "Escalated") { tickets = tickets.filter(t => t.escalated); tickets = sortOpenFirstThenResolvedByRecency(tickets); }' +
+'            else if (currentStatusFilter === "Resolved") { tickets = tickets.filter(t => t.status === "Resolved"); tickets.sort((a, b) => new Date(b.resolvedAt || 0) - new Date(a.resolvedAt || 0)); }' +
+'            else if (currentStatusFilter === "all") { tickets = sortOpenFirstThenResolvedByRecency(tickets); }' +
 '            else if (currentStatusFilter !== "all") { tickets = tickets.filter(t => t.status === currentStatusFilter); }' +
 '            const totalFilteredCount = tickets.length;' +
 '            const totalPages = Math.max(1, Math.ceil(totalFilteredCount / PAGE_SIZE));' +
@@ -1551,7 +1559,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                renderPagination(totalFilteredCount);' +
 '                return;' +
 '            }' +
-'            listDiv.innerHTML = "";' +
+'            let ticketCardsHtml = "";' +
 '            pagedTickets.forEach(ticket => {' +
 '                const isResolved = ticket.status === "Resolved";' +
 '                const isMineOrAdmin = isAdmin || ticket.assignedTo === currentUser;' +
@@ -1571,8 +1579,9 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                        commentListHtml += \'<div class="comment-item"><strong>\'+c.author+\':</strong> \'+c.text+(c.attachment ? \' <a href="\'+c.attachment+\'" target="_blank">\uD83D\uDCCE Attachment</a>\' : "")+\'</div>\';' +
 '                    });' +
 '                }' +
-'                listDiv.innerHTML += \'<div class="ticket-card \'+cardStateClass+\'"><div class="ticket-header"><div><h3 class="ticket-title">#\'+String(ticket.ticketNumber).padStart(4,"0")+\' \'+ticket.title+\'</h3><div style="margin-top: 8px;"><span class="badge p-\'+ticket.priority+\'">\'+ticket.priority+\'</span><span class="badge status-\'+ticket.status.toLowerCase()+\'">\'+ticket.status+\'</span><span class="badge badge-category">\'+(ticket.category || "Other")+\'</span>\'+escalatedBadge+\'</div></div>\'+actionsHtml+\'</div><p class="ticket-desc">\'+ticket.description+\'</p>\'+imageHtml+\'<div class="assignment-info"><span><strong>Submitted By:</strong> \'+(ticket.submittedBy || "Unknown")+(ticket.designation ? " ("+ticket.designation+")" : "")+\'</span> | <span><strong>Branch:</strong> \'+ticket.branch+\'</span> | <span><strong>Mobile:</strong> \'+ticket.mobile+\'</span> | <span><strong>Assigned:</strong> \'+ticket.assignedTo+\'</span> | <span><strong>Submitted:</strong> \'+(ticket.createdAt ? new Date(ticket.createdAt).toLocaleString() : "N/A")+\'</span>\'+escalationLine+resolvedLine+\'</div><div class="comments-section"><h4 class="comments-header">Internal Work Notes</h4><div>\'+(commentListHtml || "No updates.")+\'</div><div class="comment-form"><input type="text" id="input-\'+ticket._id+\'" placeholder="Write operational update..."><label class="comment-attach-btn" title="Attach a file (optional)">📎<input type="file" id="attachment-\'+ticket._id+\'" style="display:none;" accept="image/jpeg,image/png,image/webp,image/gif,application/pdf,.jpg,.jpeg,.png,.webp,.gif,.pdf" onchange="updateAttachmentLabel(\\\'\'+ticket._id+\'\\\')"></label><span id="attachmentName-\'+ticket._id+\'" class="attachment-name-tag"></span><button onclick="addComment(\\\'\'+ticket._id+\'\\\')">Post</button></div></div></div>\';' +
+'                ticketCardsHtml += \'<div class="ticket-card \'+cardStateClass+\'"><div class="ticket-header"><div><h3 class="ticket-title">#\'+String(ticket.ticketNumber).padStart(4,"0")+\' \'+ticket.title+\'</h3><div style="margin-top: 8px;"><span class="badge p-\'+ticket.priority+\'">\'+ticket.priority+\'</span><span class="badge status-\'+ticket.status.toLowerCase()+\'">\'+ticket.status+\'</span><span class="badge badge-category">\'+(ticket.category || "Other")+\'</span>\'+escalatedBadge+\'</div></div>\'+actionsHtml+\'</div><p class="ticket-desc">\'+ticket.description+\'</p>\'+imageHtml+\'<div class="assignment-info"><span><strong>Submitted By:</strong> \'+(ticket.submittedBy || "Unknown")+(ticket.designation ? " ("+ticket.designation+")" : "")+\'</span> | <span><strong>Branch:</strong> \'+ticket.branch+\'</span> | <span><strong>Mobile:</strong> \'+ticket.mobile+\'</span> | <span><strong>Assigned:</strong> \'+ticket.assignedTo+\'</span> | <span><strong>Submitted:</strong> \'+(ticket.createdAt ? new Date(ticket.createdAt).toLocaleString() : "N/A")+\'</span>\'+escalationLine+resolvedLine+\'</div><div class="comments-section"><h4 class="comments-header">Internal Work Notes</h4><div>\'+(commentListHtml || "No updates.")+\'</div><div class="comment-form"><input type="text" id="input-\'+ticket._id+\'" placeholder="Write operational update..."><label class="comment-attach-btn" title="Attach a file (optional)">📎<input type="file" id="attachment-\'+ticket._id+\'" style="display:none;" accept="image/jpeg,image/png,image/webp,image/gif,application/pdf,.jpg,.jpeg,.png,.webp,.gif,.pdf" onchange="updateAttachmentLabel(\\\'\'+ticket._id+\'\\\')"></label><span id="attachmentName-\'+ticket._id+\'" class="attachment-name-tag"></span><button onclick="addComment(\\\'\'+ticket._id+\'\\\')">Post</button></div></div></div>\';' +
 '            });' +
+'            listDiv.innerHTML = ticketCardsHtml;' +
 '            renderPagination(totalFilteredCount);' +
 '            } catch (err) {' +
 '                console.error("Could not load tickets:", err);' +
@@ -1586,22 +1595,24 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '    const regions = await response.json();' +
 '    const tbody = document.getElementById("regionTableBody");' +
 '    if (tbody) {' +
-'        tbody.innerHTML = "";' +
 '        if (regions.length === 0) {' +
 '            tbody.innerHTML = \'<tr><td colspan="3" style="text-align: center; color: #a0aec0; padding: 20px;">No regions added yet.</td></tr>\';' +
 '        } else {' +
+'            let regionRowsHtml = "";' +
 '            regions.forEach(r => {' +
 '                const safeName = r.name.replace(/\'/g, "\\\\\'");' +
-'                tbody.innerHTML += \'<tr><td>\'+r.name+\'</td><td><button class="branch-delete-btn" onclick="editRegion(\\\'\'+r._id+\'\\\', \\\'\'+safeName+\'\\\')">Edit</button></td><td><button class="branch-delete-btn" onclick="deleteRegion(\\\'\'+r._id+\'\\\')">Delete</button></td></tr>\';' +
+'                regionRowsHtml += \'<tr><td>\'+r.name+\'</td><td><button class="branch-delete-btn" onclick="editRegion(\\\'\'+r._id+\'\\\', \\\'\'+safeName+\'\\\')">Edit</button></td><td><button class="branch-delete-btn" onclick="deleteRegion(\\\'\'+r._id+\'\\\')">Delete</button></td></tr>\';' +
 '            });' +
+'            tbody.innerHTML = regionRowsHtml;' +
 '        }' +
 '    }' +
 '    const select = document.getElementById("newBranchRegion");' +
 '    if (select) {' +
-'        select.innerHTML = \'<option value="" disabled selected>Select Region</option>\';' +
+'        let optionsHtml = \'<option value="" disabled selected>Select Region</option>\';' +
 '        regions.forEach(r => {' +
-'            select.innerHTML += \'<option value="\'+r.name+\'">\'+r.name+\'</option>\';' +
+'            optionsHtml += \'<option value="\'+r.name+\'">\'+r.name+\'</option>\';' +
 '        });' +
+'        select.innerHTML = optionsHtml;' +
 '    }' +
 '}' +
 'async function addNewRegion() {' +
@@ -1660,7 +1671,6 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '    const allRegionNames = regions.map(r => r.name);' +
 '    if (allRegionNames.indexOf("Unassigned") === -1) allRegionNames.push("Unassigned");' +
 '    const container = document.getElementById("branchGroupsContainer");' +
-'    container.innerHTML = "";' +
 '    if (branches.length === 0) {' +
 '        container.innerHTML = \'<p style="text-align: center; color: #a0aec0; padding: 20px;">No branch locations added yet.</p>\';' +
 '        return;' +
@@ -1671,6 +1681,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '        if (!groups[region]) groups[region] = [];' +
 '        groups[region].push(b);' +
 '    });' +
+'    let groupsHtml = "";' +
 '    Object.keys(groups).sort().forEach(region => {' +
 '        let rowsHtml = "";' +
 '        groups[region].forEach(b => {' +
@@ -1681,10 +1692,11 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            });' +
 '            rowsHtml += \'<tr><td>\'+b.name+\'</td><td><select onchange="moveBranchRegion(\\\'\'+b._id+\'\\\', this.value)" style="padding:6px;border:1px solid #cbd5e0;border-radius:4px;font-size:13px;">\'+regionOptionsHtml+\'</select></td><td><button class="branch-delete-btn" onclick="editBranch(\\\'\'+b._id+\'\\\', \\\'\'+safeName+\'\\\')">Edit</button></td><td><button class="branch-delete-btn" onclick="deleteBranch(\\\'\'+b._id+\'\\\')">Delete</button></td></tr>\';' +
 '        });' +
-'        container.innerHTML +=' +
+'        groupsHtml +=' +
 '            \'<h3 style="margin: 20px 0 8px; font-size: 14px; font-weight: 700; color: #4a5568; text-transform: uppercase; letter-spacing: 0.5px;">\' + region + \'</h3>\' +' +
 '            \'<table class="branch-table"><thead><tr><th>Branch Name</th><th>Region</th><th>Edit</th><th>Delete</th></tr></thead><tbody>\' + rowsHtml + \'</tbody></table>\';' +
 '    });' +
+'    container.innerHTML = groupsHtml;' +
 '}' +
 'async function addNewBranch() {' +
 '    const input = document.getElementById("newBranchName");' +
@@ -1781,7 +1793,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                tbody.innerHTML = \'<tr><td colspan="\'+colspan+\'" style="text-align:center;color:#a0aec0;padding:20px;">No staff match your search.</td></tr>\';' +
 '                return;' +
 '            }' +
-'            tbody.innerHTML = "";' +
+'            let rowsHtml = "";' +
 '            staff.forEach(s => {' +
 '                const assigned = assignments[s.id] || [];' +
 '                let checkboxesHtml = "";' +
@@ -1826,8 +1838,9 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                        regionCell = \'<td>\'+(s.region || "Unassigned")+\'</td>\';' +
 '                    }' +
 '                }' +
-'                tbody.innerHTML += \'<tr><td>\'+idCell+\'</td><td>\'+nameCell+\'</td><td>\'+emailCell+\'</td>\'+regionCell+\'<td>\'+checkboxesHtml+\'</td><td>\'+editCell+\'</td><td>\'+deleteCell+\'</td></tr>\';' +
+'                rowsHtml += \'<tr><td>\'+idCell+\'</td><td>\'+nameCell+\'</td><td>\'+emailCell+\'</td>\'+regionCell+\'<td>\'+checkboxesHtml+\'</td><td>\'+editCell+\'</td><td>\'+deleteCell+\'</td></tr>\';' +
 '            });' +
+'            tbody.innerHTML = rowsHtml;' +
 '        }' +
 '        let editingStaffIds = new Set();' +
 '        function getMainScroll() {' +
@@ -1906,11 +1919,11 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                regionSelectEl.dataset.loaded = "1";' +
 '            }' +
 '            const tbody = document.getElementById("regionAdminsTableBody");' +
-'            tbody.innerHTML = "";' +
 '            if (admins.length === 0) {' +
 '                tbody.innerHTML = \'<tr><td colspan="6" style="text-align: center; color: #a0aec0; padding: 20px;">No region admins added yet.</td></tr>\';' +
 '                return;' +
 '            }' +
+'            let rowsHtml = "";' +
 '            admins.forEach(a => {' +
 '                let nameCell, regionCell, editCell;' +
 '                if (editingAdminIds.has(a.id)) {' +
@@ -1925,9 +1938,10 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                    editCell = \'<button type="button" class="branch-delete-btn" onclick="toggleEditRegionAdmin(\\\'\'+a.id+\'\\\')">Edit</button>\';' +
 '                }' +
 '                const statusBadge = a.enabled ? \'<span class="badge status-resolved">Enabled</span>\' : \'<span class="badge p-High">Disabled</span>\';' +
-'                const toggleBtn = \'<button class="branch-delete-btn" onclick="toggleRegionAdminEnabled(\\\'\'+a.id+\'\\\', \'+(!a.enabled)+\')">\'+ (a.enabled ? "Disable" : "Enable") +\'</button>\';' +
-'                tbody.innerHTML += \'<tr><td>\'+nameCell+\'</td><td>\'+a.username+\'</td><td>\'+regionCell+\'</td><td>\'+statusBadge+\' \'+toggleBtn+\'</td><td>\'+editCell+\'</td><td><button type="button" class="branch-delete-btn" onclick="deleteRegionAdmin(\\\'\'+a.id+\'\\\')">Delete</button></td></tr>\';' +
+'                const toggleBtn = \'<button type="button" class="branch-delete-btn" onclick="toggleRegionAdminEnabled(\\\'\'+a.id+\'\\\', \'+(!a.enabled)+\')">\'+ (a.enabled ? "Disable" : "Enable") +\'</button>\';' +
+'                rowsHtml += \'<tr><td>\'+nameCell+\'</td><td>\'+a.username+\'</td><td>\'+regionCell+\'</td><td>\'+statusBadge+\' \'+toggleBtn+\'</td><td>\'+editCell+\'</td><td><button type="button" class="branch-delete-btn" onclick="deleteRegionAdmin(\\\'\'+a.id+\'\\\')">Delete</button></td></tr>\';' +
 '            });' +
+'            tbody.innerHTML = rowsHtml;' +
 '        }' +
 '        function toggleEditRegionAdmin(id) {' +
 '            const scrollPos = getMainScroll();' +
@@ -2019,14 +2033,15 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                return;' +
 '            }' +
 '            const entries = await response.json();' +
-'            tbody.innerHTML = "";' +
 '            if (entries.length === 0) {' +
 '                tbody.innerHTML = \'<tr><td colspan="4" style="text-align: center; color: #a0aec0; padding: 20px;">No activity recorded yet.</td></tr>\';' +
 '                return;' +
 '            }' +
+'            let auditRowsHtml = "";' +
 '            entries.forEach(e => {' +
-'                tbody.innerHTML += \'<tr><td>\'+new Date(e.createdAt).toLocaleString()+\'</td><td>\'+e.actor+\'</td><td>\'+e.action+\'</td><td>\'+(e.details || "")+\'</td></tr>\';' +
+'                auditRowsHtml += \'<tr><td>\'+new Date(e.createdAt).toLocaleString()+\'</td><td>\'+e.actor+\'</td><td>\'+e.action+\'</td><td>\'+(e.details || "")+\'</td></tr>\';' +
 '            });' +
+'            tbody.innerHTML = auditRowsHtml;' +
 '        }' +
 '        async function sendInboxMessage() {' +
 '            const subject = document.getElementById("inboxSubject").value.trim();' +
@@ -2084,7 +2099,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                    updateInboxBadge(messages);' +
 '                    return;' +
 '                }' +
-'                listDiv.innerHTML = "";' +
+'                let inboxCardsHtml = "";' +
 '                messages.forEach(m => {' +
 '                    const isUnread = isAdmin ? !m.adminRead : !m.staffRead;' +
 '                    const statusBadge = m.status === "Replied" ? \'<span class="badge status-resolved">Replied</span>\' : \'<span class="badge status-open">Open</span>\';' +
@@ -2096,8 +2111,9 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                    } else if (isAdmin) {' +
 '                        replySection = \'<div class="inbox-reply-box"><textarea id="inboxReplyInput-\'+m._id+\'" rows="2" placeholder="Write a reply..."></textarea><button class="branch-add-btn" style="margin-top:8px;" onclick="replyInboxMessage(\\\'\'+m._id+\'\\\')">Send Reply</button></div>\';' +
 '                    }' +
-'                    listDiv.innerHTML += \'<div class="inbox-card \'+(isUnread ? "inbox-unread" : "")+\'"><div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;"><div><div class="inbox-subject">\'+m.subject+\'</div>\'+senderLine+\'</div><div style="display:flex;align-items:center;gap:8px;">\'+statusBadge+\' \'+markReadBtn+\'</div></div><div class="inbox-body">\'+m.body+\'</div>\'+replySection+\'</div>\';' +
+'                    inboxCardsHtml += \'<div class="inbox-card \'+(isUnread ? "inbox-unread" : "")+\'"><div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;"><div><div class="inbox-subject">\'+m.subject+\'</div>\'+senderLine+\'</div><div style="display:flex;align-items:center;gap:8px;">\'+statusBadge+\' \'+markReadBtn+\'</div></div><div class="inbox-body">\'+m.body+\'</div>\'+replySection+\'</div>\';' +
 '                });' +
+'                listDiv.innerHTML = inboxCardsHtml;' +
 '                updateInboxBadge(messages);' +
 '            } catch (err) {' +
 '                listDiv.innerHTML = \'<p style="text-align:center;color:#c53030;padding:30px 0;">Could not load messages.</p>\';' +
