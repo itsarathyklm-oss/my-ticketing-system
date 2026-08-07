@@ -877,13 +877,6 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '        .ticket-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; }' +
 '        .ticket-title { font-size: 18px; font-weight: 600; color: #2d3748; }' +
 '        .ticket-desc { color: #4a5568; font-size: 14px; line-height: 1.5; margin-bottom: 16px; }' +
-'        .ticket-header-clickable { cursor: pointer; flex: 1; min-width: 0; }' +
-'        .ticket-brief-meta { font-size: 12.5px; color: #718096; margin-top: 8px; }' +
-'        .ticket-expand-btn { background: #f7fafc; border: 1px solid #e2e8f0; border-radius: 6px; width: 34px; height: 34px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: #4a5568; flex-shrink: 0; transition: background .15s; }' +
-'        .ticket-expand-btn:hover { background: #edf2f7; }' +
-'        .ticket-expand-btn svg { transition: transform .2s; }' +
-'        .ticket-expand-btn.expanded svg { transform: rotate(180deg); }' +
-'        .ticket-details { margin-top: 16px; padding-top: 16px; border-top: 1px solid #edf2f7; }' +
 '        .badge { padding: 4px 10px; border-radius: 50px; font-size: 11px; font-weight: 700; text-transform: uppercase; display: inline-block; margin-right: 8px; }' +
 '        .p-Low { background-color: #edf2f7; color: #4a5568; }' +
 '        .p-Medium { background-color: #feebc8; color: #c05621; }' +
@@ -900,8 +893,11 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '        .badge-escalated { background-color: #fef3c7; color: #92400e; }' +
 '        .badge-category { background-color: #e6fffa; color: #234e52; }' +
 '        .screenshot-preview { max-width: 100%; max-height: 180px; border-radius: 6px; border: 1px solid #e2e8f0; margin-top: 12px; display: block; object-fit: cover; }' +
-'        .assignment-info { margin-top: 16px; padding-top: 12px; border-top: 1px solid #edf2f7; font-size: 13px; color: #718096; }' +
-'        .assignment-info strong { color: #4a5568; }' +
+'        .assignment-info { margin-top: 16px; padding: 14px 16px; background: #f9fafb; border-radius: 8px; border: 1px solid #edf2f7; }' +
+'        .assignment-row { display: flex; gap: 10px; padding: 5px 0; font-size: 13.5px; }' +
+'        .assignment-row + .assignment-row { border-top: 1px solid #eef1f4; }' +
+'        .assignment-label { flex: 0 0 120px; font-weight: 700; color: #4a5568; text-transform: uppercase; font-size: 11px; letter-spacing: .4px; padding-top: 2px; }' +
+'        .assignment-value { color: #2d3748; font-size: 14px; flex: 1; }' +
 '        .comments-section { margin-top: 20px; background-color: #f7fafc; padding: 16px; border-radius: 8px; border: 1px solid #edf2f7; }' +
 '        .comments-header { font-size: 12px; font-weight: 700; color: #718096; text-transform: uppercase; margin-bottom: 10px; letter-spacing: 0.5px; }' +
 '        .comment-item { padding: 8px 0; border-bottom: 1px solid #edf2f7; font-size: 13px; color: #4a5568; }' +
@@ -1502,14 +1498,6 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                regions.forEach(r => { reportSelect.innerHTML += \'<option value="\'+r.name+\'">\'+r.name+\'</option>\'; });' +
 '            }' +
 '        }' +
-'        function toggleTicketDetails(id) {' +
-'            const detailsEl = document.getElementById("details-" + id);' +
-'            const btnEl = document.getElementById("expandBtn-" + id);' +
-'            if (!detailsEl) return;' +
-'            const isOpen = detailsEl.style.display !== "none";' +
-'            detailsEl.style.display = isOpen ? "none" : "block";' +
-'            if (btnEl) btnEl.classList.toggle("expanded", !isOpen);' +
-'        }' +
 '        function sortOpenFirstThenResolvedByRecency(list) {' +
 '            const openTickets = list.filter(t => t.status !== "Resolved");' +
 '            const resolvedTickets = list.filter(t => t.status === "Resolved");' +
@@ -1582,11 +1570,10 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                const actionBtn = (!isResolved && isMineOrAdmin) ? \'<button class="resolve-btn" onclick="resolveTicket(\\\'\'+ticket._id+\'\\\')">Resolve Ticket</button>\' : "";' +
 '                const escalateBtn = (!isAdmin && !isResolved && !ticket.escalated && ticket.assignedTo === currentUser) ? \'<button class="escalate-btn" onclick="escalateTicket(\\\'\'+ticket._id+\'\\\')">Escalate to Admin</button>\' : "";' +
 '                const waitingNote = (!isAdmin && !isResolved && !isMineOrAdmin) ? \'<span class="badge" style="background:#fef3c7;color:#92400e;">Waiting on Admin</span>\' : "";' +
-'                const expandBtn = \'<button type="button" class="ticket-expand-btn" id="expandBtn-\'+ticket._id+\'" onclick="toggleTicketDetails(\\\'\'+ticket._id+\'\\\')" title="Show full details"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg></button>\';' +
-'                const actionsHtml = \'<div class="ticket-actions">\'+reallocateBtn+actionBtn+escalateBtn+waitingNote+expandBtn+\'</div>\';' +
+'                const actionsHtml = (reallocateBtn || actionBtn || escalateBtn || waitingNote) ? \'<div class="ticket-actions">\'+reallocateBtn+actionBtn+escalateBtn+waitingNote+\'</div>\' : "";' +
 '                const escalatedBadge = ticket.escalated ? \'<span class="badge badge-escalated">Escalated</span>\' : "";' +
-'                const resolvedLine = (ticket.status === "Resolved" && ticket.resolvedAt) ? \' | <span><strong>Resolved:</strong> \'+new Date(ticket.resolvedAt).toLocaleString()+(ticket.resolvedBy ? \' by \'+ticket.resolvedBy : "")+\'</span>\' : "";' +
-'                const escalationLine = ticket.escalated ? \' | <span><strong>Escalation Status:</strong> \'+ticket.status+\' (\'+(ticket.escalatedBy || "Staff")+\' escalated\'+(ticket.escalatedAt ? " on "+new Date(ticket.escalatedAt).toLocaleString() : "")+\')</span>\'+(ticket.escalationReason ? \' | <span><strong>Escalation Reason:</strong> \'+ticket.escalationReason+\'</span>\' : "") : "";' +
+'                const resolvedLine = (ticket.status === "Resolved" && ticket.resolvedAt) ? \'<div class="assignment-row"><span class="assignment-label">Resolved</span><span class="assignment-value">\'+new Date(ticket.resolvedAt).toLocaleString()+(ticket.resolvedBy ? \' by \'+ticket.resolvedBy : "")+\'</span></div>\' : "";' +
+'                const escalationLine = ticket.escalated ? \'<div class="assignment-row"><span class="assignment-label">Escalation</span><span class="assignment-value">\'+ticket.status+\' (\'+(ticket.escalatedBy || "Staff")+\' escalated\'+(ticket.escalatedAt ? " on "+new Date(ticket.escalatedAt).toLocaleString() : "")+\')</span></div>\'+(ticket.escalationReason ? \'<div class="assignment-row"><span class="assignment-label">Reason</span><span class="assignment-value">\'+ticket.escalationReason+\'</span></div>\' : "") : "";' +
 '                const cardStateClass = isResolved ? "ticket-resolved" : (ticket.priority === "High" ? "ticket-high-priority" : (ticket.escalated ? "ticket-escalated" : ""));' +
 '                const imageHtml = ticket.screenshot ? \'<a href="\'+ticket.screenshot+\'" target="_blank"><img src="\'+ticket.screenshot+\'" class="screenshot-preview"></a>\' : "";' +
 '                let commentListHtml = "";' +
@@ -1595,7 +1582,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                        commentListHtml += \'<div class="comment-item"><strong>\'+c.author+\':</strong> \'+c.text+(c.attachment ? \' <a href="\'+c.attachment+\'" target="_blank">\uD83D\uDCCE Attachment</a>\' : "")+\'</div>\';' +
 '                    });' +
 '                }' +
-'                ticketCardsHtml += \'<div class="ticket-card \'+cardStateClass+\'"><div class="ticket-header"><div class="ticket-header-clickable" onclick="toggleTicketDetails(\\\'\'+ticket._id+\'\\\')"><h3 class="ticket-title">#\'+String(ticket.ticketNumber).padStart(4,"0")+\' \'+ticket.title+\'</h3><div style="margin-top: 8px;"><span class="badge p-\'+ticket.priority+\'">\'+ticket.priority+\'</span><span class="badge status-\'+ticket.status.toLowerCase()+\'">\'+ticket.status+\'</span><span class="badge badge-category">\'+(ticket.category || "Other")+\'</span>\'+escalatedBadge+\'</div><div class="ticket-brief-meta">Branch: \'+ticket.branch+\' &middot; Assigned: \'+ticket.assignedTo+\' &middot; Submitted: \'+(ticket.createdAt ? new Date(ticket.createdAt).toLocaleDateString() : "N/A")+\'</div></div>\'+actionsHtml+\'</div><div class="ticket-details" id="details-\'+ticket._id+\'" style="display:none;"><p class="ticket-desc">\'+ticket.description+\'</p>\'+imageHtml+\'<div class="assignment-info"><span><strong>Submitted By:</strong> \'+(ticket.submittedBy || "Unknown")+(ticket.designation ? " ("+ticket.designation+")" : "")+\'</span> | <span><strong>Branch:</strong> \'+ticket.branch+\'</span> | <span><strong>Mobile:</strong> \'+ticket.mobile+\'</span> | <span><strong>Assigned:</strong> \'+ticket.assignedTo+\'</span> | <span><strong>Submitted:</strong> \'+(ticket.createdAt ? new Date(ticket.createdAt).toLocaleString() : "N/A")+\'</span>\'+escalationLine+resolvedLine+\'</div><div class="comments-section"><h4 class="comments-header">Internal Work Notes</h4><div>\'+(commentListHtml || "No updates.")+\'</div><div class="comment-form"><input type="text" id="input-\'+ticket._id+\'" placeholder="Write operational update..."><label class="comment-attach-btn" title="Attach a file (optional)">📎<input type="file" id="attachment-\'+ticket._id+\'" style="display:none;" accept="image/jpeg,image/png,image/webp,image/gif,application/pdf,.jpg,.jpeg,.png,.webp,.gif,.pdf" onchange="updateAttachmentLabel(\\\'\'+ticket._id+\'\\\')"></label><span id="attachmentName-\'+ticket._id+\'" class="attachment-name-tag"></span><button onclick="addComment(\\\'\'+ticket._id+\'\\\')">Post</button></div></div></div>\';' +
+'                ticketCardsHtml += \'<div class="ticket-card \'+cardStateClass+\'"><div class="ticket-header"><div><h3 class="ticket-title">#\'+String(ticket.ticketNumber).padStart(4,"0")+\' \'+ticket.title+\'</h3><div style="margin-top: 8px;"><span class="badge p-\'+ticket.priority+\'">\'+ticket.priority+\'</span><span class="badge status-\'+ticket.status.toLowerCase()+\'">\'+ticket.status+\'</span><span class="badge badge-category">\'+(ticket.category || "Other")+\'</span>\'+escalatedBadge+\'</div></div>\'+actionsHtml+\'</div><p class="ticket-desc">\'+ticket.description+\'</p>\'+imageHtml+\'<div class="assignment-info"><div class="assignment-row"><span class="assignment-label">Submitted By</span><span class="assignment-value">\'+(ticket.submittedBy || "Unknown")+(ticket.designation ? " ("+ticket.designation+")" : "")+\'</span></div><div class="assignment-row"><span class="assignment-label">Branch</span><span class="assignment-value">\'+ticket.branch+\'</span></div><div class="assignment-row"><span class="assignment-label">Mobile</span><span class="assignment-value">\'+ticket.mobile+\'</span></div><div class="assignment-row"><span class="assignment-label">Assigned</span><span class="assignment-value">\'+ticket.assignedTo+\'</span></div><div class="assignment-row"><span class="assignment-label">Submitted</span><span class="assignment-value">\'+(ticket.createdAt ? new Date(ticket.createdAt).toLocaleString() : "N/A")+\'</span></div>\'+escalationLine+resolvedLine+\'</div><div class="comments-section"><h4 class="comments-header">Internal Work Notes</h4><div>\'+(commentListHtml || "No updates.")+\'</div><div class="comment-form"><input type="text" id="input-\'+ticket._id+\'" placeholder="Write operational update..."><label class="comment-attach-btn" title="Attach a file (optional)">📎<input type="file" id="attachment-\'+ticket._id+\'" style="display:none;" accept="image/jpeg,image/png,image/webp,image/gif,application/pdf,.jpg,.jpeg,.png,.webp,.gif,.pdf" onchange="updateAttachmentLabel(\\\'\'+ticket._id+\'\\\')"></label><span id="attachmentName-\'+ticket._id+\'" class="attachment-name-tag"></span><button onclick="addComment(\\\'\'+ticket._id+\'\\\')">Post</button></div></div></div>\';' +
 '            });' +
 '            listDiv.innerHTML = ticketCardsHtml;' +
 '            renderPagination(totalFilteredCount);' +
