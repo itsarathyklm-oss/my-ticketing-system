@@ -368,7 +368,7 @@ app.get('/', (req, res) => {
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body {
     font-family: 'Inter', 'Segoe UI', Arial, sans-serif;
-    height: 100vh; display: flex; align-items: center; justify-content: center;
+    min-height: 100vh; display: flex; align-items: center; justify-content: center;
     background-image:
         radial-gradient(circle at 18% 20%, rgba(229,62,62,0.32), transparent 42%),
         radial-gradient(circle at 85% 18%, rgba(229,62,62,0.14), transparent 40%),
@@ -380,9 +380,8 @@ body {
     background-repeat: no-repeat;
     background-attachment: fixed;
     padding: 16px;
-    overflow: hidden;
 }
-.ticket-card { width: 100%; max-width: 660px; max-height: 92vh; background: #fdfcfb; border-radius: 14px; box-shadow: 0 24px 70px rgba(0,0,0,0.45); overflow-y: auto; overflow-x: hidden; }
+.ticket-card { width: 100%; max-width: 760px; background: #fdfcfb; border-radius: 14px; box-shadow: 0 24px 70px rgba(0,0,0,0.45); overflow: visible; }
 .ticket-ribbon { background: #1e2229; padding: 12px 26px; display: flex; align-items: center; gap: 12px; }
 .ticket-ribbon img { height: 28px; width: auto; object-fit: contain; }
 .ticket-ribbon-text { font-family: 'Barlow Condensed', sans-serif; font-weight: 700; font-size: 16px; letter-spacing: 1px; color: #fff; text-transform: uppercase; }
@@ -951,8 +950,6 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '        .admin-toast-progress { position: absolute; bottom: 0; left: 0; height: 3px; background: #38a169; animation: toastshrink 4s linear forwards; }' +
 '        .admin-toast.error .admin-toast-progress { background: #e53e3e; }' +
 '        @keyframes toastshrink { from { width: 100%; } to { width: 0%; } }' +
-'        .admin-toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }' +
-'        .admin-toast.error { background: #9b2c2c; }' +
 '        .admin-spinner { width: 13px; height: 13px; border: 2px solid rgba(255,255,255,.4); border-top-color: #fff; border-radius: 50%; display: inline-block; animation: adminspin .7s linear infinite; margin-right: 6px; vertical-align: middle; }' +
 '        @keyframes adminspin { to { transform: rotate(360deg); } }' +
 '        .pagination-bar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; padding: 14px 4px 4px; }' +
@@ -1188,10 +1185,20 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '        let knownNotificationIds = new Set();' +
 '        let notificationsInitialized = false;' +
 '        let notifAudioCtx = null;' +
+'        function getNotifAudioCtx() {' +
+'            if (!notifAudioCtx) notifAudioCtx = new (window.AudioContext || window.webkitAudioContext)();' +
+'            return notifAudioCtx;' +
+'        }' +
+'        ["click", "keydown", "touchstart"].forEach(evt => {' +
+'            document.addEventListener(evt, () => {' +
+'                const ctx = getNotifAudioCtx();' +
+'                if (ctx.state === "suspended") ctx.resume();' +
+'            }, { once: true });' +
+'        });' +
 '        function playNotificationSound() {' +
 '            try {' +
-'                if (!notifAudioCtx) notifAudioCtx = new (window.AudioContext || window.webkitAudioContext)();' +
-'                const ctx = notifAudioCtx;' +
+'                const ctx = getNotifAudioCtx();' +
+'                if (ctx.state === "suspended") { ctx.resume(); }' +
 '                const now = ctx.currentTime;' +
 '                [880, 1175].forEach((freq, i) => {' +
 '                    const osc = ctx.createOscillator();' +
@@ -2401,15 +2408,6 @@ app.get('/notifications', checkUserLogin, async (req, res) => {
         res.json(notifications);
     } catch (err) {
         res.status(500).json({ error: 'Could not load notifications.' });
-    }
-});
-
-app.post('/notifications/read', checkUserLogin, async (req, res) => {
-    try {
-        await Notification.updateMany({ recipient: req.session.username, read: false }, { $set: { read: true } });
-        res.json({ success: true });
-    } catch (err) {
-        res.status(500).json({ error: 'Could not update notifications.' });
     }
 });
 
