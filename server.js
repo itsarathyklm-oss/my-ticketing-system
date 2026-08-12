@@ -951,6 +951,8 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '        .admin-toast-progress { position: absolute; bottom: 0; left: 0; height: 3px; background: #38a169; animation: toastshrink 4s linear forwards; }' +
 '        .admin-toast.error .admin-toast-progress { background: #e53e3e; }' +
 '        @keyframes toastshrink { from { width: 100%; } to { width: 0%; } }' +
+'        .admin-toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }' +
+'        .admin-toast.error { background: #9b2c2c; }' +
 '        .admin-spinner { width: 13px; height: 13px; border: 2px solid rgba(255,255,255,.4); border-top-color: #fff; border-radius: 50%; display: inline-block; animation: adminspin .7s linear infinite; margin-right: 6px; vertical-align: middle; }' +
 '        @keyframes adminspin { to { transform: rotate(360deg); } }' +
 '        .pagination-bar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; padding: 14px 4px 4px; }' +
@@ -2399,6 +2401,15 @@ app.get('/notifications', checkUserLogin, async (req, res) => {
         res.json(notifications);
     } catch (err) {
         res.status(500).json({ error: 'Could not load notifications.' });
+    }
+});
+
+app.post('/notifications/read', checkUserLogin, async (req, res) => {
+    try {
+        await Notification.updateMany({ recipient: req.session.username, read: false }, { $set: { read: true } });
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: 'Could not update notifications.' });
     }
 });
 
