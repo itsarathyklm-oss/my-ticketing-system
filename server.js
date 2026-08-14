@@ -22,7 +22,7 @@ app.use(express.urlencoded({ extended: true }));
 app.use(express.static(__dirname));
 
 // 1. CONNECT TO MONGOOSE DB
-const MONGO_URI = process.env.MONGO_URI || "mongodb://localhost:27017/helpdesk";
+const MONGO_URI = process.env.MONGO_URI || "mongodb://localhost:27017/helpdesk"; 
 mongoose.connect(MONGO_URI)
     .then(() => {
         console.log("Connected permanently to MongoDB Cloud");
@@ -61,7 +61,7 @@ const ticketSchema = new mongoose.Schema({
     priority: { type: String, default: 'Medium' },
     description: String,
     mobile: { type: String, required: true },
-    screenshot: String,
+    screenshot: String, 
     status: { type: String, default: 'Open' },
     assignedTo: { type: String, default: 'Unassigned' },
     escalated: { type: Boolean, default: false },
@@ -368,7 +368,7 @@ app.get('/', (req, res) => {
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body {
     font-family: 'Inter', 'Segoe UI', Arial, sans-serif;
-    min-height: 100vh; display: flex; align-items: center; justify-content: center;
+    height: 100vh; display: flex; align-items: center; justify-content: center;
     background-image:
         radial-gradient(circle at 18% 20%, rgba(229,62,62,0.32), transparent 42%),
         radial-gradient(circle at 85% 18%, rgba(229,62,62,0.14), transparent 40%),
@@ -380,8 +380,9 @@ body {
     background-repeat: no-repeat;
     background-attachment: fixed;
     padding: 16px;
+    overflow: hidden;
 }
-.ticket-card { width: 100%; max-width: 760px; background: #fdfcfb; border-radius: 14px; box-shadow: 0 24px 70px rgba(0,0,0,0.45); overflow: visible; }
+.ticket-card { width: 100%; max-width: 660px; max-height: 92vh; background: #fdfcfb; border-radius: 14px; box-shadow: 0 24px 70px rgba(0,0,0,0.45); overflow-y: auto; overflow-x: hidden; }
 .ticket-ribbon { background: #1e2229; padding: 12px 26px; display: flex; align-items: center; gap: 12px; }
 .ticket-ribbon img { height: 28px; width: auto; object-fit: contain; }
 .ticket-ribbon-text { font-family: 'Barlow Condensed', sans-serif; font-weight: 700; font-size: 16px; letter-spacing: 1px; color: #fff; text-transform: uppercase; }
@@ -785,1596 +786,1586 @@ app.get('/admin', checkUserLogin, (req, res) => {
     const isSuperAdminUser = !!req.session.isSuperAdmin;
 
     let html = '<!DOCTYPE html>' +
-        '<html lang="en">' +
-        '<head>' +
-        '    <meta charset="UTF-8">' +
-        '    <meta name="viewport" content="width=device-width, initial-scale=1.0">' +
-        '    <title>IT Helpdesk | Dashboard</title>' +
-        '    <link rel="icon" type="image/png" href="/logo.png">' +
-        '    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>' +
-        '    <style>' +
-        '        * { box-sizing: border-box; margin: 0; padding: 0; font-family: \'Segoe UI\', Tahoma, Geneva, Verdana, sans-serif; }' +
-        '        body { display: flex; height: 100vh; background-color: #f8f9fa; color: #333; overflow: hidden; }' +
-        '        .hamburger-btn { display: none; background: none; border: none; cursor: pointer; padding: 6px; flex-direction: column; gap: 4px; }' +
-        '        .hamburger-btn span { display: block; width: 22px; height: 2px; background: #2d3748; border-radius: 2px; }' +
-        '        .sidebar-backdrop { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 998; }' +
-        '        .sidebar-backdrop.active { display: block; }' +
-        '        @media (max-width: 768px) {' +
-        '            .sidebar { position: fixed; top: 0; bottom: 0; left: -270px; z-index: 999; transition: left 0.25s ease; width: 260px; }' +
-        '            .sidebar.sidebar-open { left: 0; }' +
-        '            .hamburger-btn { display: flex; }' +
-        '            .top-navbar { padding: 0 16px; }' +
-        '            .content-body { padding: 16px; }' +
-        '            .metrics-grid { gap: 12px; }' +
-        '            .branch-table { display: block; overflow-x: auto; white-space: nowrap; }' +
-        '            .ticket-header { flex-direction: column; align-items: flex-start; gap: 10px; }' +
-        '        }' +
-        '        .sidebar { width: 260px; height: 100vh; background-color: #1e2229; color: #fff; display: flex; flex-direction: column; justify-content: space-between; overflow: hidden; }' +
-        '        .sidebar-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; scrollbar-width: thin; scrollbar-color: #3a4150 transparent; }' +
-        '        .sidebar-scroll::-webkit-scrollbar { width: 6px; }' +
-        '        .sidebar-scroll::-webkit-scrollbar-track { background: transparent; }' +
-        '        .sidebar-scroll::-webkit-scrollbar-thumb { background: #3a4150; border-radius: 10px; }' +
-        '        .sidebar-scroll::-webkit-scrollbar-thumb:hover { background: #4a5568; }' +
-        '        .sidebar-brand { padding: 24px; display: flex; align-items: center; gap: 12px; border-bottom: 1px solid #2d323e; }' +
-        '        .sidebar-logo { height: 35px; width: auto; object-fit: contain; }' +
-        '        .sidebar-title { font-size: 18px; font-weight: 700; color: #fff; letter-spacing: 0.5px; }' +
-        '        .sidebar-menu { list-style: none; padding: 20px 0; }' +
-        '        .menu-category { font-size: 11px; font-weight: 700; text-transform: uppercase; color: #4a5568; padding: 10px 24px 5px 24px; letter-spacing: 0.5px; }' +
-        '        .menu-item { padding: 12px 24px; display: flex; align-items: center; gap: 12px; color: #a0aec0; text-decoration: none; font-size: 14px; font-weight: 500; cursor: pointer; transition: all 0.2s; border-left: 4px solid transparent; }' +
-        '        .menu-icon { width: 17px; height: 17px; flex-shrink: 0; }' +
-        '        .menu-item:hover, .menu-item.active { background-color: #2d323e; color: #fff; border-left-color: #0056b3; }' +
-        '        .sidebar-footer { padding: 20px; border-top: 1px solid #2d323e; flex-shrink: 0; }' +
-        '        .user-info { font-size: 12px; color: #a0aec0; margin-bottom: 12px; }' +
-        '        .user-info strong { color: #fff; display: block; font-size: 14px; margin-bottom: 2px; }' +
-        '        .logout-btn { display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%; background-color: #e53e3e; color: white; text-decoration: none; padding: 10px; border-radius: 6px; font-size: 14px; font-weight: 600; transition: background 0.2s; }' +
-        '        .logout-btn:hover { background-color: #c53030; }' +
-        '        .main-content { flex-grow: 1; display: flex; flex-direction: column; height: 100vh; overflow-y: auto; scrollbar-width: thin; scrollbar-color: #cbd5e0 #f8f9fa; }' +
-        '        .main-content::-webkit-scrollbar { width: 8px; }' +
-        '        .main-content::-webkit-scrollbar-track { background: #f8f9fa; }' +
-        '        .main-content::-webkit-scrollbar-thumb { background: #cbd5e0; border-radius: 10px; }' +
-        '        .main-content::-webkit-scrollbar-thumb:hover { background: #a0aec0; }' +
-        '        .top-navbar { height: 70px; background-color: #fff; border-bottom: 1px solid #e2e8f0; display: flex; align-items: center; justify-content: space-between; padding: 0 30px; }' +
-        '        .page-title { font-size: 20px; font-weight: 600; color: #2d3748; }' +
-        '        .notification-wrap { position: relative; }' +
-        '        .notification-btn { position: relative; width: 40px; height: 40px; border: 1px solid #e2e8f0; border-radius: 50%; background: #fff; color: #2d3748; cursor: pointer; display: flex; align-items: center; justify-content: center; }' +
-        '        .notification-btn:hover { background: #f7fafc; }' +
-        '        .notification-btn svg { width: 20px; height: 20px; }' +
-        '        .notification-count { position: absolute; top: -5px; right: -5px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 10px; background: #e53e3e; color: #fff; font-size: 10px; font-weight: 700; display: none; align-items: center; justify-content: center; }' +
-        '        .notification-menu { display: none; position: absolute; top: 48px; right: 0; width: 330px; max-height: 360px; overflow-y: auto; background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; box-shadow: 0 14px 34px rgba(0,0,0,.16); z-index: 3000; scrollbar-width: thin; scrollbar-color: #cbd5e0 #fff; }' +
-        '        .notification-menu::-webkit-scrollbar { width: 6px; }' +
-        '        .notification-menu::-webkit-scrollbar-track { background: #fff; }' +
-        '        .notification-menu::-webkit-scrollbar-thumb { background: #cbd5e0; border-radius: 10px; }' +
-        '        .notification-menu.show { display: block; }' +
-        '        .notification-head { padding: 12px 14px; font-size: 14px; font-weight: 700; border-bottom: 1px solid #edf2f7; }' +
-        '        .notification-item { padding: 12px 14px; border-bottom: 1px solid #edf2f7; font-size: 12px; color: #4a5568; }' +
-        '        .notification-item.unread { background: #ebf8ff; }' +
-        '        .notification-item strong { display: block; color: #2d3748; margin-bottom: 3px; }' +
-        '        .notification-empty { padding: 20px; text-align: center; color: #718096; font-size: 13px; }' +
-        '        .content-body { padding: 30px; max-width: 1200px; width: 100%; margin: 0 auto; }' +
-        '        .dashboard-view { display: none; }' +
-        '        .dashboard-view.active { display: block; }' +
-        '        .metrics-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 16px; }' +
-        '        .metric-card { background: white; border-radius: 10px; padding: 9px 14px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); border: 1px solid #edf1f5; border-top: 3px solid #3182ce; cursor: pointer; transition: box-shadow .2s, transform .2s; }' +
-        '        .metric-card:hover { box-shadow: 0 10px 26px rgba(0,0,0,0.09); transform: translateY(-2px); }' +
-        '        .metric-icon-badge { width: 26px; height: 26px; border-radius: 7px; display: flex; align-items: center; justify-content: center; margin-bottom: 4px; }' +
-        '        .metric-icon-badge svg { width: 14px; height: 14px; }' +
-        '        .metric-icon-blue { background: #ebf8ff; color: #3182ce; }' +
-        '        .metric-icon-green { background: #f0fff4; color: #38a169; }' +
-        '        .metric-icon-red { background: #fff5f5; color: #e53e3e; }' +
-        '        .metric-icon-amber { background: #fef3c7; color: #d97706; }' +
-        '        .metric-subtitle { font-size: 10px; color: #a0aec0; margin-top: 1px; font-weight: 500; }' +
-        '        .metric-card.resolved { border-top-color: #38a169; }' +
-        '        .metric-card.assigned { border-top-color: #e53e3e; }' +
-        '        .metric-card.escalated { border-top-color: #d97706; }' +
-        '        .metric-label { font-size: 11px; font-weight: 600; color: #718096; text-transform: uppercase; letter-spacing: 0.5px; }' +
-        '        .metric-value { font-size: 20px; font-weight: 700; color: #2d3748; margin-top: 1px; }' +
-        '        .ticket-card { background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 24px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); position: relative; border-top: 4px solid #3182ce; }' +
-        '        .ticket-card.ticket-resolved { border-top-color: #38a169; }' +
-        '        .ticket-card.ticket-escalated { border-top-color: #dd6b20; background: #fffaf0; }' +
-        '        .ticket-card.ticket-high-priority { background: #fff5f5; border: 2px solid #e53e3e; border-top: 4px solid #e53e3e; }' +
-        '        .ticket-card.ticket-high-priority .ticket-title { color: #c53030; }' +
-        '        .ticket-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; }' +
-        '        .ticket-title { font-size: 18px; font-weight: 600; color: #2d3748; }' +
-        '        .ticket-desc { color: #4a5568; font-size: 14px; line-height: 1.5; margin-bottom: 16px; }' +
-        '        .badge { padding: 4px 10px; border-radius: 50px; font-size: 11px; font-weight: 700; text-transform: uppercase; display: inline-block; margin-right: 8px; }' +
-        '        .p-Low { background-color: #edf2f7; color: #4a5568; }' +
-        '        .p-Medium { background-color: #feebc8; color: #c05621; }' +
-        '        .p-High { background-color: #fed7d7; color: #9b2c2c; }' +
-        '        .status-open { background-color: #ebf8ff; color: #2b6cb0; }' +
-        '        .status-resolved { background-color: #c6f6d5; color: #22543d; }' +
-        '        .ticket-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }' +
-        '        .resolve-btn { background-color: #38a169; color: white; border: none; padding: 8px 16px; font-size: 13px; font-weight: 600; border-radius: 6px; cursor: pointer; transition: background 0.2s; }' +
-        '        .resolve-btn:hover { background-color: #2f855a; }' +
-        '        .reallocate-btn { background-color: #805ad5; color: white; border: none; padding: 8px 16px; font-size: 13px; font-weight: 600; border-radius: 6px; cursor: pointer; transition: background 0.2s; }' +
-        '        .reallocate-btn:hover { background-color: #6b46c1; }' +
-        '        .escalate-btn { background-color: #dd6b20; color: white; border: none; padding: 8px 16px; font-size: 13px; font-weight: 600; border-radius: 6px; cursor: pointer; transition: background 0.2s; }' +
-        '        .escalate-btn:hover { background-color: #c05621; }' +
-        '        .badge-escalated { background-color: #fef3c7; color: #92400e; }' +
-        '        .badge-category { background-color: #e6fffa; color: #234e52; }' +
-        '        .screenshot-preview { max-width: 100%; max-height: 180px; border-radius: 6px; border: 1px solid #e2e8f0; margin-top: 12px; display: block; object-fit: cover; }' +
-        '        .assignment-info { margin-top: 16px; padding: 14px 16px; background: #f9fafb; border-radius: 8px; border: 1px solid #edf2f7; }' +
-        '        .assignment-row { display: flex; gap: 10px; padding: 5px 0; font-size: 13.5px; }' +
-        '        .assignment-row + .assignment-row { border-top: 1px solid #eef1f4; }' +
-        '        .assignment-label { flex: 0 0 120px; font-weight: 700; color: #4a5568; text-transform: uppercase; font-size: 11px; letter-spacing: .4px; padding-top: 2px; }' +
-        '        .assignment-value { color: #2d3748; font-size: 14px; flex: 1; }' +
-        '        .comments-section { margin-top: 20px; background-color: #f7fafc; padding: 16px; border-radius: 8px; border: 1px solid #edf2f7; }' +
-        '        .comments-header { font-size: 12px; font-weight: 700; color: #718096; text-transform: uppercase; margin-bottom: 10px; letter-spacing: 0.5px; }' +
-        '        .comment-item { padding: 8px 0; border-bottom: 1px solid #edf2f7; font-size: 13px; color: #4a5568; }' +
-        '        .comment-item strong { color: #2d3748; }' +
-        '        .comment-form { display: flex; gap: 10px; margin-top: 12px; flex-wrap: wrap; align-items: center; }' +
-        '        .comment-form input { flex-grow: 1; padding: 8px 12px; border: 1px solid #e2e8f0; border-radius: 6px; font-size: 13px; }' +
-        '        .comment-form button { background-color: #3182ce; color: white; border: none; padding: 8px 16px; font-size: 13px; font-weight: 600; border-radius: 6px; cursor: pointer; }' +
-        '        .comment-attach-btn { display: flex; align-items: center; justify-content: center; padding: 8px 12px; border: 1px solid #e2e8f0; border-radius: 6px; background: #f7fafc; cursor: pointer; font-size: 14px; flex-shrink: 0; }' +
-        '        .comment-attach-btn:hover { background: #edf2f7; }' +
-        '        .attachment-name-tag { font-size: 11px; color: #718096; max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; align-self: center; }' +
-        '        .inbox-card { background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); border-left: 4px solid #cbd5e0; }' +
-        '        .inbox-card.inbox-unread { border-left-color: #e53e3e; background: #fffafa; }' +
-        '        .inbox-subject { font-size: 16px; font-weight: 700; color: #2d3748; }' +
-        '        .inbox-meta { font-size: 12px; color: #a0aec0; margin-top: 2px; }' +
-        '        .inbox-body { font-size: 14px; color: #4a5568; margin-top: 10px; line-height: 1.5; white-space: pre-wrap; }' +
-        '        .inbox-reply-box { margin-top: 14px; padding-top: 14px; border-top: 1px solid #edf2f7; }' +
-        '        .inbox-reply-box textarea { width: 100%; padding: 10px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 13px; resize: vertical; }' +
-        '        .inbox-reply-shown { margin-top: 14px; padding: 12px 14px; background: #f0fff4; border-radius: 6px; font-size: 13px; color: #234e52; }' +
-        '        .branch-panel-card { background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }' +
-        '        .branch-panel-card h2 { font-size: 16px; font-weight: 600; color: #2d3748; margin-bottom: 20px; }' +
-        '        .branch-input-group { display: flex; gap: 15px; margin-bottom: 25px; flex-wrap: wrap; }' +
-        '        .branch-input-group input { flex-grow: 1; padding: 12px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 14px; }' +
-        '        .branch-add-btn { background-color: #0056b3; color: white; border: none; padding: 0 30px; font-size: 14px; font-weight: 600; border-radius: 6px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 4px; }' +
-        '        .search-btn { padding: 9px 22px; font-size: 13.5px; }' +
-        '        .branch-add-btn:disabled { opacity: .7; cursor: not-allowed; }' +
-        '        .branch-table { width: 100%; border-collapse: collapse; text-align: left; margin-top: 10px; }' +
-        '        .branch-table th { background-color: #f7fafc; color: #4a5568; font-size: 13px; font-weight: 600; padding: 12px 16px; border-bottom: 1px solid #e2e8f0; }' +
-        '        .branch-table td { padding: 14px 16px; font-size: 14px; color: #2d3748; border-bottom: 1px solid #edf2f7; }' +
-        '        .branch-delete-btn { color: #e53e3e; background: none; border: none; cursor: pointer; font-weight: 600; font-size: 13px; }' +
-        '        .chart-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 20px; margin-top: 24px; }' +
-        '        .chart-card { background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); position: relative; height: 300px; }' +
-        '        .chart-card.wide { grid-column: 1 / -1; }' +
-        '        .chart-card h3 { font-size: 14px; font-weight: 600; color: #2d3748; margin: 0 0 14px; }' +
-        '        .section-heading { font-size: 16px; font-weight: 600; color: #2d3748; margin: 28px 0 0; }' +
-        '        .confirm-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 3000; align-items: center; justify-content: center; padding: 20px; }' +
-        '        .confirm-overlay.show { display: flex; }' +
-        '        .confirm-box { background: #fff; border-radius: 10px; padding: 24px; max-width: 380px; width: 100%; box-shadow: 0 20px 50px rgba(0,0,0,0.3); }' +
-        '        .confirm-box p { font-size: 14px; color: #2d3748; line-height: 1.5; margin-bottom: 20px; }' +
-        '        .confirm-actions { display: flex; gap: 12px; justify-content: flex-end; }' +
-        '        .confirm-actions button { padding: 9px 18px; border-radius: 7px; font-size: 13px; font-weight: 600; cursor: pointer; border: none; }' +
-        '        .confirm-cancel-btn { background: #edf2f7; color: #4a5568; }' +
-        '        .confirm-ok-btn { background: #e53e3e; color: #fff; }' +
-        '        .admin-toast { position: fixed; top: 20px; right: 20px; background: #fff; color: #1a202c; padding: 16px 20px; border-radius: 12px; font-size: 13px; box-shadow: 0 16px 40px rgba(0,0,0,0.16); z-index: 4000; opacity: 0; transform: translateX(24px); transition: opacity .25s, transform .25s; pointer-events: none; max-width: 340px; text-align: left; border-left: 4px solid #38a169; display: flex; align-items: flex-start; gap: 12px; overflow: hidden; }' +
-        '        .admin-toast.show { opacity: 1; transform: translateX(0); }' +
-        '        .admin-toast.error { border-left-color: #e53e3e; }' +
-        '        .admin-toast-icon { width: 32px; height: 32px; border-radius: 8px; background: #f0fff4; color: #38a169; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }' +
-        '        .admin-toast.error .admin-toast-icon { background: #fff5f5; color: #e53e3e; }' +
-        '        .admin-toast-icon svg { width: 18px; height: 18px; }' +
-        '        .admin-toast-title { font-weight: 700; font-size: 13px; color: #1a202c; margin-bottom: 2px; }' +
-        '        .admin-toast-message { font-size: 12px; color: #718096; line-height: 1.4; }' +
-        '        .admin-toast-progress { position: absolute; bottom: 0; left: 0; height: 3px; background: #38a169; animation: toastshrink 4s linear forwards; }' +
-        '        .admin-toast.error .admin-toast-progress { background: #e53e3e; }' +
-        '        @keyframes toastshrink { from { width: 100%; } to { width: 0%; } }' +
-        '        .admin-spinner { width: 13px; height: 13px; border: 2px solid rgba(255,255,255,.4); border-top-color: #fff; border-radius: 50%; display: inline-block; animation: adminspin .7s linear infinite; margin-right: 6px; vertical-align: middle; }' +
-        '        @keyframes adminspin { to { transform: rotate(360deg); } }' +
-        '        .pagination-bar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; padding: 14px 4px 4px; }' +
-        '        .pagination-info { font-size: 13px; color: #718096; }' +
-        '        .pagination-controls { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }' +
-        '        .page-btn { min-width: 34px; height: 34px; padding: 0 10px; border: 1px solid #e2e8f0; background: #fff; color: #4a5568; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; }' +
-        '        .page-btn:hover:not(:disabled) { background: #f7fafc; }' +
-        '        .page-btn.active { background: #0056b3; border-color: #0056b3; color: #fff; }' +
-        '        .page-btn:disabled { opacity: .5; cursor: not-allowed; }' +
-        '        .page-ellipsis { padding: 0 4px; color: #a0aec0; font-size: 13px; }' +
-        '    </style>' +
-        '</head>' +
-        '<body>' +
-        '    <div class="confirm-overlay" id="confirmOverlay">' +
-        '        <div class="confirm-box">' +
-        '            <p id="confirmMessage"></p>' +
-        '            <input type="text" id="confirmInput" style="display:none;width:100%;padding:10px;border:1px solid #cbd5e0;border-radius:6px;font-size:14px;margin-bottom:16px;">' +
-        '            <select id="confirmStaffSelect" style="display:none;width:100%;padding:10px;border:1px solid #cbd5e0;border-radius:6px;font-size:14px;margin-bottom:16px;"></select>' +
-        '            <div class="confirm-actions">' +
-        '                <button class="confirm-cancel-btn" onclick="closeConfirmModal(false)">Cancel</button>' +
-        '                <button class="confirm-ok-btn" id="confirmOkBtn" onclick="closeConfirmModal(true)">Confirm</button>' +
-        '            </div>' +
-        '        </div>' +
-        '    </div>' +
-        '    <div id="adminToast" class="admin-toast"></div>' +
-        '    <div class="sidebar-backdrop" id="sidebarBackdrop" onclick="closeSidebar()"></div>' +
-        '    <aside class="sidebar" id="sidebar">' +
-        '        <div class="sidebar-scroll">' +
-        '            <div class="sidebar-brand" style="cursor:pointer;" onclick="window.location.href=\'/admin\'" title="Refresh dashboard">' +
-        '                <img src="/logo.png" alt="Logo" class="sidebar-logo" onerror="this.style.display=\'none\'">' +
-        '                <span class="sidebar-title">SARATHY IT</span>' +
-        '            </div>' +
-        '            <div class="menu-category">Navigation</div>' +
-        '            <ul class="sidebar-menu">' +
-        '                <li class="menu-item active" id="tabTicketsLink" onclick="refreshTicketsDashboard()"><svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v2z"></path><line x1="13" y1="5" x2="13" y2="19"></line></svg>Tickets System</li>' +
-        (isSuperAdminUser ? '                <li class="menu-item" id="tabAdminsLink" onclick="switchView(\'admins\')"><svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l3 6 6.5 1-5 4.5 1.5 6.5-6-3.5-6 3.5 1.5-6.5-5-4.5 6.5-1z"></path></svg>Manage Admins</li>' : '') +
-        (isAdminUser ? '                <li class="menu-item" id="tabBranchesLink" onclick="switchView(\'branches\')"><svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>Manage Branches</li>' : '') +
-        (isAdminUser ? '                <li class="menu-item" id="tabStaffLink" onclick="switchView(\'staff\')"><svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>Manage IT Staff</li>' : '') +
-        (isAdminUser ? '                <li class="menu-item" id="tabAuditLink" onclick="switchView(\'audit\')"><svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"></path><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg>Audit Log</li>' : '') +
-        '                <li class="menu-item" id="tabReportsLink" onclick="switchView(\'reports\')"><svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>Reports</li>' +
-        '                <li class="menu-item" id="tabInboxLink" onclick="switchView(\'inbox\')"><svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-6l-2 3h-4l-2-3H2"></path><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"></path></svg>Inbox<span id="inboxUnreadBadge" style="display:none;margin-left:auto;background:#e53e3e;color:#fff;font-size:10px;font-weight:700;border-radius:10px;min-width:16px;height:16px;padding:0 5px;align-items:center;justify-content:center;"></span></li>' +
-        '                <li class="menu-item" id="tabPasswordLink" onclick="switchView(\'password\')"><svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>Change Password</li>' +
-        '            </ul>' +
-        '        </div>' +
-        '        <div class="sidebar-footer">' +
-        '            <div class="user-info">' +
-        '                <span>Logged in as</span>' +
-        '                <strong id="displayUserLabel">Loading...</strong>' +
-        '            </div>' +
-        '            <a href="/logout" class="logout-btn" id="logoutBtn" onclick="handleLogoutClick()">Logout</a>' +
-        '        </div>' +
-        '    </aside>' +
-        '    <main class="main-content">' +
-        '        <header class="top-navbar">' +
-        '            <button class="hamburger-btn" onclick="toggleSidebar()" aria-label="Menu"><span></span><span></span><span></span></button>' +
-        '            <h1 class="page-title" id="panelViewTitle">Helpdesk Operations</h1>' +
-        '            <div class="notification-wrap"><button type="button" class="notification-btn" onclick="toggleNotifications(event)" aria-label="Notifications"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg><span id="notificationCount" class="notification-count">0</span></button><div id="notificationMenu" class="notification-menu"><div class="notification-head" style="display:flex;align-items:center;justify-content:space-between;">Notifications <button type="button" onclick="clearAllNotifications()" style="background:none;border:none;color:#e53e3e;font-size:12px;font-weight:600;cursor:pointer;padding:0;">Clear</button></div><div id="notificationList" class="notification-empty">No notifications.</div></div></div>' +
-        '        </header>' +
-        '        <section class="content-body">' +
-        '            <div id="viewTickets" class="dashboard-view active">' +
-        '                <div class="metrics-grid">' +
-        '                    <div class="metric-card" onclick="filterByStatus(\'Open\')"><div class="metric-icon-badge metric-icon-blue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg></div><div class="metric-label">Open Issues</div><div class="metric-value" id="statOpen">0</div><div class="metric-subtitle">Needs attention</div></div>' +
-        '                    <div class="metric-card resolved" onclick="filterByStatus(\'Resolved\')"><div class="metric-icon-badge metric-icon-green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg></div><div class="metric-label">Resolved Issues</div><div class="metric-value" id="statResolved">0</div><div class="metric-subtitle">Completed successfully</div></div>' +
-        '                    <div class="metric-card escalated" onclick="filterByStatus(\'Escalated\')"><div class="metric-icon-badge metric-icon-amber"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg></div><div class="metric-label">Escalated Tickets</div><div class="metric-value" id="statEscalated">0</div><div class="metric-subtitle">Needs admin action</div></div>' +
-        '                    <div class="metric-card assigned" onclick="filterByStatus(\'all\')"><div class="metric-icon-badge metric-icon-red"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v2z"></path><line x1="13" y1="5" x2="13" y2="19"></line></svg></div><div class="metric-label">Total Tickets</div><div class="metric-value" id="statMine">0</div><div class="metric-subtitle">All requests in scope</div></div>' +
-        '                </div>' +
-        '                <div style="margin-bottom: 12px;">' +
-        '                    <button type="button" id="toggleFilterBtn" class="branch-add-btn" onclick="toggleFilterPanel()" style="display:inline-flex; align-items:center; gap:8px; padding: 9px 18px;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>Filters</button>' +
-        '                </div>' +
-        '                <div class="branch-panel-card" id="ticketFilterPanel" style="display:none; margin-bottom: 20px; align-items: flex-end; gap: 14px; flex-wrap: wrap;">' +
-        '                    <div style="flex-grow: 1; min-width: 220px;"><label style="display:block;font-size:12px;font-weight:600;color:#4a5568;margin-bottom:4px;">Search</label><input type="text" id="filterSearchText" placeholder="Ticket #, Submitted By, Branch, Mobile..." style="width:100%; padding: 8px 10px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 14px;" onkeydown="if(event.key===\'Enter\') applyTicketFilters();"></div>' +
-        '                    <div><label style="display:block;font-size:12px;font-weight:600;color:#4a5568;margin-bottom:4px;">From Date</label><input type="date" id="filterFromDate" style="padding: 8px 10px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 14px;"></div>' +
-        '                    <div><label style="display:block;font-size:12px;font-weight:600;color:#4a5568;margin-bottom:4px;">To Date</label><input type="date" id="filterToDate" style="padding: 8px 10px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 14px;"></div>' +
-        '                    <div id="staffFilterWrapper" style="display:none;"><label style="display:block;font-size:12px;font-weight:600;color:#4a5568;margin-bottom:4px;">Staff</label><select id="filterStaff" style="padding: 8px 10px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 14px;"><option value="">All Staff</option></select></div>' +
-        '                    <div id="regionFilterWrapper" style="display:none;"><label style="display:block;font-size:12px;font-weight:600;color:#4a5568;margin-bottom:4px;">Region</label><select id="filterRegion" style="padding: 8px 10px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 14px;"><option value="">All Regions</option></select></div>' +
-        '                    <div><label style="display:block;font-size:12px;font-weight:600;color:#4a5568;margin-bottom:4px;">Category</label><select id="filterCategory" style="padding: 8px 10px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 14px;"><option value="">All Categories</option><option value="Hardware">Hardware</option><option value="Software">Software</option><option value="Network">Network</option><option value="Printer">Printer</option><option value="Other">Other</option></select></div>' +
-        '                    <button class="branch-add-btn search-btn" id="searchTicketsBtn" onclick="applyTicketFilters()">Search</button>' +
-        '                    <button class="branch-delete-btn" onclick="clearTicketFilters()">Clear</button>' +
-        '                </div>' +
-        '                <div id="ticketList">Loading active queue...</div>' +
-        '                <div id="ticketPagination" class="pagination-bar" style="display:none;"></div>' +
-        '            </div>' +
-        '            <div id="viewReports" class="dashboard-view">' +
-        '                <div class="branch-panel-card" style="display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 20px;">' +
-        '                    <strong style="font-size: 14px; color: #2d3748;">Region:</strong>' +
-        '                    <select id="reportRegion" style="padding: 8px 10px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 14px;"><option value="">All Regions</option></select>' +
-        '                    <span style="font-size: 12px; color: #a0aec0;">Applies to both reports below</span>' +
-        '                </div>' +
-        '                <div class="branch-panel-card" style="display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 20px;">' +
-        '                    <strong style="font-size: 14px; color: #2d3748;">Monthly Report:</strong>' +
-        '                    <input type="month" id="reportMonth" style="padding: 8px 10px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 14px;">' +
-        '                    <button class="branch-add-btn" onclick="downloadReport()">Download Excel Report</button>' +
-        '                </div>' +
-        '                <div class="branch-panel-card" style="display: flex; align-items: flex-end; gap: 14px; flex-wrap: wrap;">' +
-        '                    <div><strong style="font-size: 14px; color: #2d3748; display:block; margin-bottom: 8px;">Date Range Report:</strong></div>' +
-        '                    <div><label style="display:block;font-size:12px;font-weight:600;color:#4a5568;margin-bottom:4px;">From Date</label><input type="date" id="reportFromDate" style="padding: 8px 10px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 14px;"></div>' +
-        '                    <div><label style="display:block;font-size:12px;font-weight:600;color:#4a5568;margin-bottom:4px;">To Date</label><input type="date" id="reportToDate" style="padding: 8px 10px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 14px;"></div>' +
-        '                    <button class="branch-add-btn" onclick="downloadReportByRange()">Download Excel Report</button>' +
-        '                </div>' +
-        '                <h3 class="section-heading">Performance Overview</h3>' +
-        '                <div class="chart-grid">' +
-        '                    <div class="chart-card"><h3>Tickets by Status</h3><canvas id="chartStatus"></canvas></div>' +
-        '                    <div class="chart-card"><h3>Tickets by Priority</h3><canvas id="chartPriority"></canvas></div>' +
-        '                    <div class="chart-card"><h3>Tickets by Category</h3><canvas id="chartCategory"></canvas></div>' +
-        '                    <div class="chart-card wide"><h3>Ticket Volume \u2014 Last 30 Days</h3><canvas id="chartTrend"></canvas></div>' +
-        (isAdminUser ? '                    <div class="chart-card"><h3>Tickets by Staff</h3><canvas id="chartStaff"></canvas></div>' : '') +
-        (isAdminUser ? '                    <div class="chart-card"><h3>Tickets by Branch</h3><canvas id="chartBranch"></canvas></div>' : '') +
-        '                </div>' +
-        '            </div>' +
-        '            <div id="viewChangePassword" class="dashboard-view">' +
-        '                <div class="branch-panel-card">' +
-        '                    <h2>Change Password</h2>' +
-        (isAdminUser ?
-            '                    <p style="color:#718096;font-size:14px;line-height:1.6;max-width:480px;">Admin password is set via the <code>ADMIN_PASSWORD</code> environment variable in your hosting dashboard (e.g. Render). Update it there and redeploy \u2014 it can\'t be changed from this page.</p>'
-            :
-            '                    <div style="max-width:360px;">' +
-            '                        <label style="display:block;font-size:12px;font-weight:600;color:#4a5568;margin-top:14px;margin-bottom:4px;">Current Password</label>' +
-            '                        <input type="password" id="currentPassword" style="width:100%;padding:10px;border:1px solid #cbd5e0;border-radius:6px;font-size:14px;">' +
-            '                        <label style="display:block;font-size:12px;font-weight:600;color:#4a5568;margin-top:14px;margin-bottom:4px;">New Password</label>' +
-            '                        <input type="password" id="newPassword" style="width:100%;padding:10px;border:1px solid #cbd5e0;border-radius:6px;font-size:14px;">' +
-            '                        <label style="display:block;font-size:12px;font-weight:600;color:#4a5568;margin-top:14px;margin-bottom:4px;">Confirm New Password</label>' +
-            '                        <input type="password" id="confirmPassword" style="width:100%;padding:10px;border:1px solid #cbd5e0;border-radius:6px;font-size:14px;">' +
-            '                        <button class="branch-add-btn" onclick="changePassword()" style="margin-top:16px;">Update Password</button>' +
-            '                    </div>'
-        ) +
-        '                </div>' +
-        '            </div>' +
-        (isSuperAdminUser ?
-            '            <div id="viewAdmins" class="dashboard-view">' +
-            '                <div class="branch-panel-card" style="margin-bottom: 20px;">' +
-            '                    <h2>Add Region Admin</h2>' +
-            '                    <div class="branch-input-group">' +
-            '                        <input type="text" id="newAdminName" placeholder="Full Name">' +
-            '                        <input type="text" id="newAdminUsername" placeholder="Username">' +
-            '                        <input type="text" id="newAdminPassword" placeholder="Password">' +
-            '                        <select id="newAdminRegion" style="flex-grow: 1; padding: 12px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 14px;"><option value="" disabled selected>Select Region</option></select>' +
-            '                        <button class="branch-add-btn" id="addAdminBtn" onclick="addNewRegionAdmin()">Add Admin</button>' +
-            '                    </div>' +
-            '                </div>' +
-            '                <div class="branch-panel-card">' +
-            '                    <h2>Region Admins</h2>' +
-            '                    <table class="branch-table">' +
-            '                        <thead><tr><th>Name</th><th>Username</th><th>Region</th><th>Status</th><th>Edit</th><th>Delete</th></tr></thead>' +
-            '                        <tbody id="regionAdminsTableBody"></tbody>' +
-            '                    </table>' +
-            '                </div>' +
-            '            </div>'
-            : '') +
-        '            <div id="viewBranches" class="dashboard-view">' +
-        (isSuperAdminUser ?
-            '                <div class="branch-panel-card" style="margin-bottom: 20px;">' +
-            '                    <h2>Manage Regions</h2>' +
-            '                    <div class="branch-input-group">' +
-            '                        <input type="text" id="newRegionName" placeholder="Enter Region Name">' +
-            '                        <button class="branch-add-btn" id="addRegionBtn" onclick="addNewRegion()">Add Region</button>' +
-            '                    </div>' +
-            '                    <table class="branch-table">' +
-            '                        <thead><tr><th>Region Name</th><th>Edit</th><th>Delete</th></tr></thead>' +
-            '                        <tbody id="regionTableBody"></tbody>' +
-            '                    </table>' +
-            '                </div>'
-            : '') +
-        '                <div class="branch-panel-card">' +
-        '                    <h2>Create New Branch Location</h2>' +
-        '                    <div class="branch-input-group">' +
-        '                        <input type="text" id="newBranchName" placeholder="Enter Branch Name">' +
-        (isSuperAdminUser ?
-            '                        <select id="newBranchRegion" style="flex-grow: 1; padding: 12px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 14px;"><option value="" disabled selected>Select Region</option></select>'
-            :
-            '                        <input type="text" value="' + (req.session.region || '') + '" disabled style="flex-grow: 1; padding: 12px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 14px; background:#f1f0ee; color:#718096;">'
-        ) +
-        '                        <button class="branch-add-btn" id="addBranchBtn" onclick="addNewBranch()">Add Branch</button>' +
-        '                    </div>' +
-        '                    <div id="branchGroupsContainer"></div>' +
-        '                </div>' +
-        '            </div>' +
-        '            <div id="viewStaff" class="dashboard-view">' +
-        '                <div class="branch-panel-card" style="margin-bottom: 20px;">' +
-        '                    <h2>Add New Staff Member</h2>' +
-        '                    <div class="branch-input-group">' +
-        '                        <input type="text" id="newStaffName" placeholder="Full Name">' +
-        '                        <input type="text" id="newStaffId" placeholder="Staff ID (optional)">' +
-        '                        <input type="text" id="newStaffPassword" placeholder="Password">' +
-        '                        <input type="email" id="newStaffEmail" placeholder="Email">' +
-        (isSuperAdminUser ?
-            '                        <select id="newStaffRegion" style="flex-grow: 1; padding: 12px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 14px;"><option value="">Unassigned (global)</option></select>'
-            : '') +
-        '                        <button class="branch-add-btn" id="addStaffBtn" onclick="addNewStaff()">Add Staff</button>' +
-        '                    </div>' +
-        '                </div>' +
-        '                <div class="branch-panel-card">' +
-        '                    <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; margin-bottom:20px;">' +
-        '                        <h2 style="margin-bottom:0;">Active Helpdesk Personnel</h2>' +
-        '                        <input type="text" id="staffSearchInput" placeholder="Search by name, staff ID, email, or region..." oninput="renderStaffTable()" style="padding: 8px 12px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 13px; width: 300px; max-width: 100%;">' +
-        '                    </div>' +
-        '                    <table class="branch-table">' +
-        '                        <thead><tr><th>Staff ID</th><th>Name Tag</th><th>Operational Route Email</th>' + (isSuperAdminUser ? '<th>Region</th>' : '') + '<th>Assigned Branches</th><th>Edit</th><th>Delete</th></tr></thead>' +
-        '                        <tbody id="staffTableBody"></tbody>' +
-        '                    </table>' +
-        '                </div>' +
-        '            </div>' +
-        '            <div id="viewAuditLog" class="dashboard-view">' +
-        '                <div class="branch-panel-card">' +
-        '                    <h2>Recent Admin Activity</h2>' +
-        '                    <table class="branch-table">' +
-        '                        <thead><tr><th>Timestamp</th><th>Actor</th><th>Action</th><th>Details</th></tr></thead>' +
-        '                        <tbody id="auditLogTableBody"></tbody>' +
-        '                    </table>' +
-        '                </div>' +
-        '            </div>' +
-        '            <div id="viewInbox" class="dashboard-view">' +
-        (isAdminUser ? '' :
-            '                <div class="branch-panel-card" style="margin-bottom: 20px;">' +
-            '                    <h2>Send a Message to Admin</h2>' +
-            '                    <div style="max-width:520px;">' +
-            '                        <label style="display:block;font-size:12px;font-weight:600;color:#4a5568;margin-bottom:4px;">Subject</label>' +
-            '                        <input type="text" id="inboxSubject" style="width:100%;padding:10px;border:1px solid #cbd5e0;border-radius:6px;font-size:14px;margin-bottom:12px;">' +
-            '                        <label style="display:block;font-size:12px;font-weight:600;color:#4a5568;margin-bottom:4px;">Message</label>' +
-            '                        <textarea id="inboxBody" rows="4" style="width:100%;padding:10px;border:1px solid #cbd5e0;border-radius:6px;font-size:14px;resize:vertical;"></textarea>' +
-            '                        <button class="branch-add-btn" id="sendInboxBtn" onclick="sendInboxMessage()" style="margin-top:12px;">Send Message</button>' +
-            '                    </div>' +
-            '                </div>'
-        ) +
-        '                <div id="inboxList">Loading messages...</div>' +
-        '            </div>' +
-        '        </section>' +
-        '    </main>' +
-        '    <script>' +
-        '        const currentUser = "' + dynamicUsername + '";' +
-        '        const isAdmin = ' + dynamicIsAdmin + ';' +
-        '        const isSuperAdmin = ' + dynamicIsSuperAdmin + ';' +
-        '        document.getElementById("displayUserLabel").innerText = currentUser;' +
-        '        let knownNotificationIds = new Set();' +
-        '        let notificationsInitialized = false;' +
-        '        let notifAudioCtx = null;' +
-        '        function getNotifAudioCtx() {' +
-        '            if (!notifAudioCtx) notifAudioCtx = new (window.AudioContext || window.webkitAudioContext)();' +
-        '            return notifAudioCtx;' +
-        '        }' +
-        '        ["click", "keydown", "touchstart"].forEach(evt => {' +
-        '            document.addEventListener(evt, () => {' +
-        '                const ctx = getNotifAudioCtx();' +
-        '                if (ctx.state === "suspended") ctx.resume();' +
-        '            }, { once: true });' +
-        '        });' +
-        '        function playNotificationSound() {' +
-        '            try {' +
-        '                const ctx = getNotifAudioCtx();' +
-        '                if (ctx.state === "suspended") { ctx.resume(); }' +
-        '                const now = ctx.currentTime;' +
-        '                [880, 1175].forEach((freq, i) => {' +
-        '                    const osc = ctx.createOscillator();' +
-        '                    const gain = ctx.createGain();' +
-        '                    osc.type = "square";' +
-        '                    osc.frequency.value = freq;' +
-        '                    const start = now + i * 0.15;' +
-        '                    gain.gain.setValueAtTime(0.0001, start);' +
-        '                    gain.gain.exponentialRampToValueAtTime(0.5, start + 0.02);' +
-        '                    gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.22);' +
-        '                    osc.connect(gain);' +
-        '                    gain.connect(ctx.destination);' +
-        '                    osc.start(start);' +
-        '                    osc.stop(start + 0.25);' +
-        '                });' +
-        '            } catch (err) { console.warn("Notification sound could not play."); }' +
-        '        }' +
-        '        function toggleNotifications(event) {' +
-        '            if (event) event.stopPropagation();' +
-        '            const menu = document.getElementById("notificationMenu");' +
-        '            menu.classList.toggle("show");' +
-        '        }' +
-        '        document.addEventListener("click", (e) => {' +
-        '            const wrap = document.querySelector(".notification-wrap");' +
-        '            const menu = document.getElementById("notificationMenu");' +
-        '            if (menu && menu.classList.contains("show") && wrap && !wrap.contains(e.target)) {' +
-        '                menu.classList.remove("show");' +
-        '            }' +
-        '        });' +
-        '        async function markNotificationRead(id) {' +
-        '            await fetch("/notifications/" + id + "/read", { method: "POST" });' +
-        '            loadNotifications();' +
-        '        }' +
-        '        async function clearAllNotifications() {' +
-        '            await fetch("/notifications", { method: "DELETE" });' +
-        '            loadNotifications();' +
-        '        }' +
-        '        async function loadNotifications() {' +
-        '            try {' +
-        '                const response = await fetch("/notifications");' +
-        '                if (!response.ok) return;' +
-        '                const notifications = await response.json();' +
-        '                const unread = notifications.filter(n => !n.read);' +
-        '                const count = document.getElementById("notificationCount");' +
-        '                count.innerText = unread.length > 99 ? "99+" : unread.length;' +
-        '                count.style.display = unread.length ? "flex" : "none";' +
-        '                const list = document.getElementById("notificationList");' +
-        '                list.innerHTML = notifications.length ? notifications.map(n => \'<div class="notification-item \'+(!n.read ? "unread" : "")+\'"><div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;"><div><strong>Ticket #\'+String(n.ticketNumber).padStart(4,"0")+\' assigned</strong>\'+n.message+\'<br><small>\'+new Date(n.createdAt).toLocaleString()+\'</small></div>\'+(!n.read ? \'<button onclick="markNotificationRead(\\\'\'+n._id+\'\\\')" style="flex-shrink:0;background:none;border:1px solid #cbd5e0;border-radius:5px;padding:3px 8px;font-size:10px;font-weight:600;color:#4a5568;cursor:pointer;">Mark as read</button>\' : "")+\'</div></div>\').join("") : \'<div class="notification-empty">No notifications.</div>\';' +
-        '                const newUnread = unread.filter(n => !knownNotificationIds.has(n._id));' +
-        '                if (newUnread.length && notificationsInitialized) { playNotificationSound(); showAdminToast(newUnread[0].message); }' +
-        '                notifications.forEach(n => knownNotificationIds.add(n._id));' +
-        '                notificationsInitialized = true;' +
-        '            } catch (err) { console.warn("Could not load notifications."); }' +
-        '        }' +
-        '        let inactivityTimer = null;' +
-        '        function resetInactivityTimer() {' +
-        '            clearTimeout(inactivityTimer);' +
-        '            inactivityTimer = setTimeout(() => { window.location.href = "/logout"; }, 4 * 60 * 60 * 1000);' +
-        '        }' +
-        '        function handleLogoutClick() {' +
-        '            document.getElementById("logoutBtn").innerHTML = \'<span class="admin-spinner"></span>Logging out...\';' +
-        '        }' +
-        '        ["mousemove", "keydown", "click", "scroll", "touchstart"].forEach(evt => {' +
-        '            document.addEventListener(evt, resetInactivityTimer);' +
-        '        });' +
-        '        resetInactivityTimer();' +
-        '        function toggleSidebar() {' +
-        '            document.getElementById("sidebar").classList.toggle("sidebar-open");' +
-        '            document.getElementById("sidebarBackdrop").classList.toggle("active");' +
-        '        }' +
-        '        function closeSidebar() {' +
-        '            document.getElementById("sidebar").classList.remove("sidebar-open");' +
-        '            document.getElementById("sidebarBackdrop").classList.remove("active");' +
-        '        }' +
-        '        let confirmCallback = null;' +
-        '        let confirmHasInput = false;' +
-        '        let confirmHasSelect = false;' +
-        '        function showConfirmModal(message, callback, okLabel) {' +
-        '            document.getElementById("confirmMessage").innerText = message;' +
-        '            document.getElementById("confirmOkBtn").innerText = okLabel || "Confirm";' +
-        '            document.getElementById("confirmInput").style.display = "none";' +
-        '            document.getElementById("confirmStaffSelect").style.display = "none";' +
-        '            confirmHasInput = false;' +
-        '            confirmHasSelect = false;' +
-        '            confirmCallback = callback;' +
-        '            document.getElementById("confirmOverlay").classList.add("show");' +
-        '        }' +
-        '        function showPromptModal(message, defaultValue, callback, okLabel) {' +
-        '            document.getElementById("confirmMessage").innerText = message;' +
-        '            document.getElementById("confirmOkBtn").innerText = okLabel || "Save";' +
-        '            const input = document.getElementById("confirmInput");' +
-        '            input.style.display = "block";' +
-        '            document.getElementById("confirmStaffSelect").style.display = "none";' +
-        '            input.value = defaultValue || "";' +
-        '            confirmHasInput = true;' +
-        '            confirmHasSelect = false;' +
-        '            confirmCallback = callback;' +
-        '            document.getElementById("confirmOverlay").classList.add("show");' +
-        '            setTimeout(() => input.focus(), 50);' +
-        '        }' +
-        '        function showStaffSelectModal(message, staffList, callback, okLabel) {' +
-        '            document.getElementById("confirmMessage").innerText = message;' +
-        '            document.getElementById("confirmOkBtn").innerText = okLabel || "Reallocate";' +
-        '            document.getElementById("confirmInput").style.display = "none";' +
-        '            const select = document.getElementById("confirmStaffSelect");' +
-        '            select.style.display = "block";' +
-        '            select.innerHTML = \'<option value="" disabled selected>Select staff member</option>\';' +
-        '            staffList.forEach(s => { select.innerHTML += \'<option value="\'+s.name+\'">\'+s.name+\'</option>\'; });' +
-        '            confirmHasInput = false;' +
-        '            confirmHasSelect = true;' +
-        '            confirmCallback = callback;' +
-        '            document.getElementById("confirmOverlay").classList.add("show");' +
-        '        }' +
-        '        function closeConfirmModal(confirmed) {' +
-        '            const inputValue = document.getElementById("confirmInput").value;' +
-        '            const selectValue = document.getElementById("confirmStaffSelect").value;' +
-        '            const hadInput = confirmHasInput;' +
-        '            const hadSelect = confirmHasSelect;' +
-        '            document.getElementById("confirmOverlay").classList.remove("show");' +
-        '            const cb = confirmCallback;' +
-        '            confirmCallback = null;' +
-        '            if (confirmed && cb) {' +
-        '                if (hadSelect) { if (selectValue) cb(selectValue); }' +
-        '                else if (hadInput) { cb(inputValue); }' +
-        '                else { cb(); }' +
-        '            }' +
-        '        }' +
-        '        let adminToastTimer = null;' +
-        '        function showAdminToast(message, isError) {' +
-        '            const toast = document.getElementById("adminToast");' +
-        '            const iconSvg = isError' +
-        '                ? \'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>\'' +
-        '                : \'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>\';' +
-        '            toast.innerHTML =' +
-        '                \'<div class="admin-toast-icon">\' + iconSvg + \'</div>\' +' +
-        '                \'<div class="admin-toast-text"><div class="admin-toast-title">\' + (isError ? "Error" : "Success") + \'</div><div class="admin-toast-message">\' + message + \'</div></div>\' +' +
-        '                \'<div class="admin-toast-progress"></div>\';' +
-        '            toast.className = "admin-toast show" + (isError ? " error" : "");' +
-        '            clearTimeout(adminToastTimer);' +
-        '            adminToastTimer = setTimeout(() => { toast.classList.remove("show"); }, 4000);' +
-        '        }' +
-        '        function toggleFilterPanel() {' +
-        '            const panel = document.getElementById("ticketFilterPanel");' +
-        '            const btn = document.getElementById("toggleFilterBtn");' +
-        '            const isOpen = panel.style.display !== "none";' +
-        '            panel.style.display = isOpen ? "none" : "flex";' +
-        '            if (btn) btn.innerHTML = (isOpen ? \'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>Filters\' : \'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>Hide Filters\');' +
-        '        }' +
-        '        function refreshTicketsDashboard() {' +
-        '            currentStatusFilter = "default-view";' +
-        '            currentPage = 1;' +
-        '            const fromEl = document.getElementById("filterFromDate"); if (fromEl) fromEl.value = "";' +
-        '            const toEl = document.getElementById("filterToDate"); if (toEl) toEl.value = "";' +
-        '            const catEl = document.getElementById("filterCategory"); if (catEl) catEl.value = "";' +
-        '            const sfEl = document.getElementById("filterStaff"); if (sfEl) sfEl.value = "";' +
-        '            const rfEl = document.getElementById("filterRegion"); if (rfEl) rfEl.value = "";' +
-        '            const searchEl = document.getElementById("filterSearchText"); if (searchEl) searchEl.value = "";' +
-        '            switchView("tickets");' +
-        '        }' +
-        '        function switchView(target) {' +
-        '            closeSidebar();' +
-        '            if ((target === "branches" || target === "staff" || target === "audit") && !isAdmin) {' +
-        '                alert("Access Denied: Admins only.");' +
-        '                return;' +
-        '            }' +
-        '            if (target === "admins" && !isSuperAdmin) {' +
-        '                alert("You are not authorized to access this page.");' +
-        '                return;' +
-        '            }' +
-        '            const mainContentEl = document.querySelector(".main-content");' +
-        '            if (mainContentEl) mainContentEl.scrollTop = 0;' +
-        '            document.querySelectorAll(".dashboard-view").forEach(el => el.classList.remove("active"));' +
-        '            document.querySelectorAll(".menu-item").forEach(el => el.classList.remove("active"));' +
-        '            if (target === "tickets") {' +
-        '                document.getElementById("viewTickets").classList.add("active");' +
-        '                document.getElementById("tabTicketsLink").classList.add("active");' +
-        '                document.getElementById("panelViewTitle").innerText = "Helpdesk Operations";' +
-        '                loadTickets();' +
-        '            } else if (target === "reports") {' +
-        '                document.getElementById("viewReports").classList.add("active");' +
-        '                document.getElementById("tabReportsLink").classList.add("active");' +
-        '                document.getElementById("panelViewTitle").innerText = "Monthly Reports";' +
-        '                loadReportCharts();' +
-        '            } else if (target === "password") {' +
-        '                document.getElementById("viewChangePassword").classList.add("active");' +
-        '                document.getElementById("tabPasswordLink").classList.add("active");' +
-        '                document.getElementById("panelViewTitle").innerText = "Change Password";' +
-        '            } else if (target === "branches") {' +
-        '                document.getElementById("viewBranches").classList.add("active");' +
-        '                document.getElementById("tabBranchesLink").classList.add("active");' +
-        '                document.getElementById("panelViewTitle").innerText = "Company Branches Layout";' +
-        '                loadRegionsList();' +
-        '                loadBranchesList();' +
-        '            } else if (target === "staff") {' +
-        '                document.getElementById("viewStaff").classList.add("active");' +
-        '                document.getElementById("tabStaffLink").classList.add("active");' +
-        '                document.getElementById("panelViewTitle").innerText = "Manage IT Staff Profile Queue";' +
-        '                loadStaffList();' +
-        '            } else if (target === "audit") {' +
-        '                document.getElementById("viewAuditLog").classList.add("active");' +
-        '                document.getElementById("tabAuditLink").classList.add("active");' +
-        '                document.getElementById("panelViewTitle").innerText = "Recent Admin Activity";' +
-        '                loadAuditLog();' +
-        '            } else if (target === "admins") {' +
-        '                document.getElementById("viewAdmins").classList.add("active");' +
-        '                document.getElementById("tabAdminsLink").classList.add("active");' +
-        '                document.getElementById("panelViewTitle").innerText = "Manage Region Admins";' +
-        '                loadRegionAdminsList();' +
-        '            } else if (target === "inbox") {' +
-        '                document.getElementById("viewInbox").classList.add("active");' +
-        '                document.getElementById("tabInboxLink").classList.add("active");' +
-        '                document.getElementById("panelViewTitle").innerText = "Inbox";' +
-        '                loadInbox();' +
-        '            }' +
-        '        }' +
-        '        let currentStatusFilter = "default-view";' +
-        '        let currentPage = 1;' +
-        '        const PAGE_SIZE = 10;' +
-        '        function filterByStatus(status) {' +
-        '            currentStatusFilter = status;' +
-        '            currentPage = 1;' +
-        '            loadTickets();' +
-        '        }' +
-        '        async function applyTicketFilters() {' +
-        '            const btn = document.getElementById("searchTicketsBtn");' +
-        '            const defaultHTML = btn.innerHTML;' +
-        '            btn.disabled = true;' +
-        '            btn.innerHTML = \'<span class="admin-spinner"></span>Searching...\';' +
-        '            currentPage = 1;' +
-        '            await loadTickets();' +
-        '            btn.disabled = false;' +
-        '            btn.innerHTML = defaultHTML;' +
-        '        }' +
-        '        function clearTicketFilters() {' +
-        '            document.getElementById("filterFromDate").value = "";' +
-        '            document.getElementById("filterToDate").value = "";' +
-        '            document.getElementById("filterCategory").value = "";' +
-        '            const sf = document.getElementById("filterStaff");' +
-        '            if (sf) sf.value = "";' +
-        '            const rf = document.getElementById("filterRegion");' +
-        '            if (rf) rf.value = "";' +
-        '            const searchEl = document.getElementById("filterSearchText");' +
-        '            if (searchEl) searchEl.value = "";' +
-        '            currentStatusFilter = "default-view";' +
-        '            currentPage = 1;' +
-        '            loadTickets();' +
-        '        }' +
-        '        function goToPage(page) {' +
-        '            currentPage = page;' +
-        '            loadTickets();' +
-        '            const mainContentEl = document.querySelector(".main-content");' +
-        '            if (mainContentEl) mainContentEl.scrollTop = 0;' +
-        '        }' +
-        '        function renderPagination(totalItems) {' +
-        '            const bar = document.getElementById("ticketPagination");' +
-        '            const totalPages = Math.max(1, Math.ceil(totalItems / PAGE_SIZE));' +
-        '            if (currentPage > totalPages) currentPage = totalPages;' +
-        '            if (totalItems === 0) { bar.style.display = "none"; bar.innerHTML = ""; return; }' +
-        '            bar.style.display = "flex";' +
-        '            const startItem = (currentPage - 1) * PAGE_SIZE + 1;' +
-        '            const endItem = Math.min(currentPage * PAGE_SIZE, totalItems);' +
-        '            let pageButtonsHtml = \'<button class="page-btn" \'+(currentPage === 1 ? "disabled" : "")+\' onclick="goToPage(\'+(currentPage - 1)+\')">\u2190 Prev</button>\';' +
-        '            const addPageBtn = (p) => { pageButtonsHtml += \'<button class="page-btn \'+(p === currentPage ? "active" : "")+\'" onclick="goToPage(\'+p+\')">\'+p+\'</button>\'; };' +
-        '            const addEllipsis = () => { pageButtonsHtml += \'<span class="page-ellipsis">\u2026</span>\'; };' +
-        '            const windowSize = 1;' +
-        '            let lastPrinted = 0;' +
-        '            for (let p = 1; p <= totalPages; p++) {' +
-        '                const nearCurrent = Math.abs(p - currentPage) <= windowSize;' +
-        '                const isEdge = p === 1 || p === totalPages;' +
-        '                if (nearCurrent || isEdge) {' +
-        '                    if (p - lastPrinted > 1) addEllipsis();' +
-        '                    addPageBtn(p);' +
-        '                    lastPrinted = p;' +
-        '                }' +
-        '            }' +
-        '            pageButtonsHtml += \'<button class="page-btn" \'+(currentPage === totalPages ? "disabled" : "")+\' onclick="goToPage(\'+(currentPage + 1)+\')">Next \u2192</button>\';' +
-        '            bar.innerHTML = \'<div class="pagination-info">Showing \'+startItem+\' \u2013 \'+endItem+\' of \'+totalItems+\' entries</div><div class="pagination-controls">\'+pageButtonsHtml+\'</div>\';' +
-        '        }' +
-        '        async function loadStaffFilterOptions() {' +
-        '            if (!isAdmin) return;' +
-        '            document.getElementById("staffFilterWrapper").style.display = "block";' +
-        '            const res = await fetch("/tickets/staff-list");' +
-        '            const staff = await res.json();' +
-        '            const select = document.getElementById("filterStaff");' +
-        '            select.innerHTML = \'<option value="">All Staff</option>\';' +
-        '            staff.forEach(s => {' +
-        '                select.innerHTML += \'<option value="\'+s.name+\'">\'+s.name+\'</option>\';' +
-        '            });' +
-        '        }' +
-        '        async function loadRegionFilterOptions() {' +
-        '            if (!isAdmin) return;' +
-        '            const res = await fetch("/tickets/regions");' +
-        '            const regions = await res.json();' +
-        '            const filterWrapper = document.getElementById("regionFilterWrapper");' +
-        '            if (filterWrapper) filterWrapper.style.display = "block";' +
-        '            const filterSelect = document.getElementById("filterRegion");' +
-        '            if (filterSelect) {' +
-        '                filterSelect.innerHTML = \'<option value="">All Regions</option>\';' +
-        '                regions.forEach(r => { filterSelect.innerHTML += \'<option value="\'+r.name+\'">\'+r.name+\'</option>\'; });' +
-        '            }' +
-        '            const reportSelect = document.getElementById("reportRegion");' +
-        '            if (reportSelect) {' +
-        '                reportSelect.innerHTML = \'<option value="">All Regions</option>\';' +
-        '                regions.forEach(r => { reportSelect.innerHTML += \'<option value="\'+r.name+\'">\'+r.name+\'</option>\'; });' +
-        '            }' +
-        '        }' +
-        '        function sortOpenFirstThenResolvedByRecency(list) {' +
-        '            const openTickets = list.filter(t => t.status !== "Resolved");' +
-        '            const resolvedTickets = list.filter(t => t.status === "Resolved");' +
-        '            resolvedTickets.sort((a, b) => new Date(b.resolvedAt || 0) - new Date(a.resolvedAt || 0));' +
-        '            return openTickets.concat(resolvedTickets);' +
-        '        }' +
-        '        async function loadTickets() {' +
-        '            try {' +
-        '            const controller = new AbortController();' +
-        '            const timeout = setTimeout(() => controller.abort(), 15000);' +
-        '            const response = await fetch("/tickets", { signal: controller.signal });' +
-        '            clearTimeout(timeout);' +
-        '            if (response.status === 401) { window.location.href = "/login"; return; }' +
-        '            if (!response.ok) { throw new Error("Ticket request failed (" + response.status + ")"); }' +
-        '            let tickets = await response.json();' +
-        '            const staffFilterEl = document.getElementById("filterStaff");' +
-        '            const staffFilterValue = staffFilterEl ? staffFilterEl.value : "";' +
-        '            if (staffFilterValue) { tickets = tickets.filter(t => t.assignedTo === staffFilterValue); }' +
-        '            const regionFilterEl = document.getElementById("filterRegion");' +
-        '            const regionFilterValue = regionFilterEl ? regionFilterEl.value : "";' +
-        '            if (regionFilterValue) {' +
-        '                const branchRes = await fetch("/public-branches");' +
-        '                const allBranches = await branchRes.json();' +
-        '                const branchNamesInRegion = allBranches.filter(b => (b.region || "Unassigned") === regionFilterValue).map(b => b.name);' +
-        '                tickets = tickets.filter(t => branchNamesInRegion.includes(t.branch));' +
-        '            }' +
-        '            const categoryFilterValue = document.getElementById("filterCategory").value;' +
-        '            if (categoryFilterValue) { tickets = tickets.filter(t => (t.category || "Other") === categoryFilterValue); }' +
-        '            const searchTextValue = document.getElementById("filterSearchText").value.trim().toLowerCase();' +
-        '            if (searchTextValue) {' +
-        '                tickets = tickets.filter(t => {' +
-        '                    const ticketNumStr = String(t.ticketNumber || "").toLowerCase();' +
-        '                    const ticketNumPadded = String(t.ticketNumber || "").padStart(4, "0").toLowerCase();' +
-        '                    const submittedBy = (t.submittedBy || "").toLowerCase();' +
-        '                    const branch = (t.branch || "").toLowerCase();' +
-        '                    const mobile = (t.mobile || "").toLowerCase();' +
-        '                    return ticketNumStr.includes(searchTextValue) || ticketNumPadded.includes(searchTextValue) || submittedBy.includes(searchTextValue) || branch.includes(searchTextValue) || mobile.includes(searchTextValue);' +
-        '                });' +
-        '            }' +
-        '            const fromVal = document.getElementById("filterFromDate").value;' +
-        '            const toVal = document.getElementById("filterToDate").value;' +
-        '            if (fromVal) { const fromDate = new Date(fromVal + "T00:00:00"); tickets = tickets.filter(t => t.createdAt && new Date(t.createdAt) >= fromDate); }' +
-        '            if (toVal) { const toDate = new Date(toVal + "T23:59:59"); tickets = tickets.filter(t => t.createdAt && new Date(t.createdAt) <= toDate); }' +
-        '            document.getElementById("statOpen").innerText = tickets.filter(t => t.status === "Open").length;' +
-        '            document.getElementById("statResolved").innerText = tickets.filter(t => t.status === "Resolved").length;' +
-        '            document.getElementById("statEscalated").innerText = tickets.filter(t => t.escalated && t.status !== "Resolved").length;' +
-        '            document.getElementById("statMine").innerText = tickets.length;' +
-        '            if (currentStatusFilter === "default-view") { tickets = tickets.filter(t => t.status === "Open"); }' +
-        '            else if (currentStatusFilter === "Escalated") { tickets = tickets.filter(t => t.escalated); tickets = sortOpenFirstThenResolvedByRecency(tickets); }' +
-        '            else if (currentStatusFilter === "Resolved") { tickets = tickets.filter(t => t.status === "Resolved"); tickets.sort((a, b) => new Date(b.resolvedAt || 0) - new Date(a.resolvedAt || 0)); }' +
-        '            else if (currentStatusFilter === "all") { tickets = sortOpenFirstThenResolvedByRecency(tickets); }' +
-        '            else if (currentStatusFilter !== "all") { tickets = tickets.filter(t => t.status === currentStatusFilter); }' +
-        '            const totalFilteredCount = tickets.length;' +
-        '            const totalPages = Math.max(1, Math.ceil(totalFilteredCount / PAGE_SIZE));' +
-        '            if (currentPage > totalPages) currentPage = totalPages;' +
-        '            if (currentPage < 1) currentPage = 1;' +
-        '            const pageStart = (currentPage - 1) * PAGE_SIZE;' +
-        '            const pagedTickets = tickets.slice(pageStart, pageStart + PAGE_SIZE);' +
-        '            const listDiv = document.getElementById("ticketList");' +
-        '            if (pagedTickets.length === 0) {' +
-        '                listDiv.innerHTML = \'<p style="text-align: center; color: #718096; padding: 40px 0;">No support requests logs found.</p>\';' +
-        '                renderPagination(totalFilteredCount);' +
-        '                return;' +
-        '            }' +
-        '            let ticketCardsHtml = "";' +
-        '            pagedTickets.forEach(ticket => {' +
-        '                const isResolved = ticket.status === "Resolved";' +
-        '                const isMineOrAdmin = isAdmin || ticket.assignedTo === currentUser;' +
-        '                const reallocateBtn = (isAdmin && !isResolved && ticket.escalated) ? \'<button class="reallocate-btn" onclick="reallocateTicket(\\\'\'+ticket._id+\'\\\')">Reallocate</button>\' : "";' +
-        '                const actionBtn = (!isResolved && isMineOrAdmin) ? \'<button class="resolve-btn" onclick="resolveTicket(\\\'\'+ticket._id+\'\\\')">Resolve Ticket</button>\' : "";' +
-        '                const escalateBtn = (!isAdmin && !isResolved && !ticket.escalated && ticket.assignedTo === currentUser) ? \'<button class="escalate-btn" onclick="escalateTicket(\\\'\'+ticket._id+\'\\\')">Escalate to Admin</button>\' : "";' +
-        '                const waitingNote = (!isAdmin && !isResolved && !isMineOrAdmin) ? \'<span class="badge" style="background:#fef3c7;color:#92400e;">Waiting on Admin</span>\' : "";' +
-        '                const actionsHtml = (reallocateBtn || actionBtn || escalateBtn || waitingNote) ? \'<div class="ticket-actions">\'+reallocateBtn+actionBtn+escalateBtn+waitingNote+\'</div>\' : "";' +
-        '                const escalatedBadge = ticket.escalated ? \'<span class="badge badge-escalated">Escalated</span>\' : "";' +
-        '                const resolvedLine = (ticket.status === "Resolved" && ticket.resolvedAt) ? \'<div class="assignment-row"><span class="assignment-label">Resolved</span><span class="assignment-value">\'+new Date(ticket.resolvedAt).toLocaleString()+(ticket.resolvedBy ? \' by \'+ticket.resolvedBy : "")+\'</span></div>\' : "";' +
-        '                const escalationLine = ticket.escalated ? \'<div class="assignment-row"><span class="assignment-label">Escalation</span><span class="assignment-value">\'+ticket.status+\' (\'+(ticket.escalatedBy || "Staff")+\' escalated\'+(ticket.escalatedAt ? " on "+new Date(ticket.escalatedAt).toLocaleString() : "")+\')</span></div>\'+(ticket.escalationReason ? \'<div class="assignment-row"><span class="assignment-label">Reason</span><span class="assignment-value">\'+ticket.escalationReason+\'</span></div>\' : "") : "";' +
-        '                const cardStateClass = isResolved ? "ticket-resolved" : (ticket.priority === "High" ? "ticket-high-priority" : (ticket.escalated ? "ticket-escalated" : ""));' +
-        '                const imageHtml = ticket.screenshot ? \'<a href="\'+ticket.screenshot+\'" target="_blank"><img src="\'+ticket.screenshot+\'" class="screenshot-preview"></a>\' : "";' +
-        '                let commentListHtml = "";' +
-        '                if (ticket.comments) {' +
-        '                    ticket.comments.forEach(c => {' +
-        '                        commentListHtml += \'<div class="comment-item"><strong>\'+c.author+\':</strong> \'+c.text+(c.attachment ? \' <a href="\'+c.attachment+\'" target="_blank">\uD83D\uDCCE Attachment</a>\' : "")+\'</div>\';' +
-        '                    });' +
-        '                }' +
-        '                ticketCardsHtml += \'<div class="ticket-card \'+cardStateClass+\'"><div class="ticket-header"><div><h3 class="ticket-title">#\'+String(ticket.ticketNumber).padStart(4,"0")+\' \'+ticket.title+\'</h3><div style="margin-top: 8px;"><span class="badge p-\'+ticket.priority+\'">\'+ticket.priority+\'</span><span class="badge status-\'+ticket.status.toLowerCase()+\'">\'+ticket.status+\'</span><span class="badge badge-category">\'+(ticket.category || "Other")+\'</span>\'+escalatedBadge+\'</div></div>\'+actionsHtml+\'</div><p class="ticket-desc">\'+ticket.description+\'</p>\'+imageHtml+\'<div class="assignment-info"><div class="assignment-row"><span class="assignment-label">Submitted By</span><span class="assignment-value">\'+(ticket.submittedBy || "Unknown")+(ticket.designation ? " ("+ticket.designation+")" : "")+\'</span></div><div class="assignment-row"><span class="assignment-label">Branch</span><span class="assignment-value">\'+ticket.branch+\'</span></div><div class="assignment-row"><span class="assignment-label">Mobile</span><span class="assignment-value">\'+ticket.mobile+\'</span></div><div class="assignment-row"><span class="assignment-label">Assigned</span><span class="assignment-value">\'+ticket.assignedTo+\'</span></div><div class="assignment-row"><span class="assignment-label">Submitted</span><span class="assignment-value">\'+(ticket.createdAt ? new Date(ticket.createdAt).toLocaleString() : "N/A")+\'</span></div>\'+escalationLine+resolvedLine+\'</div><div class="comments-section"><h4 class="comments-header">Internal Work Notes</h4><div>\'+(commentListHtml || "No updates.")+\'</div><div class="comment-form"><input type="text" id="input-\'+ticket._id+\'" placeholder="Write operational update..."><label class="comment-attach-btn" title="Attach a file (optional)">📎<input type="file" id="attachment-\'+ticket._id+\'" style="display:none;" accept="image/jpeg,image/png,image/webp,image/gif,application/pdf,.jpg,.jpeg,.png,.webp,.gif,.pdf" onchange="updateAttachmentLabel(\\\'\'+ticket._id+\'\\\')"></label><span id="attachmentName-\'+ticket._id+\'" class="attachment-name-tag"></span><button onclick="addComment(\\\'\'+ticket._id+\'\\\')">Post</button></div></div></div>\';' +
-        '            });' +
-        '            listDiv.innerHTML = ticketCardsHtml;' +
-        '            renderPagination(totalFilteredCount);' +
-        '            } catch (err) {' +
-        '                console.error("Could not load tickets:", err);' +
-        '                const message = err.name === "AbortError" ? "Ticket loading timed out. Check that the MongoDB connection is available." : "Could not load tickets. Please refresh the page. If this continues, check the server connection.";' +
-        '                document.getElementById("ticketList").innerHTML = \'<p style="text-align:center;color:#c53030;padding:40px 0;">\'+message+\'</p>\';' +
-        '                document.getElementById("ticketPagination").style.display = "none";' +
-        '            }' +
-        '        }' +
-        'async function loadRegionsList() {' +
-        '    const response = await fetch("/tickets/regions");' +
-        '    const regions = await response.json();' +
-        '    const tbody = document.getElementById("regionTableBody");' +
-        '    if (tbody) {' +
-        '        if (regions.length === 0) {' +
-        '            tbody.innerHTML = \'<tr><td colspan="3" style="text-align: center; color: #a0aec0; padding: 20px;">No regions added yet.</td></tr>\';' +
-        '        } else {' +
-        '            let regionRowsHtml = "";' +
-        '            regions.forEach(r => {' +
-        '                const safeName = r.name.replace(/\'/g, "\\\\\'");' +
-        '                regionRowsHtml += \'<tr><td>\'+r.name+\'</td><td><button class="branch-delete-btn" onclick="editRegion(\\\'\'+r._id+\'\\\', \\\'\'+safeName+\'\\\')">Edit</button></td><td><button class="branch-delete-btn" onclick="deleteRegion(\\\'\'+r._id+\'\\\')">Delete</button></td></tr>\';' +
-        '            });' +
-        '            tbody.innerHTML = regionRowsHtml;' +
-        '        }' +
-        '    }' +
-        '    const select = document.getElementById("newBranchRegion");' +
-        '    if (select) {' +
-        '        let optionsHtml = \'<option value="" disabled selected>Select Region</option>\';' +
-        '        regions.forEach(r => {' +
-        '            optionsHtml += \'<option value="\'+r.name+\'">\'+r.name+\'</option>\';' +
-        '        });' +
-        '        select.innerHTML = optionsHtml;' +
-        '    }' +
-        '}' +
-        'async function addNewRegion() {' +
-        '    const input = document.getElementById("newRegionName");' +
-        '    const name = input.value.trim();' +
-        '    if (!name) return;' +
-        '    const btn = document.getElementById("addRegionBtn");' +
-        '    const defaultHTML = btn.innerHTML;' +
-        '    btn.disabled = true;' +
-        '    btn.innerHTML = \'<span class="admin-spinner"></span>Adding...\';' +
-        '    try {' +
-        '        const response = await fetch("/tickets/regions", {' +
-        '            method: "POST",' +
-        '            headers: { "Content-Type": "application/json" },' +
-        '            body: JSON.stringify({ name })' +
-        '        });' +
-        '        if (response.ok) {' +
-        '            input.value = "";' +
-        '            showAdminToast("Region added successfully.");' +
-        '            loadRegionsList();' +
-        '            loadBranchesList();' +
-        '        } else {' +
-        '            const err = await response.json();' +
-        '            showAdminToast(err.error || "Could not add region.", true);' +
-        '        }' +
-        '    } catch (err) {' +
-        '        showAdminToast("Something went wrong. Please try again.", true);' +
-        '    } finally {' +
-        '        btn.disabled = false;' +
-        '        btn.innerHTML = defaultHTML;' +
-        '    }' +
-        '}' +
-        'async function editRegion(id, currentName) {' +
-        '    showPromptModal("Edit region name:", currentName, async (newName) => {' +
-        '        if (!newName || !newName.trim() || newName === currentName) return;' +
-        '        const response = await fetch("/tickets/regions/" + id, {' +
-        '            method: "PUT",' +
-        '            headers: { "Content-Type": "application/json" },' +
-        '            body: JSON.stringify({ name: newName.trim() })' +
-        '        });' +
-        '        if (response.ok) { showAdminToast("Region updated successfully."); loadRegionsList(); loadBranchesList(); }' +
-        '        else { const err = await response.json(); showAdminToast(err.error || "Could not update region.", true); }' +
-        '    }, "Save");' +
-        '}' +
-        'async function deleteRegion(id) {' +
-        '    showConfirmModal("Remove this region?", async () => {' +
-        '        const response = await fetch("/tickets/regions/" + id, { method: "DELETE" });' +
-        '        if (response.ok) { showAdminToast("Region removed."); loadRegionsList(); loadBranchesList(); }' +
-        '        else { const err = await response.json(); showAdminToast(err.error || "Could not delete region.", true); }' +
-        '    }, "Delete");' +
-        '}' +
-        'async function loadBranchesList() {' +
-        '    const [branchRes, regionRes] = await Promise.all([fetch("/public-branches"), fetch("/tickets/regions")]);' +
-        '    const branches = await branchRes.json();' +
-        '    const regions = await regionRes.json();' +
-        '    const allRegionNames = regions.map(r => r.name);' +
-        '    if (allRegionNames.indexOf("Unassigned") === -1) allRegionNames.push("Unassigned");' +
-        '    const container = document.getElementById("branchGroupsContainer");' +
-        '    if (branches.length === 0) {' +
-        '        container.innerHTML = \'<p style="text-align: center; color: #a0aec0; padding: 20px;">No branch locations added yet.</p>\';' +
-        '        return;' +
-        '    }' +
-        '    const groups = {};' +
-        '    branches.forEach(b => {' +
-        '        const region = b.region || "Unassigned";' +
-        '        if (!groups[region]) groups[region] = [];' +
-        '        groups[region].push(b);' +
-        '    });' +
-        '    let groupsHtml = "";' +
-        '    Object.keys(groups).sort().forEach(region => {' +
-        '        let rowsHtml = "";' +
-        '        groups[region].forEach(b => {' +
-        '            const safeName = b.name.replace(/\'/g, "\\\\\'");' +
-        '            let regionOptionsHtml = "";' +
-        '            allRegionNames.forEach(rn => {' +
-        '                regionOptionsHtml += \'<option value="\'+rn+\'"\'+(rn === region ? \' selected\' : \'\')+\'>\'+rn+\'</option>\';' +
-        '            });' +
-        '            rowsHtml += \'<tr><td>\'+b.name+\'</td><td><select onchange="moveBranchRegion(\\\'\'+b._id+\'\\\', this.value)" style="padding:6px;border:1px solid #cbd5e0;border-radius:4px;font-size:13px;">\'+regionOptionsHtml+\'</select></td><td><button class="branch-delete-btn" onclick="editBranch(\\\'\'+b._id+\'\\\', \\\'\'+safeName+\'\\\')">Edit</button></td><td><button class="branch-delete-btn" onclick="deleteBranch(\\\'\'+b._id+\'\\\')">Delete</button></td></tr>\';' +
-        '        });' +
-        '        groupsHtml +=' +
-        '            \'<h3 style="margin: 20px 0 8px; font-size: 14px; font-weight: 700; color: #4a5568; text-transform: uppercase; letter-spacing: 0.5px;">\' + region + \'</h3>\' +' +
-        '            \'<table class="branch-table"><thead><tr><th>Branch Name</th><th>Region</th><th>Edit</th><th>Delete</th></tr></thead><tbody>\' + rowsHtml + \'</tbody></table>\';' +
-        '    });' +
-        '    container.innerHTML = groupsHtml;' +
-        '}' +
-        'async function addNewBranch() {' +
-        '    const input = document.getElementById("newBranchName");' +
-        '    const regionSelect = document.getElementById("newBranchRegion");' +
-        '    const name = input.value.trim();' +
-        '    const region = regionSelect ? regionSelect.value : "";' +
-        '    if (!name || (isSuperAdmin && !region)) { showAdminToast("Please enter a branch name and select a region.", true); return; }' +
-        '    const btn = document.getElementById("addBranchBtn");' +
-        '    const defaultHTML = btn.innerHTML;' +
-        '    btn.disabled = true;' +
-        '    btn.innerHTML = \'<span class="admin-spinner"></span>Adding...\';' +
-        '    try {' +
-        '        const response = await fetch("/tickets/branches", {' +
-        '            method: "POST",' +
-        '            headers: { "Content-Type": "application/json" },' +
-        '            body: JSON.stringify({ name, region })' +
-        '        });' +
-        '        if (response.ok) {' +
-        '            input.value = "";' +
-        '            if (regionSelect) regionSelect.value = "";' +
-        '            showAdminToast("Branch added successfully.");' +
-        '            loadBranchesList();' +
-        '        } else {' +
-        '            const err = await response.json();' +
-        '            showAdminToast(err.error || "Could not add branch.", true);' +
-        '        }' +
-        '    } catch (err) {' +
-        '        showAdminToast("Something went wrong. Please try again.", true);' +
-        '    } finally {' +
-        '        btn.disabled = false;' +
-        '        btn.innerHTML = defaultHTML;' +
-        '    }' +
-        '}' +
-        'async function editBranch(id, currentName) {' +
-        '    showPromptModal("Edit branch name:", currentName, async (newName) => {' +
-        '        if (!newName || !newName.trim() || newName === currentName) return;' +
-        '        const response = await fetch("/tickets/branches/" + id, {' +
-        '            method: "PUT",' +
-        '            headers: { "Content-Type": "application/json" },' +
-        '            body: JSON.stringify({ name: newName.trim() })' +
-        '        });' +
-        '        if (response.ok) { showAdminToast("Branch updated successfully."); loadBranchesList(); }' +
-        '        else { showAdminToast("Could not update branch.", true); }' +
-        '    }, "Save");' +
-        '}' +
-        'async function deleteBranch(id) {' +
-        '    showConfirmModal("Remove this branch option?", async () => {' +
-        '        const response = await fetch("/tickets/branches/" + id, { method: "DELETE" });' +
-        '        if(response.ok) { showAdminToast("Branch removed."); loadBranchesList(); }' +
-        '        else { showAdminToast("Could not delete branch.", true); }' +
-        '    }, "Delete");' +
-        '}' +
-        'async function moveBranchRegion(id, newRegion) {' +
-        '    const response = await fetch("/tickets/branches/" + id, {' +
-        '        method: "PUT",' +
-        '        headers: { "Content-Type": "application/json" },' +
-        '        body: JSON.stringify({ region: newRegion })' +
-        '    });' +
-        '    if (response.ok) { showAdminToast("Branch moved to " + newRegion + "."); loadBranchesList(); }' +
-        '    else { showAdminToast("Could not move branch to that region.", true); }' +
-        '}' +
-        '        let cachedStaffList = [];' +
-        '        let cachedStaffBranches = [];' +
-        '        let cachedStaffAssignments = {};' +
-        '        let cachedRegionsForStaff = [];' +
-        '        async function loadStaffList() {' +
-        '            const requests = [fetch("/tickets/staff-list"), fetch("/public-branches"), fetch("/tickets/staff-branches")];' +
-        '            if (isSuperAdmin) requests.push(fetch("/tickets/regions"));' +
-        '            const responses = await Promise.all(requests);' +
-        '            cachedStaffList = await responses[0].json();' +
-        '            cachedStaffBranches = await responses[1].json();' +
-        '            cachedStaffAssignments = await responses[2].json();' +
-        '            if (isSuperAdmin) {' +
-        '                cachedRegionsForStaff = await responses[3].json();' +
-        '                const regionSelectEl = document.getElementById("newStaffRegion");' +
-        '                if (regionSelectEl && !regionSelectEl.dataset.loaded) {' +
-        '                    cachedRegionsForStaff.forEach(r => { regionSelectEl.innerHTML += \'<option value="\'+r.name+\'">\'+r.name+\'</option>\'; });' +
-        '                    regionSelectEl.dataset.loaded = "1";' +
-        '                }' +
-        '            }' +
-        '            renderStaffTable();' +
-        '        }' +
-        '        function renderStaffTable() {' +
-        '            const searchInput = document.getElementById("staffSearchInput");' +
-        '            const searchValue = searchInput ? searchInput.value.trim().toLowerCase() : "";' +
-        '            const staff = searchValue' +
-        '                ? cachedStaffList.filter(s => (s.name||"").toLowerCase().includes(searchValue) || (s.id||"").toLowerCase().includes(searchValue) || (s.email||"").toLowerCase().includes(searchValue) || (s.region||"").toLowerCase().includes(searchValue))' +
-        '                : cachedStaffList;' +
-        '            const branches = cachedStaffBranches;' +
-        '            const assignments = cachedStaffAssignments;' +
-        '            const tbody = document.getElementById("staffTableBody");' +
-        '            if (staff.length === 0) {' +
-        '                const colspan = isSuperAdmin ? 7 : 6;' +
-        '                tbody.innerHTML = \'<tr><td colspan="\'+colspan+\'" style="text-align:center;color:#a0aec0;padding:20px;">No staff match your search.</td></tr>\';' +
-        '                return;' +
-        '            }' +
-        '            let rowsHtml = "";' +
-        '            staff.forEach(s => {' +
-        '                const assigned = assignments[s.id] || [];' +
-        '                let checkboxesHtml = "";' +
-        '                if (branches.length === 0) {' +
-        '                    checkboxesHtml = \'<span style="color:#a0aec0;">No branches added yet</span>\';' +
-        '                } else {' +
-        '                    const regionGroups = {};' +
-        '                    branches.forEach(b => {' +
-        '                        const region = b.region || "Unassigned";' +
-        '                        if (!regionGroups[region]) regionGroups[region] = [];' +
-        '                        regionGroups[region].push(b);' +
-        '                    });' +
-        '                    Object.keys(regionGroups).sort().forEach(region => {' +
-        '                        checkboxesHtml += \'<div style="font-size:11px;font-weight:700;color:#718096;text-transform:uppercase;margin:6px 0 3px;">\' + region + \'</div>\';' +
-        '                        regionGroups[region].forEach(b => {' +
-        '                            const checked = assigned.includes(b.name) ? "checked" : "";' +
-        '                            checkboxesHtml += \'<label style="display:inline-flex;align-items:center;gap:4px;margin-right:12px;font-weight:normal;font-size:13px;"><input type="checkbox" value="\'+b.name+\'" \'+checked+\' onchange="updateStaffBranches(\\\'\'+s.id+\'\\\')" class="branch-check-\'+s.id+\'"> \'+b.name+\'</label>\';' +
-        '                        });' +
-        '                    });' +
-        '                }' +
-        '                let idCell, nameCell, emailCell, editCell, deleteCell;' +
-        '                if (editingStaffIds.has(s.id)) {' +
-        '                    idCell = isSuperAdmin ? \'<input type="text" id="editStaffId-\'+s.id+\'" value="\'+s.id+\'" style="width:100%;padding:6px;border:1px solid #cbd5e0;border-radius:4px;">\' : s.id;' +
-        '                    nameCell = \'<input type="text" id="editName-\'+s.id+\'" value="\'+s.name+\'" style="width:100%;padding:6px;border:1px solid #cbd5e0;border-radius:4px;">\';' +
-        '                    emailCell = \'<input type="email" id="editEmail-\'+s.id+\'" value="\'+s.email+\'" style="width:100%;padding:6px;border:1px solid #cbd5e0;border-radius:4px;margin-bottom:4px;"><input type="text" id="editPassword-\'+s.id+\'" placeholder="New password (optional)" style="width:100%;padding:6px;border:1px solid #cbd5e0;border-radius:4px;">\';' +
-        '                    editCell = \'<button type="button" class="resolve-btn" onclick="saveStaffEdit(\\\'\'+s.id+\'\\\')">Save</button>\';' +
-        '                    deleteCell = \'<button type="button" class="branch-delete-btn" onclick="toggleEditStaff(\\\'\'+s.id+\'\\\')">Cancel</button>\';' +
-        '                } else {' +
-        '                    idCell = s.id;' +
-        '                    nameCell = s.name;' +
-        '                    emailCell = s.email;' +
-        '                    editCell = \'<button type="button" class="branch-delete-btn" onclick="toggleEditStaff(\\\'\'+s.id+\'\\\')">Edit</button>\';' +
-        '                    deleteCell = \'<button type="button" class="branch-delete-btn" onclick="deleteStaff(\\\'\'+s.id+\'\\\')">Delete</button>\';' +
-        '                }' +
-        '                let regionCell = "";' +
-        '                if (isSuperAdmin) {' +
-        '                    if (editingStaffIds.has(s.id)) {' +
-        '                        let regionOptionsHtml = \'<option value="">Unassigned</option>\';' +
-        '                        cachedRegionsForStaff.forEach(r => { regionOptionsHtml += \'<option value="\'+r.name+\'"\'+(r.name === s.region ? \' selected\' : \'\')+\'>\'+r.name+\'</option>\'; });' +
-        '                        regionCell = \'<td><select id="editStaffRegion-\'+s.id+\'" style="padding:6px;border:1px solid #cbd5e0;border-radius:4px;">\'+regionOptionsHtml+\'</select></td>\';' +
-        '                    } else {' +
-        '                        regionCell = \'<td>\'+(s.region || "Unassigned")+\'</td>\';' +
-        '                    }' +
-        '                }' +
-        '                rowsHtml += \'<tr><td>\'+idCell+\'</td><td>\'+nameCell+\'</td><td>\'+emailCell+\'</td>\'+regionCell+\'<td>\'+checkboxesHtml+\'</td><td>\'+editCell+\'</td><td>\'+deleteCell+\'</td></tr>\';' +
-        '            });' +
-        '            tbody.innerHTML = rowsHtml;' +
-        '        }' +
-        '        let editingStaffIds = new Set();' +
-        '        function getMainScroll() {' +
-        '            const mainEl = document.querySelector(".main-content");' +
-        '            return { main: mainEl ? mainEl.scrollTop : 0, win: window.scrollY || document.documentElement.scrollTop || 0 };' +
-        '        }' +
-        '        function setMainScroll(pos) {' +
-        '            const mainEl = document.querySelector(".main-content");' +
-        '            const apply = () => {' +
-        '                if (mainEl) mainEl.scrollTop = pos.main;' +
-        '                window.scrollTo(0, pos.win);' +
-        '            };' +
-        '            apply();' +
-        '            requestAnimationFrame(() => { apply(); requestAnimationFrame(apply); });' +
-        '            setTimeout(apply, 50);' +
-        '        }' +
-        '        function toggleEditStaff(staffId) {' +
-        '            const scrollPos = getMainScroll();' +
-        '            if (document.activeElement && document.activeElement.blur) document.activeElement.blur();' +
-        '            if (editingStaffIds.has(staffId)) editingStaffIds.delete(staffId);' +
-        '            else editingStaffIds.add(staffId);' +
-        '            renderStaffTable();' +
-        '            setMainScroll(scrollPos);' +
-        '        }' +
-        '        async function saveStaffEdit(staffId) {' +
-        '            const scrollPos = getMainScroll();' +
-        '            if (document.activeElement && document.activeElement.blur) document.activeElement.blur();' +
-        '            const name = document.getElementById("editName-" + staffId).value.trim();' +
-        '            const email = document.getElementById("editEmail-" + staffId).value.trim();' +
-        '            const password = document.getElementById("editPassword-" + staffId).value.trim();' +
-        '            if (!name || !email) { showAdminToast("Name and email are required.", true); return; }' +
-        '            const body = { name, email };' +
-        '            if (password) body.password = password;' +
-        '            if (isSuperAdmin) {' +
-        '                const regionEl = document.getElementById("editStaffRegion-" + staffId);' +
-        '                if (regionEl) body.region = regionEl.value;' +
-        '                const idEl = document.getElementById("editStaffId-" + staffId);' +
-        '                if (idEl) {' +
-        '                    const newId = idEl.value.trim();' +
-        '                    if (!newId) { showAdminToast("Staff ID cannot be empty.", true); return; }' +
-        '                    body.newStaffId = newId;' +
-        '                }' +
-        '            }' +
-        '            const response = await fetch("/tickets/staff/" + staffId, {' +
-        '                method: "PUT",' +
-        '                headers: { "Content-Type": "application/json" },' +
-        '                body: JSON.stringify(body)' +
-        '            });' +
-        '            if (response.ok) {' +
-        '                editingStaffIds.delete(staffId);' +
-        '                showAdminToast("Staff member updated.");' +
-        '                await loadStaffList();' +
-        '                setMainScroll(scrollPos);' +
-        '            } else {' +
-        '                const err = await response.json().catch(() => ({}));' +
-        '                showAdminToast(err.error || "Could not update staff member.", true);' +
-        '                setMainScroll(scrollPos);' +
-        '            }' +
-        '        }' +
-        '        async function deleteStaff(staffId) {' +
-        '            showConfirmModal("Remove this staff member? This cannot be undone.", async () => {' +
-        '                const scrollPos = getMainScroll();' +
-        '                const response = await fetch("/tickets/staff/" + staffId, { method: "DELETE" });' +
-        '                if (response.ok) { await loadStaffList(); setMainScroll(scrollPos); }' +
-        '                else showAdminToast("Could not delete staff member.", true);' +
-        '            }, "Delete");' +
-        '        }' +
-        '        let editingAdminIds = new Set();' +
-        '        async function loadRegionAdminsList() {' +
-        '            const [adminsRes, regionsRes] = await Promise.all([fetch("/region-admins"), fetch("/tickets/regions")]);' +
-        '            const admins = await adminsRes.json();' +
-        '            const regions = await regionsRes.json();' +
-        '            const regionSelectEl = document.getElementById("newAdminRegion");' +
-        '            if (regionSelectEl && !regionSelectEl.dataset.loaded) {' +
-        '                regions.forEach(r => { regionSelectEl.innerHTML += \'<option value="\'+r.name+\'">\'+r.name+\'</option>\'; });' +
-        '                regionSelectEl.dataset.loaded = "1";' +
-        '            }' +
-        '            const tbody = document.getElementById("regionAdminsTableBody");' +
-        '            if (admins.length === 0) {' +
-        '                tbody.innerHTML = \'<tr><td colspan="6" style="text-align: center; color: #a0aec0; padding: 20px;">No region admins added yet.</td></tr>\';' +
-        '                return;' +
-        '            }' +
-        '            let rowsHtml = "";' +
-        '            admins.forEach(a => {' +
-        '                let nameCell, regionCell, editCell;' +
-        '                if (editingAdminIds.has(a.id)) {' +
-        '                    nameCell = \'<input type="text" id="editAdminName-\'+a.id+\'" value="\'+a.name+\'" style="width:100%;padding:6px;border:1px solid #cbd5e0;border-radius:4px;">\';' +
-        '                    let regionOptionsHtml = "";' +
-        '                    regions.forEach(r => { regionOptionsHtml += \'<option value="\'+r.name+\'"\'+(r.name === a.region ? \' selected\' : \'\')+\'>\'+r.name+\'</option>\'; });' +
-        '                    regionCell = \'<select id="editAdminRegion-\'+a.id+\'" style="padding:6px;border:1px solid #cbd5e0;border-radius:4px;">\'+regionOptionsHtml+\'</select>\';' +
-        '                    editCell = \'<input type="text" id="editAdminPassword-\'+a.id+\'" placeholder="New password (optional)" style="width:100%;padding:6px;border:1px solid #cbd5e0;border-radius:4px;margin-bottom:4px;"><button type="button" class="resolve-btn" onclick="saveRegionAdminEdit(\\\'\'+a.id+\'\\\')">Save</button> <button type="button" class="branch-delete-btn" onclick="toggleEditRegionAdmin(\\\'\'+a.id+\'\\\')">Cancel</button>\';' +
-        '                } else {' +
-        '                    nameCell = a.name;' +
-        '                    regionCell = a.region;' +
-        '                    editCell = \'<button type="button" class="branch-delete-btn" onclick="toggleEditRegionAdmin(\\\'\'+a.id+\'\\\')">Edit</button>\';' +
-        '                }' +
-        '                const statusBadge = a.enabled ? \'<span class="badge status-resolved">Enabled</span>\' : \'<span class="badge p-High">Disabled</span>\';' +
-        '                const toggleBtn = \'<button type="button" class="branch-delete-btn" onclick="toggleRegionAdminEnabled(\\\'\'+a.id+\'\\\', \'+(!a.enabled)+\')">\'+ (a.enabled ? "Disable" : "Enable") +\'</button>\';' +
-        '                rowsHtml += \'<tr><td>\'+nameCell+\'</td><td>\'+a.username+\'</td><td>\'+regionCell+\'</td><td>\'+statusBadge+\' \'+toggleBtn+\'</td><td>\'+editCell+\'</td><td><button type="button" class="branch-delete-btn" onclick="deleteRegionAdmin(\\\'\'+a.id+\'\\\')">Delete</button></td></tr>\';' +
-        '            });' +
-        '            tbody.innerHTML = rowsHtml;' +
-        '        }' +
-        '        function toggleEditRegionAdmin(id) {' +
-        '            const scrollPos = getMainScroll();' +
-        '            if (editingAdminIds.has(id)) editingAdminIds.delete(id);' +
-        '            else editingAdminIds.add(id);' +
-        '            loadRegionAdminsList().then(() => setMainScroll(scrollPos));' +
-        '        }' +
-        '        async function saveRegionAdminEdit(id) {' +
-        '            const scrollPos = getMainScroll();' +
-        '            const name = document.getElementById("editAdminName-" + id).value.trim();' +
-        '            const region = document.getElementById("editAdminRegion-" + id).value;' +
-        '            const password = document.getElementById("editAdminPassword-" + id).value.trim();' +
-        '            if (!name || !region) { showAdminToast("Name and region are required.", true); return; }' +
-        '            const body = { name, region };' +
-        '            if (password) body.password = password;' +
-        '            const response = await fetch("/region-admins/" + id, {' +
-        '                method: "PUT",' +
-        '                headers: { "Content-Type": "application/json" },' +
-        '                body: JSON.stringify(body)' +
-        '            });' +
-        '            if (response.ok) { editingAdminIds.delete(id); showAdminToast("Region admin updated."); await loadRegionAdminsList(); }' +
-        '            else { const err = await response.json(); showAdminToast(err.error || "Could not update region admin.", true); }' +
-        '            setMainScroll(scrollPos);' +
-        '        }' +
-        '        async function toggleRegionAdminEnabled(id, enabled) {' +
-        '            const scrollPos = getMainScroll();' +
-        '            const response = await fetch("/region-admins/" + id, {' +
-        '                method: "PUT",' +
-        '                headers: { "Content-Type": "application/json" },' +
-        '                body: JSON.stringify({ enabled })' +
-        '            });' +
-        '            if (response.ok) { showAdminToast(enabled ? "Admin enabled." : "Admin disabled."); await loadRegionAdminsList(); }' +
-        '            else { showAdminToast("Could not update region admin.", true); }' +
-        '            setMainScroll(scrollPos);' +
-        '        }' +
-        '        async function deleteRegionAdmin(id) {' +
-        '            showConfirmModal("Remove this region admin? This cannot be undone.", async () => {' +
-        '                const scrollPos = getMainScroll();' +
-        '                const response = await fetch("/region-admins/" + id, { method: "DELETE" });' +
-        '                if (response.ok) { showAdminToast("Region admin removed."); await loadRegionAdminsList(); }' +
-        '                else showAdminToast("Could not delete region admin.", true);' +
-        '                setMainScroll(scrollPos);' +
-        '            }, "Delete");' +
-        '        }' +
-        '        async function addNewRegionAdmin() {' +
-        '            const name = document.getElementById("newAdminName").value.trim();' +
-        '            const username = document.getElementById("newAdminUsername").value.trim();' +
-        '            const password = document.getElementById("newAdminPassword").value.trim();' +
-        '            const region = document.getElementById("newAdminRegion").value;' +
-        '            if (!name || !username || !password || !region) { showAdminToast("Please fill in name, username, password, and region.", true); return; }' +
-        '            const btn = document.getElementById("addAdminBtn");' +
-        '            const defaultHTML = btn.innerHTML;' +
-        '            btn.disabled = true;' +
-        '            btn.innerHTML = \'<span class="admin-spinner"></span>Adding...\';' +
-        '            try {' +
-        '                const response = await fetch("/region-admins", {' +
-        '                    method: "POST",' +
-        '                    headers: { "Content-Type": "application/json" },' +
-        '                    body: JSON.stringify({ name, username, password, region })' +
-        '                });' +
-        '                if (response.ok) {' +
-        '                    document.getElementById("newAdminName").value = "";' +
-        '                    document.getElementById("newAdminUsername").value = "";' +
-        '                    document.getElementById("newAdminPassword").value = "";' +
-        '                    document.getElementById("newAdminRegion").value = "";' +
-        '                    showAdminToast("Region admin added successfully.");' +
-        '                    loadRegionAdminsList();' +
-        '                } else {' +
-        '                    const err = await response.json();' +
-        '                    showAdminToast(err.error || "Could not add region admin.", true);' +
-        '                }' +
-        '            } catch (err) {' +
-        '                showAdminToast("Something went wrong. Please try again.", true);' +
-        '            } finally {' +
-        '                btn.disabled = false;' +
-        '                btn.innerHTML = defaultHTML;' +
-        '            }' +
-        '        }' +
-        '        async function loadAuditLog() {' +
-        '            const tbody = document.getElementById("auditLogTableBody");' +
-        '            if (!isSuperAdmin) {' +
-        '                tbody.innerHTML = \'<tr><td colspan="4" style="text-align: center; color: #c53030; padding: 30px; font-weight: 600;">You are not authorized to access this page.</td></tr>\';' +
-        '                return;' +
-        '            }' +
-        '            const response = await fetch("/audit-log");' +
-        '            if (!response.ok) {' +
-        '                const err = await response.json().catch(() => ({}));' +
-        '                tbody.innerHTML = \'<tr><td colspan="4" style="text-align: center; color: #c53030; padding: 30px; font-weight: 600;">\'+(err.error || "You are not authorized to access this page.")+\'</td></tr>\';' +
-        '                return;' +
-        '            }' +
-        '            const entries = await response.json();' +
-        '            if (entries.length === 0) {' +
-        '                tbody.innerHTML = \'<tr><td colspan="4" style="text-align: center; color: #a0aec0; padding: 20px;">No activity recorded yet.</td></tr>\';' +
-        '                return;' +
-        '            }' +
-        '            let auditRowsHtml = "";' +
-        '            entries.forEach(e => {' +
-        '                auditRowsHtml += \'<tr><td>\'+new Date(e.createdAt).toLocaleString()+\'</td><td>\'+e.actor+\'</td><td>\'+e.action+\'</td><td>\'+(e.details || "")+\'</td></tr>\';' +
-        '            });' +
-        '            tbody.innerHTML = auditRowsHtml;' +
-        '        }' +
-        '        async function sendInboxMessage() {' +
-        '            const subject = document.getElementById("inboxSubject").value.trim();' +
-        '            const body = document.getElementById("inboxBody").value.trim();' +
-        '            if (!subject || !body) { showAdminToast("Please fill in both subject and message.", true); return; }' +
-        '            const btn = document.getElementById("sendInboxBtn");' +
-        '            const defaultHTML = btn.innerHTML;' +
-        '            btn.disabled = true;' +
-        '            btn.innerHTML = \'<span class="admin-spinner"></span>Sending...\';' +
-        '            try {' +
-        '                const response = await fetch("/inbox", {' +
-        '                    method: "POST",' +
-        '                    headers: { "Content-Type": "application/json" },' +
-        '                    body: JSON.stringify({ subject, body })' +
-        '                });' +
-        '                if (response.ok) {' +
-        '                    document.getElementById("inboxSubject").value = "";' +
-        '                    document.getElementById("inboxBody").value = "";' +
-        '                    showAdminToast("Message sent to Admin.");' +
-        '                    loadInbox();' +
-        '                } else {' +
-        '                    const err = await response.json();' +
-        '                    showAdminToast(err.error || "Could not send message.", true);' +
-        '                }' +
-        '            } catch (err) {' +
-        '                showAdminToast("Something went wrong. Please try again.", true);' +
-        '            } finally {' +
-        '                btn.disabled = false;' +
-        '                btn.innerHTML = defaultHTML;' +
-        '            }' +
-        '        }' +
-        '        async function markInboxRead(id) {' +
-        '            await fetch("/inbox/" + id + "/read", { method: "POST" });' +
-        '            loadInbox();' +
-        '        }' +
-        '        async function replyInboxMessage(id) {' +
-        '            const reply = document.getElementById("inboxReplyInput-" + id).value.trim();' +
-        '            if (!reply) { showAdminToast("Please write a reply first.", true); return; }' +
-        '            const response = await fetch("/inbox/" + id + "/reply", {' +
-        '                method: "POST",' +
-        '                headers: { "Content-Type": "application/json" },' +
-        '                body: JSON.stringify({ reply })' +
-        '            });' +
-        '            if (response.ok) { showAdminToast("Reply sent."); loadInbox(); }' +
-        '            else { const err = await response.json(); showAdminToast(err.error || "Could not send reply.", true); }' +
-        '        }' +
-        '        async function loadInbox() {' +
-        '            const listDiv = document.getElementById("inboxList");' +
-        '            try {' +
-        '                const response = await fetch("/inbox");' +
-        '                if (!response.ok) { listDiv.innerHTML = \'<p style="text-align:center;color:#c53030;padding:30px 0;">Could not load messages.</p>\'; return; }' +
-        '                const messages = await response.json();' +
-        '                if (messages.length === 0) {' +
-        '                    listDiv.innerHTML = \'<p style="text-align: center; color: #718096; padding: 40px 0;">\'+(isAdmin ? "No messages from staff yet." : "You have not sent any messages yet.")+\'</p>\';' +
-        '                    updateInboxBadge(messages);' +
-        '                    return;' +
-        '                }' +
-        '                let inboxCardsHtml = "";' +
-        '                messages.forEach(m => {' +
-        '                    const isUnread = isAdmin ? !m.adminRead : !m.staffRead;' +
-        '                    const statusBadge = m.status === "Replied" ? \'<span class="badge status-resolved">Replied</span>\' : \'<span class="badge status-open">Open</span>\';' +
-        '                    const senderLine = isAdmin ? \'<div class="inbox-meta">From: <strong>\'+m.sender+\'</strong>\'+(m.senderStaffId ? \' (\'+m.senderStaffId+\')\' : "")+\' \u2014 \'+new Date(m.createdAt).toLocaleString()+\'</div>\' : \'<div class="inbox-meta">\'+new Date(m.createdAt).toLocaleString()+\'</div>\';' +
-        '                    const markReadBtn = isUnread ? \'<button class="branch-delete-btn" onclick="markInboxRead(\\\'\'+m._id+\'\\\')">Mark as read</button>\' : "";' +
-        '                    let replySection = "";' +
-        '                    if (m.status === "Replied") {' +
-        '                        replySection = \'<div class="inbox-reply-shown"><strong>Reply from \'+m.repliedBy+\':</strong> \'+m.reply+\'<div class="inbox-meta">\'+new Date(m.repliedAt).toLocaleString()+\'</div></div>\';' +
-        '                    } else if (isAdmin) {' +
-        '                        replySection = \'<div class="inbox-reply-box"><textarea id="inboxReplyInput-\'+m._id+\'" rows="2" placeholder="Write a reply..."></textarea><button class="branch-add-btn" style="margin-top:8px;" onclick="replyInboxMessage(\\\'\'+m._id+\'\\\')">Send Reply</button></div>\';' +
-        '                    }' +
-        '                    inboxCardsHtml += \'<div class="inbox-card \'+(isUnread ? "inbox-unread" : "")+\'"><div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;"><div><div class="inbox-subject">\'+m.subject+\'</div>\'+senderLine+\'</div><div style="display:flex;align-items:center;gap:8px;">\'+statusBadge+\' \'+markReadBtn+\'</div></div><div class="inbox-body">\'+m.body+\'</div>\'+replySection+\'</div>\';' +
-        '                });' +
-        '                listDiv.innerHTML = inboxCardsHtml;' +
-        '                updateInboxBadge(messages);' +
-        '            } catch (err) {' +
-        '                listDiv.innerHTML = \'<p style="text-align:center;color:#c53030;padding:30px 0;">Could not load messages.</p>\';' +
-        '            }' +
-        '        }' +
-        '        function updateInboxBadge(messages) {' +
-        '            const badge = document.getElementById("inboxUnreadBadge");' +
-        '            if (!badge) return;' +
-        '            const unreadCount = messages.filter(m => isAdmin ? !m.adminRead : !m.staffRead).length;' +
-        '            badge.innerText = unreadCount > 99 ? "99+" : unreadCount;' +
-        '            badge.style.display = unreadCount ? "flex" : "none";' +
-        '        }' +
-        '        async function pollInboxBadge() {' +
-        '            try {' +
-        '                const response = await fetch("/inbox");' +
-        '                if (response.ok) { const messages = await response.json(); updateInboxBadge(messages); }' +
-        '            } catch (err) { /* ignore */ }' +
-        '        }' +
-        '        async function updateStaffBranches(staffId) {' +
-        '            const checks = document.querySelectorAll(".branch-check-" + staffId);' +
-        '            const branches = Array.from(checks).filter(c => c.checked).map(c => c.value);' +
-        '            await fetch("/tickets/staff-branches", {' +
-        '                method: "POST",' +
-        '                headers: { "Content-Type": "application/json" },' +
-        '                body: JSON.stringify({ staffId, branches })' +
-        '            });' +
-        '        }' +
-        '        async function addNewStaff() {' +
-        '            const name = document.getElementById("newStaffName").value.trim();' +
-        '            const staffId = document.getElementById("newStaffId").value.trim();' +
-        '            const password = document.getElementById("newStaffPassword").value.trim();' +
-        '            const email = document.getElementById("newStaffEmail").value.trim();' +
-        '            const regionEl = document.getElementById("newStaffRegion");' +
-        '            const region = regionEl ? regionEl.value : undefined;' +
-        '            if (!name || !password || !email) { showAdminToast("Please fill in name, password, and email.", true); return; }' +
-        '            const btn = document.getElementById("addStaffBtn");' +
-        '            const defaultHTML = btn.innerHTML;' +
-        '            btn.disabled = true;' +
-        '            btn.innerHTML = \'<span class="admin-spinner"></span>Adding...\';' +
-        '            try {' +
-        '                const response = await fetch("/tickets/staff", {' +
-        '                    method: "POST",' +
-        '                    headers: { "Content-Type": "application/json" },' +
-        '                    body: JSON.stringify({ name, staffId, password, email, region })' +
-        '                });' +
-        '                if (response.ok) {' +
-        '                    const result = await response.json();' +
-        '                    document.getElementById("newStaffName").value = "";' +
-        '                    document.getElementById("newStaffId").value = "";' +
-        '                    document.getElementById("newStaffPassword").value = "";' +
-        '                    document.getElementById("newStaffEmail").value = "";' +
-        '                    if (regionEl) regionEl.value = "";' +
-        '                    showAdminToast("Staff member added successfully (" + result.staffId + ").");' +
-        '                    loadStaffList();' +
-        '                } else {' +
-        '                    const err = await response.json();' +
-        '                    showAdminToast(err.error || "Could not add staff member.", true);' +
-        '                }' +
-        '            } catch (err) {' +
-        '                showAdminToast("Something went wrong. Please try again.", true);' +
-        '            } finally {' +
-        '                btn.disabled = false;' +
-        '                btn.innerHTML = defaultHTML;' +
-        '            }' +
-        '        }' +
-        '        function updateAttachmentLabel(id) {' +
-        '            const fileInput = document.getElementById("attachment-" + id);' +
-        '            const nameTag = document.getElementById("attachmentName-" + id);' +
-        '            if (!fileInput || !nameTag) return;' +
-        '            nameTag.innerText = (fileInput.files && fileInput.files[0]) ? fileInput.files[0].name : "";' +
-        '        }' +
-        '        async function addComment(id) {' +
-        '            const textInput = document.getElementById("input-" + id);' +
-        '            const fileInput = document.getElementById("attachment-" + id);' +
-        '            const nameTag = document.getElementById("attachmentName-" + id);' +
-        '            const text = textInput.value.trim();' +
-        '            const file = fileInput && fileInput.files && fileInput.files[0];' +
-        '            if (!text && !file) return;' +
-        '            const formData = new FormData();' +
-        '            formData.append("text", text);' +
-        '            if (file) formData.append("attachment", file);' +
-        '            const response = await fetch("/tickets/" + id + "/comment", {' +
-        '                method: "POST",' +
-        '                body: formData' +
-        '            });' +
-        '            if (response.ok) {' +
-        '                textInput.value = "";' +
-        '                if (fileInput) fileInput.value = "";' +
-        '                if (nameTag) nameTag.innerText = "";' +
-        '                loadTickets();' +
-        '            } else {' +
-        '                const err = await response.json().catch(() => ({}));' +
-        '                showAdminToast(err.error || "Could not post update.", true);' +
-        '            }' +
-        '        }' +
-        '        async function resolveTicket(id) {' +
-        '            showConfirmModal("Mark this ticket as resolved? This action can\'t be undone.", async () => {' +
-        '                const response = await fetch("/tickets/" + id + "/resolve", { method: "POST" });' +
-        '                if (response.ok) { loadTickets(); }' +
-        '                else { const err = await response.json(); showAdminToast(err.error || "Could not resolve ticket.", true); }' +
-        '            }, "Mark Resolved");' +
-        '        }' +
-        '        async function escalateTicket(id) {' +
-        '            showPromptModal("Enter the reason for escalating this ticket to Admin:", "", async (reason) => {' +
-        '                if (!reason || !reason.trim()) { showAdminToast("Please provide a reason for escalation.", true); return; }' +
-        '                const response = await fetch("/tickets/" + id + "/escalate", {' +
-        '                    method: "POST",' +
-        '                    headers: { "Content-Type": "application/json" },' +
-        '                    body: JSON.stringify({ reason: reason.trim() })' +
-        '                });' +
-        '                if (response.ok) { showAdminToast("Ticket escalated to Admin."); loadTickets(); }' +
-        '                else { const err = await response.json(); showAdminToast(err.error || "Could not escalate ticket.", true); }' +
-        '            }, "Escalate");' +
-        '        }' +
-        '        async function reallocateTicket(id) {' +
-        '            const res = await fetch("/tickets/staff-list");' +
-        '            const staff = await res.json();' +
-        '            if (!staff.length) { showAdminToast("No staff members available to reallocate to.", true); return; }' +
-        '            showStaffSelectModal("Select a staff member to reassign this ticket:", staff, async (staffName) => {' +
-        '                const response = await fetch("/tickets/" + id + "/reallocate", {' +
-        '                    method: "POST",' +
-        '                    headers: { "Content-Type": "application/json" },' +
-        '                    body: JSON.stringify({ assignTo: staffName })' +
-        '                });' +
-        '                if (response.ok) { showAdminToast("Ticket reallocated to " + staffName + "."); loadTickets(); }' +
-        '                else { const err = await response.json(); showAdminToast(err.error || "Could not reallocate ticket.", true); }' +
-        '            }, "Reallocate");' +
-        '        }' +
-        '        let chartInstances = {};' +
-        '        function renderChart(canvasId, config) {' +
-        '            const el = document.getElementById(canvasId);' +
-        '            if (!el) return;' +
-        '            if (chartInstances[canvasId]) chartInstances[canvasId].destroy();' +
-        '            chartInstances[canvasId] = new Chart(el, config);' +
-        '        }' +
-        '        async function loadReportCharts() {' +
-        '            const response = await fetch("/tickets");' +
-        '            if (response.status === 401) { window.location.href = "/login"; return; }' +
-        '            let tickets = await response.json();' +
-        '' +
-        '            const openCount = tickets.filter(t => t.status === "Open").length;' +
-        '            const resolvedCount = tickets.filter(t => t.status === "Resolved").length;' +
-        '            renderChart("chartStatus", {' +
-        '                type: "doughnut",' +
-        '                data: { labels: ["Open", "Resolved"], datasets: [{ data: [openCount, resolvedCount], backgroundColor: ["#3182ce", "#38a169"] }] },' +
-        '                options: { maintainAspectRatio: false, plugins: { legend: { position: "bottom" } } }' +
-        '            });' +
-        '' +
-        '            const lowCount = tickets.filter(t => t.priority === "Low").length;' +
-        '            const medCount = tickets.filter(t => t.priority === "Medium").length;' +
-        '            const highCount = tickets.filter(t => t.priority === "High").length;' +
-        '            renderChart("chartPriority", {' +
-        '                type: "doughnut",' +
-        '                data: { labels: ["Low", "Medium", "High"], datasets: [{ data: [lowCount, medCount, highCount], backgroundColor: ["#718096", "#dd6b20", "#e53e3e"] }] },' +
-        '                options: { maintainAspectRatio: false, plugins: { legend: { position: "bottom" } } }' +
-        '            });' +
-        '' +
-        '            const categoryTotals = {};' +
-        '            tickets.forEach(t => { const key = t.category || "Other"; categoryTotals[key] = (categoryTotals[key] || 0) + 1; });' +
-        '            renderChart("chartCategory", {' +
-        '                type: "doughnut",' +
-        '                data: { labels: Object.keys(categoryTotals), datasets: [{ data: Object.values(categoryTotals), backgroundColor: ["#319795", "#805ad5", "#3182ce", "#dd6b20", "#718096"] }] },' +
-        '                options: { maintainAspectRatio: false, plugins: { legend: { position: "bottom" } } }' +
-        '            });' +
-        '' +
-        '            const dayLabels = [];' +
-        '            const dayCounts = [];' +
-        '            const today = new Date();' +
-        '            for (let i = 29; i >= 0; i--) {' +
-        '                const d = new Date(today.getFullYear(), today.getMonth(), today.getDate() - i);' +
-        '                dayLabels.push((d.getMonth() + 1) + "/" + d.getDate());' +
-        '                const count = tickets.filter(t => {' +
-        '                    if (!t.createdAt) return false;' +
-        '                    const td = new Date(t.createdAt);' +
-        '                    return td.getFullYear() === d.getFullYear() && td.getMonth() === d.getMonth() && td.getDate() === d.getDate();' +
-        '                }).length;' +
-        '                dayCounts.push(count);' +
-        '            }' +
-        '            renderChart("chartTrend", {' +
-        '                type: "line",' +
-        '                data: { labels: dayLabels, datasets: [{ label: "Tickets Submitted", data: dayCounts, borderColor: "#e53e3e", backgroundColor: "rgba(229,62,62,0.12)", tension: 0.3, fill: true }] },' +
-        '                options: { maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } } }' +
-        '            });' +
-        '' +
-        '            if (isAdmin) {' +
-        '                const staffTotals = {};' +
-        '                tickets.forEach(t => { const key = t.assignedTo || "Unassigned"; staffTotals[key] = (staffTotals[key] || 0) + 1; });' +
-        '                renderChart("chartStaff", {' +
-        '                    type: "bar",' +
-        '                    data: { labels: Object.keys(staffTotals), datasets: [{ label: "Tickets Handled", data: Object.values(staffTotals), backgroundColor: "#0056b3" }] },' +
-        '                    options: { indexAxis: "y", maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { beginAtZero: true, ticks: { stepSize: 1 } } } }' +
-        '                });' +
-        '' +
-        '                const branchTotals = {};' +
-        '                tickets.forEach(t => { const key = t.branch || "N/A"; branchTotals[key] = (branchTotals[key] || 0) + 1; });' +
-        '                renderChart("chartBranch", {' +
-        '                    type: "bar",' +
-        '                    data: { labels: Object.keys(branchTotals), datasets: [{ label: "Tickets", data: Object.values(branchTotals), backgroundColor: "#319795" }] },' +
-        '                    options: { indexAxis: "y", maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { beginAtZero: true, ticks: { stepSize: 1 } } } }' +
-        '                });' +
-        '            }' +
-        '        }' +
-        '        function downloadReport() {' +
-        '            const month = document.getElementById("reportMonth").value;' +
-        '            if (!month) { alert("Please select a month."); return; }' +
-        '            const region = document.getElementById("reportRegion").value;' +
-        '            let url = "/tickets/report?month=" + month;' +
-        '            if (region) url += "&region=" + encodeURIComponent(region);' +
-        '            window.location.href = url;' +
-        '        }' +
-        '        function downloadReportByRange() {' +
-        '            const from = document.getElementById("reportFromDate").value;' +
-        '            const to = document.getElementById("reportToDate").value;' +
-        '            if (!from || !to) { alert("Please select both a From and To date."); return; }' +
-        '            const region = document.getElementById("reportRegion").value;' +
-        '            let url = "/tickets/report?from=" + from + "&to=" + to;' +
-        '            if (region) url += "&region=" + encodeURIComponent(region);' +
-        '            window.location.href = url;' +
-        '        }' +
-        '        async function changePassword() {' +
-        '            const current = document.getElementById("currentPassword").value;' +
-        '            const next = document.getElementById("newPassword").value;' +
-        '            const confirmVal = document.getElementById("confirmPassword").value;' +
-        '            if (!current || !next || !confirmVal) { alert("Please fill in all fields."); return; }' +
-        '            if (next !== confirmVal) { alert("New password and confirmation do not match."); return; }' +
-        '            const response = await fetch("/change-password", {' +
-        '                method: "POST",' +
-        '                headers: { "Content-Type": "application/json" },' +
-        '                body: JSON.stringify({ currentPassword: current, newPassword: next })' +
-        '            });' +
-        '            const data = await response.json();' +
-        '            if (response.ok) {' +
-        '                alert("Password updated successfully.");' +
-        '                document.getElementById("currentPassword").value = "";' +
-        '                document.getElementById("newPassword").value = "";' +
-        '                document.getElementById("confirmPassword").value = "";' +
-        '            } else {' +
-        '                alert(data.error || "Could not update password.");' +
-        '            }' +
-        '        }' +
-        '        document.getElementById("reportMonth").value = new Date().toISOString().slice(0, 7);' +
-        '        loadNotifications();' +
-        '        setInterval(loadNotifications, 30000);' +
-        '        pollInboxBadge();' +
-        '        setInterval(pollInboxBadge, 30000);' +
-        '        loadStaffFilterOptions();' +
-        '        loadRegionFilterOptions();' +
-        '        loadTickets();' +
-        '    </script>' +
-        '</body>' +
-        '</html>';
+'<html lang="en">' +
+'<head>' +
+'    <meta charset="UTF-8">' +
+'    <meta name="viewport" content="width=device-width, initial-scale=1.0">' +
+'    <title>IT Helpdesk | Dashboard</title>' +
+'    <link rel="icon" type="image/png" href="/logo.png">' +
+'    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>' +
+'    <style>' +
+'        * { box-sizing: border-box; margin: 0; padding: 0; font-family: \'Segoe UI\', Tahoma, Geneva, Verdana, sans-serif; }' +
+'        body { display: flex; height: 100vh; background-color: #f8f9fa; color: #333; overflow: hidden; }' +
+'        .hamburger-btn { display: none; background: none; border: none; cursor: pointer; padding: 6px; flex-direction: column; gap: 4px; }' +
+'        .hamburger-btn span { display: block; width: 22px; height: 2px; background: #2d3748; border-radius: 2px; }' +
+'        .sidebar-backdrop { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 998; }' +
+'        .sidebar-backdrop.active { display: block; }' +
+'        @media (max-width: 768px) {' +
+'            .sidebar { position: fixed; top: 0; bottom: 0; left: -270px; z-index: 999; transition: left 0.25s ease; width: 260px; }' +
+'            .sidebar.sidebar-open { left: 0; }' +
+'            .hamburger-btn { display: flex; }' +
+'            .top-navbar { padding: 0 16px; }' +
+'            .content-body { padding: 16px; }' +
+'            .metrics-grid { gap: 12px; }' +
+'            .branch-table { display: block; overflow-x: auto; white-space: nowrap; }' +
+'            .ticket-header { flex-direction: column; align-items: flex-start; gap: 10px; }' +
+'        }' +
+'        .sidebar { width: 260px; height: 100vh; background-color: #1e2229; color: #fff; display: flex; flex-direction: column; justify-content: space-between; overflow: hidden; }' +
+'        .sidebar-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; scrollbar-width: thin; scrollbar-color: #3a4150 transparent; }' +
+'        .sidebar-scroll::-webkit-scrollbar { width: 6px; }' +
+'        .sidebar-scroll::-webkit-scrollbar-track { background: transparent; }' +
+'        .sidebar-scroll::-webkit-scrollbar-thumb { background: #3a4150; border-radius: 10px; }' +
+'        .sidebar-scroll::-webkit-scrollbar-thumb:hover { background: #4a5568; }' +
+'        .sidebar-brand { padding: 24px; display: flex; align-items: center; gap: 12px; border-bottom: 1px solid #2d323e; }' +
+'        .sidebar-logo { height: 35px; width: auto; object-fit: contain; }' +
+'        .sidebar-title { font-size: 18px; font-weight: 700; color: #fff; letter-spacing: 0.5px; }' +
+'        .sidebar-menu { list-style: none; padding: 20px 0; }' +
+'        .menu-category { font-size: 11px; font-weight: 700; text-transform: uppercase; color: #4a5568; padding: 10px 24px 5px 24px; letter-spacing: 0.5px; }' +
+'        .menu-item { padding: 12px 24px; display: flex; align-items: center; gap: 12px; color: #a0aec0; text-decoration: none; font-size: 14px; font-weight: 500; cursor: pointer; transition: all 0.2s; border-left: 4px solid transparent; }' +
+'        .menu-icon { width: 17px; height: 17px; flex-shrink: 0; }' +
+'        .menu-item:hover, .menu-item.active { background-color: #2d323e; color: #fff; border-left-color: #0056b3; }' +
+'        .sidebar-footer { padding: 20px; border-top: 1px solid #2d323e; flex-shrink: 0; }' +
+'        .user-info { font-size: 12px; color: #a0aec0; margin-bottom: 12px; }' +
+'        .user-info strong { color: #fff; display: block; font-size: 14px; margin-bottom: 2px; }' +
+'        .logout-btn { display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%; background-color: #e53e3e; color: white; text-decoration: none; padding: 10px; border-radius: 6px; font-size: 14px; font-weight: 600; transition: background 0.2s; }' +
+'        .logout-btn:hover { background-color: #c53030; }' +
+'        .main-content { flex-grow: 1; display: flex; flex-direction: column; height: 100vh; overflow-y: auto; scrollbar-width: thin; scrollbar-color: #cbd5e0 #f8f9fa; }' +
+'        .main-content::-webkit-scrollbar { width: 8px; }' +
+'        .main-content::-webkit-scrollbar-track { background: #f8f9fa; }' +
+'        .main-content::-webkit-scrollbar-thumb { background: #cbd5e0; border-radius: 10px; }' +
+'        .main-content::-webkit-scrollbar-thumb:hover { background: #a0aec0; }' +
+'        .top-navbar { height: 70px; background-color: #fff; border-bottom: 1px solid #e2e8f0; display: flex; align-items: center; justify-content: space-between; padding: 0 30px; }' +
+'        .page-title { font-size: 20px; font-weight: 600; color: #2d3748; }' +
+'        .notification-wrap { position: relative; }' +
+'        .notification-btn { position: relative; width: 40px; height: 40px; border: 1px solid #e2e8f0; border-radius: 50%; background: #fff; color: #2d3748; cursor: pointer; display: flex; align-items: center; justify-content: center; }' +
+'        .notification-btn:hover { background: #f7fafc; }' +
+'        .notification-btn svg { width: 20px; height: 20px; }' +
+'        .notification-count { position: absolute; top: -5px; right: -5px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 10px; background: #e53e3e; color: #fff; font-size: 10px; font-weight: 700; display: none; align-items: center; justify-content: center; }' +
+'        .notification-menu { display: none; position: absolute; top: 48px; right: 0; width: 330px; max-height: 360px; overflow-y: auto; background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; box-shadow: 0 14px 34px rgba(0,0,0,.16); z-index: 3000; scrollbar-width: thin; scrollbar-color: #cbd5e0 #fff; }' +
+'        .notification-menu::-webkit-scrollbar { width: 6px; }' +
+'        .notification-menu::-webkit-scrollbar-track { background: #fff; }' +
+'        .notification-menu::-webkit-scrollbar-thumb { background: #cbd5e0; border-radius: 10px; }' +
+'        .notification-menu.show { display: block; }' +
+'        .notification-head { padding: 12px 14px; font-size: 14px; font-weight: 700; border-bottom: 1px solid #edf2f7; }' +
+'        .notification-item { padding: 12px 14px; border-bottom: 1px solid #edf2f7; font-size: 12px; color: #4a5568; }' +
+'        .notification-item.unread { background: #ebf8ff; }' +
+'        .notification-item strong { display: block; color: #2d3748; margin-bottom: 3px; }' +
+'        .notification-empty { padding: 20px; text-align: center; color: #718096; font-size: 13px; }' +
+'        .content-body { padding: 30px; max-width: 1200px; width: 100%; margin: 0 auto; }' +
+'        .dashboard-view { display: none; }' +
+'        .dashboard-view.active { display: block; }' +
+'        .metrics-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 16px; }' +
+'        .metric-card { background: white; border-radius: 10px; padding: 9px 14px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); border: 1px solid #edf1f5; border-top: 3px solid #3182ce; cursor: pointer; transition: box-shadow .2s, transform .2s; }' +
+'        .metric-card:hover { box-shadow: 0 10px 26px rgba(0,0,0,0.09); transform: translateY(-2px); }' +
+'        .metric-icon-badge { width: 26px; height: 26px; border-radius: 7px; display: flex; align-items: center; justify-content: center; margin-bottom: 4px; }' +
+'        .metric-icon-badge svg { width: 14px; height: 14px; }' +
+'        .metric-icon-blue { background: #ebf8ff; color: #3182ce; }' +
+'        .metric-icon-green { background: #f0fff4; color: #38a169; }' +
+'        .metric-icon-red { background: #fff5f5; color: #e53e3e; }' +
+'        .metric-icon-amber { background: #fef3c7; color: #d97706; }' +
+'        .metric-subtitle { font-size: 10px; color: #a0aec0; margin-top: 1px; font-weight: 500; }' +
+'        .metric-card.resolved { border-top-color: #38a169; }' +
+'        .metric-card.assigned { border-top-color: #e53e3e; }' +
+'        .metric-card.escalated { border-top-color: #d97706; }' +
+'        .metric-label { font-size: 11px; font-weight: 600; color: #718096; text-transform: uppercase; letter-spacing: 0.5px; }' +
+'        .metric-value { font-size: 20px; font-weight: 700; color: #2d3748; margin-top: 1px; }' +
+'        .ticket-card { background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 24px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); position: relative; border-top: 4px solid #3182ce; }' +
+'        .ticket-card.ticket-resolved { border-top-color: #38a169; }' +
+'        .ticket-card.ticket-escalated { border-top-color: #dd6b20; background: #fffaf0; }' +
+'        .ticket-card.ticket-high-priority { background: #fff5f5; border: 2px solid #e53e3e; border-top: 4px solid #e53e3e; }' +
+'        .ticket-card.ticket-high-priority .ticket-title { color: #c53030; }' +
+'        .ticket-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; }' +
+'        .ticket-title { font-size: 18px; font-weight: 600; color: #2d3748; }' +
+'        .ticket-desc { color: #4a5568; font-size: 14px; line-height: 1.5; margin-bottom: 16px; }' +
+'        .badge { padding: 4px 10px; border-radius: 50px; font-size: 11px; font-weight: 700; text-transform: uppercase; display: inline-block; margin-right: 8px; }' +
+'        .p-Low { background-color: #edf2f7; color: #4a5568; }' +
+'        .p-Medium { background-color: #feebc8; color: #c05621; }' +
+'        .p-High { background-color: #fed7d7; color: #9b2c2c; }' +
+'        .status-open { background-color: #ebf8ff; color: #2b6cb0; }' +
+'        .status-resolved { background-color: #c6f6d5; color: #22543d; }' +
+'        .ticket-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }' +
+'        .resolve-btn { background-color: #38a169; color: white; border: none; padding: 8px 16px; font-size: 13px; font-weight: 600; border-radius: 6px; cursor: pointer; transition: background 0.2s; }' +
+'        .resolve-btn:hover { background-color: #2f855a; }' +
+'        .reallocate-btn { background-color: #805ad5; color: white; border: none; padding: 8px 16px; font-size: 13px; font-weight: 600; border-radius: 6px; cursor: pointer; transition: background 0.2s; }' +
+'        .reallocate-btn:hover { background-color: #6b46c1; }' +
+'        .escalate-btn { background-color: #dd6b20; color: white; border: none; padding: 8px 16px; font-size: 13px; font-weight: 600; border-radius: 6px; cursor: pointer; transition: background 0.2s; }' +
+'        .escalate-btn:hover { background-color: #c05621; }' +
+'        .badge-escalated { background-color: #fef3c7; color: #92400e; }' +
+'        .badge-category { background-color: #e6fffa; color: #234e52; }' +
+'        .screenshot-preview { max-width: 100%; max-height: 180px; border-radius: 6px; border: 1px solid #e2e8f0; margin-top: 12px; display: block; object-fit: cover; }' +
+'        .assignment-info { margin-top: 16px; padding: 14px 16px; background: #f9fafb; border-radius: 8px; border: 1px solid #edf2f7; }' +
+'        .assignment-row { display: flex; gap: 10px; padding: 5px 0; font-size: 13.5px; }' +
+'        .assignment-row + .assignment-row { border-top: 1px solid #eef1f4; }' +
+'        .assignment-label { flex: 0 0 120px; font-weight: 700; color: #4a5568; text-transform: uppercase; font-size: 11px; letter-spacing: .4px; padding-top: 2px; }' +
+'        .assignment-value { color: #2d3748; font-size: 14px; flex: 1; }' +
+'        .comments-section { margin-top: 20px; background-color: #f7fafc; padding: 16px; border-radius: 8px; border: 1px solid #edf2f7; }' +
+'        .comments-header { font-size: 12px; font-weight: 700; color: #718096; text-transform: uppercase; margin-bottom: 10px; letter-spacing: 0.5px; }' +
+'        .comment-item { padding: 8px 0; border-bottom: 1px solid #edf2f7; font-size: 13px; color: #4a5568; }' +
+'        .comment-item strong { color: #2d3748; }' +
+'        .comment-form { display: flex; gap: 10px; margin-top: 12px; flex-wrap: wrap; align-items: center; }' +
+'        .comment-form input { flex-grow: 1; padding: 8px 12px; border: 1px solid #e2e8f0; border-radius: 6px; font-size: 13px; }' +
+'        .comment-form button { background-color: #3182ce; color: white; border: none; padding: 8px 16px; font-size: 13px; font-weight: 600; border-radius: 6px; cursor: pointer; }' +
+'        .comment-attach-btn { display: flex; align-items: center; justify-content: center; padding: 8px 12px; border: 1px solid #e2e8f0; border-radius: 6px; background: #f7fafc; cursor: pointer; font-size: 14px; flex-shrink: 0; }' +
+'        .comment-attach-btn:hover { background: #edf2f7; }' +
+'        .attachment-name-tag { font-size: 11px; color: #718096; max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; align-self: center; }' +
+'        .inbox-card { background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); border-left: 4px solid #cbd5e0; }' +
+'        .inbox-card.inbox-unread { border-left-color: #e53e3e; background: #fffafa; }' +
+'        .inbox-subject { font-size: 16px; font-weight: 700; color: #2d3748; }' +
+'        .inbox-meta { font-size: 12px; color: #a0aec0; margin-top: 2px; }' +
+'        .inbox-body { font-size: 14px; color: #4a5568; margin-top: 10px; line-height: 1.5; white-space: pre-wrap; }' +
+'        .inbox-reply-box { margin-top: 14px; padding-top: 14px; border-top: 1px solid #edf2f7; }' +
+'        .inbox-reply-box textarea { width: 100%; padding: 10px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 13px; resize: vertical; }' +
+'        .inbox-reply-shown { margin-top: 14px; padding: 12px 14px; background: #f0fff4; border-radius: 6px; font-size: 13px; color: #234e52; }' +
+'        .branch-panel-card { background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }' +
+'        .branch-panel-card h2 { font-size: 16px; font-weight: 600; color: #2d3748; margin-bottom: 20px; }' +
+'        .branch-input-group { display: flex; gap: 15px; margin-bottom: 25px; flex-wrap: wrap; }' +
+'        .branch-input-group input { flex-grow: 1; padding: 12px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 14px; }' +
+'        .branch-add-btn { background-color: #0056b3; color: white; border: none; padding: 0 30px; font-size: 14px; font-weight: 600; border-radius: 6px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 4px; }' +
+'        .search-btn { padding: 9px 22px; font-size: 13.5px; }' +
+'        .branch-add-btn:disabled { opacity: .7; cursor: not-allowed; }' +
+'        .branch-table { width: 100%; border-collapse: collapse; text-align: left; margin-top: 10px; }' +
+'        .branch-table th { background-color: #f7fafc; color: #4a5568; font-size: 13px; font-weight: 600; padding: 12px 16px; border-bottom: 1px solid #e2e8f0; }' +
+'        .branch-table td { padding: 14px 16px; font-size: 14px; color: #2d3748; border-bottom: 1px solid #edf2f7; }' +
+'        .branch-delete-btn { color: #e53e3e; background: none; border: none; cursor: pointer; font-weight: 600; font-size: 13px; }' +
+'        .chart-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 20px; margin-top: 24px; }' +
+'        .chart-card { background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); position: relative; height: 300px; }' +
+'        .chart-card.wide { grid-column: 1 / -1; }' +
+'        .chart-card h3 { font-size: 14px; font-weight: 600; color: #2d3748; margin: 0 0 14px; }' +
+'        .section-heading { font-size: 16px; font-weight: 600; color: #2d3748; margin: 28px 0 0; }' +
+'        .confirm-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 3000; align-items: center; justify-content: center; padding: 20px; }' +
+'        .confirm-overlay.show { display: flex; }' +
+'        .confirm-box { background: #fff; border-radius: 10px; padding: 24px; max-width: 380px; width: 100%; box-shadow: 0 20px 50px rgba(0,0,0,0.3); }' +
+'        .confirm-box p { font-size: 14px; color: #2d3748; line-height: 1.5; margin-bottom: 20px; }' +
+'        .confirm-actions { display: flex; gap: 12px; justify-content: flex-end; }' +
+'        .confirm-actions button { padding: 9px 18px; border-radius: 7px; font-size: 13px; font-weight: 600; cursor: pointer; border: none; }' +
+'        .confirm-cancel-btn { background: #edf2f7; color: #4a5568; }' +
+'        .confirm-ok-btn { background: #e53e3e; color: #fff; }' +
+'        .admin-toast { position: fixed; top: 20px; right: 20px; background: #fff; color: #1a202c; padding: 16px 20px; border-radius: 12px; font-size: 13px; box-shadow: 0 16px 40px rgba(0,0,0,0.16); z-index: 4000; opacity: 0; transform: translateX(24px); transition: opacity .25s, transform .25s; pointer-events: none; max-width: 340px; text-align: left; border-left: 4px solid #38a169; display: flex; align-items: flex-start; gap: 12px; overflow: hidden; }' +
+'        .admin-toast.show { opacity: 1; transform: translateX(0); }' +
+'        .admin-toast.error { border-left-color: #e53e3e; }' +
+'        .admin-toast-icon { width: 32px; height: 32px; border-radius: 8px; background: #f0fff4; color: #38a169; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }' +
+'        .admin-toast.error .admin-toast-icon { background: #fff5f5; color: #e53e3e; }' +
+'        .admin-toast-icon svg { width: 18px; height: 18px; }' +
+'        .admin-toast-title { font-weight: 700; font-size: 13px; color: #1a202c; margin-bottom: 2px; }' +
+'        .admin-toast-message { font-size: 12px; color: #718096; line-height: 1.4; }' +
+'        .admin-toast-progress { position: absolute; bottom: 0; left: 0; height: 3px; background: #38a169; animation: toastshrink 4s linear forwards; }' +
+'        .admin-toast.error .admin-toast-progress { background: #e53e3e; }' +
+'        @keyframes toastshrink { from { width: 100%; } to { width: 0%; } }' +
+'        .admin-spinner { width: 13px; height: 13px; border: 2px solid rgba(255,255,255,.4); border-top-color: #fff; border-radius: 50%; display: inline-block; animation: adminspin .7s linear infinite; margin-right: 6px; vertical-align: middle; }' +
+'        @keyframes adminspin { to { transform: rotate(360deg); } }' +
+'        .pagination-bar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; padding: 14px 4px 4px; }' +
+'        .pagination-info { font-size: 13px; color: #718096; }' +
+'        .pagination-controls { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }' +
+'        .page-btn { min-width: 34px; height: 34px; padding: 0 10px; border: 1px solid #e2e8f0; background: #fff; color: #4a5568; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; }' +
+'        .page-btn:hover:not(:disabled) { background: #f7fafc; }' +
+'        .page-btn.active { background: #0056b3; border-color: #0056b3; color: #fff; }' +
+'        .page-btn:disabled { opacity: .5; cursor: not-allowed; }' +
+'        .page-ellipsis { padding: 0 4px; color: #a0aec0; font-size: 13px; }' +
+'    </style>' +
+'</head>' +
+'<body>' +
+'    <div class="confirm-overlay" id="confirmOverlay">' +
+'        <div class="confirm-box">' +
+'            <p id="confirmMessage"></p>' +
+'            <input type="text" id="confirmInput" style="display:none;width:100%;padding:10px;border:1px solid #cbd5e0;border-radius:6px;font-size:14px;margin-bottom:16px;">' +
+'            <select id="confirmStaffSelect" style="display:none;width:100%;padding:10px;border:1px solid #cbd5e0;border-radius:6px;font-size:14px;margin-bottom:16px;"></select>' +
+'            <div class="confirm-actions">' +
+'                <button class="confirm-cancel-btn" onclick="closeConfirmModal(false)">Cancel</button>' +
+'                <button class="confirm-ok-btn" id="confirmOkBtn" onclick="closeConfirmModal(true)">Confirm</button>' +
+'            </div>' +
+'        </div>' +
+'    </div>' +
+'    <div id="adminToast" class="admin-toast"></div>' +
+'    <div class="sidebar-backdrop" id="sidebarBackdrop" onclick="closeSidebar()"></div>' +
+'    <aside class="sidebar" id="sidebar">' +
+'        <div class="sidebar-scroll">' +
+'            <div class="sidebar-brand" style="cursor:pointer;" onclick="window.location.href=\'/admin\'" title="Refresh dashboard">' +
+'                <img src="/logo.png" alt="Logo" class="sidebar-logo" onerror="this.style.display=\'none\'">' +
+'                <span class="sidebar-title">SARATHY IT</span>' +
+'            </div>' +
+'            <div class="menu-category">Navigation</div>' +
+'            <ul class="sidebar-menu">' +
+'                <li class="menu-item active" id="tabTicketsLink" onclick="refreshTicketsDashboard()"><svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v2z"></path><line x1="13" y1="5" x2="13" y2="19"></line></svg>Tickets System</li>' +
+(isSuperAdminUser ? '                <li class="menu-item" id="tabAdminsLink" onclick="switchView(\'admins\')"><svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l3 6 6.5 1-5 4.5 1.5 6.5-6-3.5-6 3.5 1.5-6.5-5-4.5 6.5-1z"></path></svg>Manage Admins</li>' : '') +
+(isAdminUser ? '                <li class="menu-item" id="tabBranchesLink" onclick="switchView(\'branches\')"><svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>Manage Branches</li>' : '') +
+(isAdminUser ? '                <li class="menu-item" id="tabStaffLink" onclick="switchView(\'staff\')"><svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>Manage IT Staff</li>' : '') +
+(isAdminUser ? '                <li class="menu-item" id="tabAuditLink" onclick="switchView(\'audit\')"><svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"></path><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg>Audit Log</li>' : '') +
+'                <li class="menu-item" id="tabReportsLink" onclick="switchView(\'reports\')"><svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>Reports</li>' +
+'                <li class="menu-item" id="tabInboxLink" onclick="switchView(\'inbox\')"><svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-6l-2 3h-4l-2-3H2"></path><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"></path></svg>Inbox<span id="inboxUnreadBadge" style="display:none;margin-left:auto;background:#e53e3e;color:#fff;font-size:10px;font-weight:700;border-radius:10px;min-width:16px;height:16px;padding:0 5px;align-items:center;justify-content:center;"></span></li>' +
+'                <li class="menu-item" id="tabPasswordLink" onclick="switchView(\'password\')"><svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>Change Password</li>' +
+'            </ul>' +
+'        </div>' +
+'        <div class="sidebar-footer">' +
+'            <div class="user-info">' +
+'                <span>Logged in as</span>' +
+'                <strong id="displayUserLabel">Loading...</strong>' +
+'            </div>' +
+'            <a href="/logout" class="logout-btn" id="logoutBtn" onclick="handleLogoutClick()">Logout</a>' +
+'        </div>' +
+'    </aside>' +
+'    <main class="main-content">' +
+'        <header class="top-navbar">' +
+'            <button class="hamburger-btn" onclick="toggleSidebar()" aria-label="Menu"><span></span><span></span><span></span></button>' +
+'            <h1 class="page-title" id="panelViewTitle">Helpdesk Operations</h1>' +
+'            <div class="notification-wrap"><button type="button" class="notification-btn" onclick="toggleNotifications(event)" aria-label="Notifications"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg><span id="notificationCount" class="notification-count">0</span></button><div id="notificationMenu" class="notification-menu"><div class="notification-head" style="display:flex;align-items:center;justify-content:space-between;">Notifications <button type="button" onclick="clearAllNotifications()" style="background:none;border:none;color:#e53e3e;font-size:12px;font-weight:600;cursor:pointer;padding:0;">Clear</button></div><div id="notificationList" class="notification-empty">No notifications.</div></div></div>' +
+'        </header>' +
+'        <section class="content-body">' +
+'            <div id="viewTickets" class="dashboard-view active">' +
+'                <div class="metrics-grid">' +
+'                    <div class="metric-card" onclick="filterByStatus(\'Open\')"><div class="metric-icon-badge metric-icon-blue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg></div><div class="metric-label">Open Issues</div><div class="metric-value" id="statOpen">0</div><div class="metric-subtitle">Needs attention</div></div>' +
+'                    <div class="metric-card resolved" onclick="filterByStatus(\'Resolved\')"><div class="metric-icon-badge metric-icon-green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg></div><div class="metric-label">Resolved Issues</div><div class="metric-value" id="statResolved">0</div><div class="metric-subtitle">Completed successfully</div></div>' +
+'                    <div class="metric-card escalated" onclick="filterByStatus(\'Escalated\')"><div class="metric-icon-badge metric-icon-amber"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg></div><div class="metric-label">Escalated Tickets</div><div class="metric-value" id="statEscalated">0</div><div class="metric-subtitle">Needs admin action</div></div>' +
+'                    <div class="metric-card assigned" onclick="filterByStatus(\'all\')"><div class="metric-icon-badge metric-icon-red"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v2z"></path><line x1="13" y1="5" x2="13" y2="19"></line></svg></div><div class="metric-label">Total Tickets</div><div class="metric-value" id="statMine">0</div><div class="metric-subtitle">All requests in scope</div></div>' +
+'                </div>' +
+'                <div style="margin-bottom: 12px;">' +
+'                    <button type="button" id="toggleFilterBtn" class="branch-add-btn" onclick="toggleFilterPanel()" style="display:inline-flex; align-items:center; gap:8px; padding: 9px 18px;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>Filters</button>' +
+'                </div>' +
+'                <div class="branch-panel-card" id="ticketFilterPanel" style="display:none; margin-bottom: 20px; align-items: flex-end; gap: 14px; flex-wrap: wrap;">' +
+'                    <div style="flex-grow: 1; min-width: 220px;"><label style="display:block;font-size:12px;font-weight:600;color:#4a5568;margin-bottom:4px;">Search</label><input type="text" id="filterSearchText" placeholder="Ticket #, Submitted By, Branch, Mobile..." style="width:100%; padding: 8px 10px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 14px;" onkeydown="if(event.key===\'Enter\') applyTicketFilters();"></div>' +
+'                    <div><label style="display:block;font-size:12px;font-weight:600;color:#4a5568;margin-bottom:4px;">From Date</label><input type="date" id="filterFromDate" style="padding: 8px 10px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 14px;"></div>' +
+'                    <div><label style="display:block;font-size:12px;font-weight:600;color:#4a5568;margin-bottom:4px;">To Date</label><input type="date" id="filterToDate" style="padding: 8px 10px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 14px;"></div>' +
+'                    <div id="staffFilterWrapper" style="display:none;"><label style="display:block;font-size:12px;font-weight:600;color:#4a5568;margin-bottom:4px;">Staff</label><select id="filterStaff" style="padding: 8px 10px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 14px;"><option value="">All Staff</option></select></div>' +
+'                    <div id="regionFilterWrapper" style="display:none;"><label style="display:block;font-size:12px;font-weight:600;color:#4a5568;margin-bottom:4px;">Region</label><select id="filterRegion" style="padding: 8px 10px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 14px;"><option value="">All Regions</option></select></div>' +
+'                    <div><label style="display:block;font-size:12px;font-weight:600;color:#4a5568;margin-bottom:4px;">Category</label><select id="filterCategory" style="padding: 8px 10px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 14px;"><option value="">All Categories</option><option value="Hardware">Hardware</option><option value="Software">Software</option><option value="Network">Network</option><option value="Printer">Printer</option><option value="Other">Other</option></select></div>' +
+'                    <button class="branch-add-btn search-btn" id="searchTicketsBtn" onclick="applyTicketFilters()">Search</button>' +
+'                    <button class="branch-delete-btn" onclick="clearTicketFilters()">Clear</button>' +
+'                </div>' +
+'                <div id="ticketList">Loading active queue...</div>' +
+'                <div id="ticketPagination" class="pagination-bar" style="display:none;"></div>' +
+'            </div>' +
+'            <div id="viewReports" class="dashboard-view">' +
+'                <div class="branch-panel-card" style="display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 20px;">' +
+'                    <strong style="font-size: 14px; color: #2d3748;">Region:</strong>' +
+'                    <select id="reportRegion" style="padding: 8px 10px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 14px;"><option value="">All Regions</option></select>' +
+'                    <span style="font-size: 12px; color: #a0aec0;">Applies to both reports below</span>' +
+'                </div>' +
+'                <div class="branch-panel-card" style="display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 20px;">' +
+'                    <strong style="font-size: 14px; color: #2d3748;">Monthly Report:</strong>' +
+'                    <input type="month" id="reportMonth" style="padding: 8px 10px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 14px;">' +
+'                    <button class="branch-add-btn" onclick="downloadReport()">Download Excel Report</button>' +
+'                </div>' +
+'                <div class="branch-panel-card" style="display: flex; align-items: flex-end; gap: 14px; flex-wrap: wrap;">' +
+'                    <div><strong style="font-size: 14px; color: #2d3748; display:block; margin-bottom: 8px;">Date Range Report:</strong></div>' +
+'                    <div><label style="display:block;font-size:12px;font-weight:600;color:#4a5568;margin-bottom:4px;">From Date</label><input type="date" id="reportFromDate" style="padding: 8px 10px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 14px;"></div>' +
+'                    <div><label style="display:block;font-size:12px;font-weight:600;color:#4a5568;margin-bottom:4px;">To Date</label><input type="date" id="reportToDate" style="padding: 8px 10px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 14px;"></div>' +
+'                    <button class="branch-add-btn" onclick="downloadReportByRange()">Download Excel Report</button>' +
+'                </div>' +
+'                <h3 class="section-heading">Performance Overview</h3>' +
+'                <div class="chart-grid">' +
+'                    <div class="chart-card"><h3>Tickets by Status</h3><canvas id="chartStatus"></canvas></div>' +
+'                    <div class="chart-card"><h3>Tickets by Priority</h3><canvas id="chartPriority"></canvas></div>' +
+'                    <div class="chart-card"><h3>Tickets by Category</h3><canvas id="chartCategory"></canvas></div>' +
+'                    <div class="chart-card wide"><h3>Ticket Volume \u2014 Last 30 Days</h3><canvas id="chartTrend"></canvas></div>' +
+(isAdminUser ? '                    <div class="chart-card"><h3>Tickets by Staff</h3><canvas id="chartStaff"></canvas></div>' : '') +
+(isAdminUser ? '                    <div class="chart-card"><h3>Tickets by Branch</h3><canvas id="chartBranch"></canvas></div>' : '') +
+'                </div>' +
+'            </div>' +
+'            <div id="viewChangePassword" class="dashboard-view">' +
+'                <div class="branch-panel-card">' +
+'                    <h2>Change Password</h2>' +
+(isAdminUser ?
+'                    <p style="color:#718096;font-size:14px;line-height:1.6;max-width:480px;">Admin password is set via the <code>ADMIN_PASSWORD</code> environment variable in your hosting dashboard (e.g. Render). Update it there and redeploy \u2014 it can\'t be changed from this page.</p>'
+:
+'                    <div style="max-width:360px;">' +
+'                        <label style="display:block;font-size:12px;font-weight:600;color:#4a5568;margin-top:14px;margin-bottom:4px;">Current Password</label>' +
+'                        <input type="password" id="currentPassword" style="width:100%;padding:10px;border:1px solid #cbd5e0;border-radius:6px;font-size:14px;">' +
+'                        <label style="display:block;font-size:12px;font-weight:600;color:#4a5568;margin-top:14px;margin-bottom:4px;">New Password</label>' +
+'                        <input type="password" id="newPassword" style="width:100%;padding:10px;border:1px solid #cbd5e0;border-radius:6px;font-size:14px;">' +
+'                        <label style="display:block;font-size:12px;font-weight:600;color:#4a5568;margin-top:14px;margin-bottom:4px;">Confirm New Password</label>' +
+'                        <input type="password" id="confirmPassword" style="width:100%;padding:10px;border:1px solid #cbd5e0;border-radius:6px;font-size:14px;">' +
+'                        <button class="branch-add-btn" onclick="changePassword()" style="margin-top:16px;">Update Password</button>' +
+'                    </div>'
+) +
+'                </div>' +
+'            </div>' +
+(isSuperAdminUser ?
+'            <div id="viewAdmins" class="dashboard-view">' +
+'                <div class="branch-panel-card" style="margin-bottom: 20px;">' +
+'                    <h2>Add Region Admin</h2>' +
+'                    <div class="branch-input-group">' +
+'                        <input type="text" id="newAdminName" placeholder="Full Name">' +
+'                        <input type="text" id="newAdminUsername" placeholder="Username">' +
+'                        <input type="text" id="newAdminPassword" placeholder="Password">' +
+'                        <select id="newAdminRegion" style="flex-grow: 1; padding: 12px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 14px;"><option value="" disabled selected>Select Region</option></select>' +
+'                        <button class="branch-add-btn" id="addAdminBtn" onclick="addNewRegionAdmin()">Add Admin</button>' +
+'                    </div>' +
+'                </div>' +
+'                <div class="branch-panel-card">' +
+'                    <h2>Region Admins</h2>' +
+'                    <table class="branch-table">' +
+'                        <thead><tr><th>Name</th><th>Username</th><th>Region</th><th>Status</th><th>Edit</th><th>Delete</th></tr></thead>' +
+'                        <tbody id="regionAdminsTableBody"></tbody>' +
+'                    </table>' +
+'                </div>' +
+'            </div>'
+: '') +
+'            <div id="viewBranches" class="dashboard-view">' +
+(isSuperAdminUser ?
+'                <div class="branch-panel-card" style="margin-bottom: 20px;">' +
+'                    <h2>Manage Regions</h2>' +
+'                    <div class="branch-input-group">' +
+'                        <input type="text" id="newRegionName" placeholder="Enter Region Name">' +
+'                        <button class="branch-add-btn" id="addRegionBtn" onclick="addNewRegion()">Add Region</button>' +
+'                    </div>' +
+'                    <table class="branch-table">' +
+'                        <thead><tr><th>Region Name</th><th>Edit</th><th>Delete</th></tr></thead>' +
+'                        <tbody id="regionTableBody"></tbody>' +
+'                    </table>' +
+'                </div>'
+: '') +
+'                <div class="branch-panel-card">' +
+'                    <h2>Create New Branch Location</h2>' +
+'                    <div class="branch-input-group">' +
+'                        <input type="text" id="newBranchName" placeholder="Enter Branch Name">' +
+(isSuperAdminUser ?
+'                        <select id="newBranchRegion" style="flex-grow: 1; padding: 12px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 14px;"><option value="" disabled selected>Select Region</option></select>'
+:
+'                        <input type="text" value="' + (req.session.region || '') + '" disabled style="flex-grow: 1; padding: 12px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 14px; background:#f1f0ee; color:#718096;">'
+) +
+'                        <button class="branch-add-btn" id="addBranchBtn" onclick="addNewBranch()">Add Branch</button>' +
+'                    </div>' +
+'                    <div id="branchGroupsContainer"></div>' +
+'                </div>' +
+'            </div>' +
+'            <div id="viewStaff" class="dashboard-view">' +
+'                <div class="branch-panel-card" style="margin-bottom: 20px;">' +
+'                    <h2>Add New Staff Member</h2>' +
+'                    <div class="branch-input-group">' +
+'                        <input type="text" id="newStaffName" placeholder="Full Name">' +
+'                        <input type="text" id="newStaffId" placeholder="Staff ID (optional)">' +
+'                        <input type="text" id="newStaffPassword" placeholder="Password">' +
+'                        <input type="email" id="newStaffEmail" placeholder="Email">' +
+(isSuperAdminUser ?
+'                        <select id="newStaffRegion" style="flex-grow: 1; padding: 12px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 14px;"><option value="">Unassigned (global)</option></select>'
+: '') +
+'                        <button class="branch-add-btn" id="addStaffBtn" onclick="addNewStaff()">Add Staff</button>' +
+'                    </div>' +
+'                </div>' +
+'                <div class="branch-panel-card">' +
+'                    <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; margin-bottom:20px;">' +
+'                        <h2 style="margin-bottom:0;">Active Helpdesk Personnel</h2>' +
+'                        <input type="text" id="staffSearchInput" placeholder="Search by name, staff ID, email, or region..." oninput="renderStaffTable()" style="padding: 8px 12px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 13px; width: 300px; max-width: 100%;">' +
+'                    </div>' +
+'                    <table class="branch-table">' +
+'                        <thead><tr><th>Staff ID</th><th>Name Tag</th><th>Operational Route Email</th>' + (isSuperAdminUser ? '<th>Region</th>' : '') + '<th>Assigned Branches</th><th>Edit</th><th>Delete</th></tr></thead>' +
+'                        <tbody id="staffTableBody"></tbody>' +
+'                    </table>' +
+'                </div>' +
+'            </div>' +
+'            <div id="viewAuditLog" class="dashboard-view">' +
+'                <div class="branch-panel-card">' +
+'                    <h2>Recent Admin Activity</h2>' +
+'                    <table class="branch-table">' +
+'                        <thead><tr><th>Timestamp</th><th>Actor</th><th>Action</th><th>Details</th></tr></thead>' +
+'                        <tbody id="auditLogTableBody"></tbody>' +
+'                    </table>' +
+'                </div>' +
+'            </div>' +
+'            <div id="viewInbox" class="dashboard-view">' +
+(isAdminUser ? '' :
+'                <div class="branch-panel-card" style="margin-bottom: 20px;">' +
+'                    <h2>Send a Message to Admin</h2>' +
+'                    <div style="max-width:520px;">' +
+'                        <label style="display:block;font-size:12px;font-weight:600;color:#4a5568;margin-bottom:4px;">Subject</label>' +
+'                        <input type="text" id="inboxSubject" style="width:100%;padding:10px;border:1px solid #cbd5e0;border-radius:6px;font-size:14px;margin-bottom:12px;">' +
+'                        <label style="display:block;font-size:12px;font-weight:600;color:#4a5568;margin-bottom:4px;">Message</label>' +
+'                        <textarea id="inboxBody" rows="4" style="width:100%;padding:10px;border:1px solid #cbd5e0;border-radius:6px;font-size:14px;resize:vertical;"></textarea>' +
+'                        <button class="branch-add-btn" id="sendInboxBtn" onclick="sendInboxMessage()" style="margin-top:12px;">Send Message</button>' +
+'                    </div>' +
+'                </div>'
+) +
+'                <div id="inboxList">Loading messages...</div>' +
+'            </div>' +
+'        </section>' +
+'    </main>' +
+'    <script>' +
+'        const currentUser = "' + dynamicUsername + '";' +
+'        const isAdmin = ' + dynamicIsAdmin + ';' +
+'        const isSuperAdmin = ' + dynamicIsSuperAdmin + ';' +
+'        document.getElementById("displayUserLabel").innerText = currentUser;' +
+'        let knownNotificationIds = new Set();' +
+'        let notificationsInitialized = false;' +
+'        let notifAudioCtx = null;' +
+'        function playNotificationSound() {' +
+'            try {' +
+'                if (!notifAudioCtx) notifAudioCtx = new (window.AudioContext || window.webkitAudioContext)();' +
+'                const ctx = notifAudioCtx;' +
+'                const now = ctx.currentTime;' +
+'                [880, 1175].forEach((freq, i) => {' +
+'                    const osc = ctx.createOscillator();' +
+'                    const gain = ctx.createGain();' +
+'                    osc.type = "square";' +
+'                    osc.frequency.value = freq;' +
+'                    const start = now + i * 0.15;' +
+'                    gain.gain.setValueAtTime(0.0001, start);' +
+'                    gain.gain.exponentialRampToValueAtTime(0.5, start + 0.02);' +
+'                    gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.22);' +
+'                    osc.connect(gain);' +
+'                    gain.connect(ctx.destination);' +
+'                    osc.start(start);' +
+'                    osc.stop(start + 0.25);' +
+'                });' +
+'            } catch (err) { console.warn("Notification sound could not play."); }' +
+'        }' +
+'        function toggleNotifications(event) {' +
+'            if (event) event.stopPropagation();' +
+'            const menu = document.getElementById("notificationMenu");' +
+'            menu.classList.toggle("show");' +
+'        }' +
+'        document.addEventListener("click", (e) => {' +
+'            const wrap = document.querySelector(".notification-wrap");' +
+'            const menu = document.getElementById("notificationMenu");' +
+'            if (menu && menu.classList.contains("show") && wrap && !wrap.contains(e.target)) {' +
+'                menu.classList.remove("show");' +
+'            }' +
+'        });' +
+'        async function markNotificationRead(id) {' +
+'            await fetch("/notifications/" + id + "/read", { method: "POST" });' +
+'            loadNotifications();' +
+'        }' +
+'        async function clearAllNotifications() {' +
+'            await fetch("/notifications", { method: "DELETE" });' +
+'            loadNotifications();' +
+'        }' +
+'        async function loadNotifications() {' +
+'            try {' +
+'                const response = await fetch("/notifications");' +
+'                if (!response.ok) return;' +
+'                const notifications = await response.json();' +
+'                const unread = notifications.filter(n => !n.read);' +
+'                const count = document.getElementById("notificationCount");' +
+'                count.innerText = unread.length > 99 ? "99+" : unread.length;' +
+'                count.style.display = unread.length ? "flex" : "none";' +
+'                const list = document.getElementById("notificationList");' +
+'                list.innerHTML = notifications.length ? notifications.map(n => \'<div class="notification-item \'+(!n.read ? "unread" : "")+\'"><div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;"><div><strong>Ticket #\'+String(n.ticketNumber).padStart(4,"0")+\' assigned</strong>\'+n.message+\'<br><small>\'+new Date(n.createdAt).toLocaleString()+\'</small></div>\'+(!n.read ? \'<button onclick="markNotificationRead(\\\'\'+n._id+\'\\\')" style="flex-shrink:0;background:none;border:1px solid #cbd5e0;border-radius:5px;padding:3px 8px;font-size:10px;font-weight:600;color:#4a5568;cursor:pointer;">Mark as read</button>\' : "")+\'</div></div>\').join("") : \'<div class="notification-empty">No notifications.</div>\';' +
+'                const newUnread = unread.filter(n => !knownNotificationIds.has(n._id));' +
+'                if (newUnread.length && notificationsInitialized) { playNotificationSound(); showAdminToast(newUnread[0].message); }' +
+'                notifications.forEach(n => knownNotificationIds.add(n._id));' +
+'                notificationsInitialized = true;' +
+'            } catch (err) { console.warn("Could not load notifications."); }' +
+'        }' +
+'        let inactivityTimer = null;' +
+'        function resetInactivityTimer() {' +
+'            clearTimeout(inactivityTimer);' +
+'            inactivityTimer = setTimeout(() => { window.location.href = "/logout"; }, 4 * 60 * 60 * 1000);' +
+'        }' +
+'        function handleLogoutClick() {' +
+'            document.getElementById("logoutBtn").innerHTML = \'<span class="admin-spinner"></span>Logging out...\';' +
+'        }' +
+'        ["mousemove", "keydown", "click", "scroll", "touchstart"].forEach(evt => {' +
+'            document.addEventListener(evt, resetInactivityTimer);' +
+'        });' +
+'        resetInactivityTimer();' +
+'        function toggleSidebar() {' +
+'            document.getElementById("sidebar").classList.toggle("sidebar-open");' +
+'            document.getElementById("sidebarBackdrop").classList.toggle("active");' +
+'        }' +
+'        function closeSidebar() {' +
+'            document.getElementById("sidebar").classList.remove("sidebar-open");' +
+'            document.getElementById("sidebarBackdrop").classList.remove("active");' +
+'        }' +
+'        let confirmCallback = null;' +
+'        let confirmHasInput = false;' +
+'        let confirmHasSelect = false;' +
+'        function showConfirmModal(message, callback, okLabel) {' +
+'            document.getElementById("confirmMessage").innerText = message;' +
+'            document.getElementById("confirmOkBtn").innerText = okLabel || "Confirm";' +
+'            document.getElementById("confirmInput").style.display = "none";' +
+'            document.getElementById("confirmStaffSelect").style.display = "none";' +
+'            confirmHasInput = false;' +
+'            confirmHasSelect = false;' +
+'            confirmCallback = callback;' +
+'            document.getElementById("confirmOverlay").classList.add("show");' +
+'        }' +
+'        function showPromptModal(message, defaultValue, callback, okLabel) {' +
+'            document.getElementById("confirmMessage").innerText = message;' +
+'            document.getElementById("confirmOkBtn").innerText = okLabel || "Save";' +
+'            const input = document.getElementById("confirmInput");' +
+'            input.style.display = "block";' +
+'            document.getElementById("confirmStaffSelect").style.display = "none";' +
+'            input.value = defaultValue || "";' +
+'            confirmHasInput = true;' +
+'            confirmHasSelect = false;' +
+'            confirmCallback = callback;' +
+'            document.getElementById("confirmOverlay").classList.add("show");' +
+'            setTimeout(() => input.focus(), 50);' +
+'        }' +
+'        function showStaffSelectModal(message, staffList, callback, okLabel) {' +
+'            document.getElementById("confirmMessage").innerText = message;' +
+'            document.getElementById("confirmOkBtn").innerText = okLabel || "Reallocate";' +
+'            document.getElementById("confirmInput").style.display = "none";' +
+'            const select = document.getElementById("confirmStaffSelect");' +
+'            select.style.display = "block";' +
+'            select.innerHTML = \'<option value="" disabled selected>Select staff member</option>\';' +
+'            staffList.forEach(s => { select.innerHTML += \'<option value="\'+s.name+\'">\'+s.name+\'</option>\'; });' +
+'            confirmHasInput = false;' +
+'            confirmHasSelect = true;' +
+'            confirmCallback = callback;' +
+'            document.getElementById("confirmOverlay").classList.add("show");' +
+'        }' +
+'        function closeConfirmModal(confirmed) {' +
+'            const inputValue = document.getElementById("confirmInput").value;' +
+'            const selectValue = document.getElementById("confirmStaffSelect").value;' +
+'            const hadInput = confirmHasInput;' +
+'            const hadSelect = confirmHasSelect;' +
+'            document.getElementById("confirmOverlay").classList.remove("show");' +
+'            const cb = confirmCallback;' +
+'            confirmCallback = null;' +
+'            if (confirmed && cb) {' +
+'                if (hadSelect) { if (selectValue) cb(selectValue); }' +
+'                else if (hadInput) { cb(inputValue); }' +
+'                else { cb(); }' +
+'            }' +
+'        }' +
+'        let adminToastTimer = null;' +
+'        function showAdminToast(message, isError) {' +
+'            const toast = document.getElementById("adminToast");' +
+'            const iconSvg = isError' +
+'                ? \'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>\'' +
+'                : \'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>\';' +
+'            toast.innerHTML =' +
+'                \'<div class="admin-toast-icon">\' + iconSvg + \'</div>\' +' +
+'                \'<div class="admin-toast-text"><div class="admin-toast-title">\' + (isError ? "Error" : "Success") + \'</div><div class="admin-toast-message">\' + message + \'</div></div>\' +' +
+'                \'<div class="admin-toast-progress"></div>\';' +
+'            toast.className = "admin-toast show" + (isError ? " error" : "");' +
+'            clearTimeout(adminToastTimer);' +
+'            adminToastTimer = setTimeout(() => { toast.classList.remove("show"); }, 4000);' +
+'        }' +
+'        function toggleFilterPanel() {' +
+'            const panel = document.getElementById("ticketFilterPanel");' +
+'            const btn = document.getElementById("toggleFilterBtn");' +
+'            const isOpen = panel.style.display !== "none";' +
+'            panel.style.display = isOpen ? "none" : "flex";' +
+'            if (btn) btn.innerHTML = (isOpen ? \'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>Filters\' : \'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>Hide Filters\');' +
+'        }' +
+'        function refreshTicketsDashboard() {' +
+'            currentStatusFilter = "default-view";' +
+'            currentPage = 1;' +
+'            const fromEl = document.getElementById("filterFromDate"); if (fromEl) fromEl.value = "";' +
+'            const toEl = document.getElementById("filterToDate"); if (toEl) toEl.value = "";' +
+'            const catEl = document.getElementById("filterCategory"); if (catEl) catEl.value = "";' +
+'            const sfEl = document.getElementById("filterStaff"); if (sfEl) sfEl.value = "";' +
+'            const rfEl = document.getElementById("filterRegion"); if (rfEl) rfEl.value = "";' +
+'            const searchEl = document.getElementById("filterSearchText"); if (searchEl) searchEl.value = "";' +
+'            switchView("tickets");' +
+'        }' +
+'        function switchView(target) {' +
+'            closeSidebar();' +
+'            if ((target === "branches" || target === "staff" || target === "audit") && !isAdmin) {' +
+'                alert("Access Denied: Admins only.");' +
+'                return;' +
+'            }' +
+'            if (target === "admins" && !isSuperAdmin) {' +
+'                alert("You are not authorized to access this page.");' +
+'                return;' +
+'            }' +
+'            const mainContentEl = document.querySelector(".main-content");' +
+'            if (mainContentEl) mainContentEl.scrollTop = 0;' +
+'            document.querySelectorAll(".dashboard-view").forEach(el => el.classList.remove("active"));' +
+'            document.querySelectorAll(".menu-item").forEach(el => el.classList.remove("active"));' +
+'            if (target === "tickets") {' +
+'                document.getElementById("viewTickets").classList.add("active");' +
+'                document.getElementById("tabTicketsLink").classList.add("active");' +
+'                document.getElementById("panelViewTitle").innerText = "Helpdesk Operations";' +
+'                loadTickets();' +
+'            } else if (target === "reports") {' +
+'                document.getElementById("viewReports").classList.add("active");' +
+'                document.getElementById("tabReportsLink").classList.add("active");' +
+'                document.getElementById("panelViewTitle").innerText = "Monthly Reports";' +
+'                loadReportCharts();' +
+'            } else if (target === "password") {' +
+'                document.getElementById("viewChangePassword").classList.add("active");' +
+'                document.getElementById("tabPasswordLink").classList.add("active");' +
+'                document.getElementById("panelViewTitle").innerText = "Change Password";' +
+'            } else if (target === "branches") {' +
+'                document.getElementById("viewBranches").classList.add("active");' +
+'                document.getElementById("tabBranchesLink").classList.add("active");' +
+'                document.getElementById("panelViewTitle").innerText = "Company Branches Layout";' +
+'                loadRegionsList();' +
+'                loadBranchesList();' +
+'            } else if (target === "staff") {' +
+'                document.getElementById("viewStaff").classList.add("active");' +
+'                document.getElementById("tabStaffLink").classList.add("active");' +
+'                document.getElementById("panelViewTitle").innerText = "Manage IT Staff Profile Queue";' +
+'                loadStaffList();' +
+'            } else if (target === "audit") {' +
+'                document.getElementById("viewAuditLog").classList.add("active");' +
+'                document.getElementById("tabAuditLink").classList.add("active");' +
+'                document.getElementById("panelViewTitle").innerText = "Recent Admin Activity";' +
+'                loadAuditLog();' +
+'            } else if (target === "admins") {' +
+'                document.getElementById("viewAdmins").classList.add("active");' +
+'                document.getElementById("tabAdminsLink").classList.add("active");' +
+'                document.getElementById("panelViewTitle").innerText = "Manage Region Admins";' +
+'                loadRegionAdminsList();' +
+'            } else if (target === "inbox") {' +
+'                document.getElementById("viewInbox").classList.add("active");' +
+'                document.getElementById("tabInboxLink").classList.add("active");' +
+'                document.getElementById("panelViewTitle").innerText = "Inbox";' +
+'                loadInbox();' +
+'            }' +
+'        }' +
+'        let currentStatusFilter = "default-view";' +
+'        let currentPage = 1;' +
+'        const PAGE_SIZE = 10;' +
+'        function filterByStatus(status) {' +
+'            currentStatusFilter = status;' +
+'            currentPage = 1;' +
+'            loadTickets();' +
+'        }' +
+'        async function applyTicketFilters() {' +
+'            const btn = document.getElementById("searchTicketsBtn");' +
+'            const defaultHTML = btn.innerHTML;' +
+'            btn.disabled = true;' +
+'            btn.innerHTML = \'<span class="admin-spinner"></span>Searching...\';' +
+'            currentPage = 1;' +
+'            await loadTickets();' +
+'            btn.disabled = false;' +
+'            btn.innerHTML = defaultHTML;' +
+'        }' +
+'        function clearTicketFilters() {' +
+'            document.getElementById("filterFromDate").value = "";' +
+'            document.getElementById("filterToDate").value = "";' +
+'            document.getElementById("filterCategory").value = "";' +
+'            const sf = document.getElementById("filterStaff");' +
+'            if (sf) sf.value = "";' +
+'            const rf = document.getElementById("filterRegion");' +
+'            if (rf) rf.value = "";' +
+'            const searchEl = document.getElementById("filterSearchText");' +
+'            if (searchEl) searchEl.value = "";' +
+'            currentStatusFilter = "default-view";' +
+'            currentPage = 1;' +
+'            loadTickets();' +
+'        }' +
+'        function goToPage(page) {' +
+'            currentPage = page;' +
+'            loadTickets();' +
+'            const mainContentEl = document.querySelector(".main-content");' +
+'            if (mainContentEl) mainContentEl.scrollTop = 0;' +
+'        }' +
+'        function renderPagination(totalItems) {' +
+'            const bar = document.getElementById("ticketPagination");' +
+'            const totalPages = Math.max(1, Math.ceil(totalItems / PAGE_SIZE));' +
+'            if (currentPage > totalPages) currentPage = totalPages;' +
+'            if (totalItems === 0) { bar.style.display = "none"; bar.innerHTML = ""; return; }' +
+'            bar.style.display = "flex";' +
+'            const startItem = (currentPage - 1) * PAGE_SIZE + 1;' +
+'            const endItem = Math.min(currentPage * PAGE_SIZE, totalItems);' +
+'            let pageButtonsHtml = \'<button class="page-btn" \'+(currentPage === 1 ? "disabled" : "")+\' onclick="goToPage(\'+(currentPage - 1)+\')">\u2190 Prev</button>\';' +
+'            const addPageBtn = (p) => { pageButtonsHtml += \'<button class="page-btn \'+(p === currentPage ? "active" : "")+\'" onclick="goToPage(\'+p+\')">\'+p+\'</button>\'; };' +
+'            const addEllipsis = () => { pageButtonsHtml += \'<span class="page-ellipsis">\u2026</span>\'; };' +
+'            const windowSize = 1;' +
+'            let lastPrinted = 0;' +
+'            for (let p = 1; p <= totalPages; p++) {' +
+'                const nearCurrent = Math.abs(p - currentPage) <= windowSize;' +
+'                const isEdge = p === 1 || p === totalPages;' +
+'                if (nearCurrent || isEdge) {' +
+'                    if (p - lastPrinted > 1) addEllipsis();' +
+'                    addPageBtn(p);' +
+'                    lastPrinted = p;' +
+'                }' +
+'            }' +
+'            pageButtonsHtml += \'<button class="page-btn" \'+(currentPage === totalPages ? "disabled" : "")+\' onclick="goToPage(\'+(currentPage + 1)+\')">Next \u2192</button>\';' +
+'            bar.innerHTML = \'<div class="pagination-info">Showing \'+startItem+\' \u2013 \'+endItem+\' of \'+totalItems+\' entries</div><div class="pagination-controls">\'+pageButtonsHtml+\'</div>\';' +
+'        }' +
+'        async function loadStaffFilterOptions() {' +
+'            if (!isAdmin) return;' +
+'            document.getElementById("staffFilterWrapper").style.display = "block";' +
+'            const res = await fetch("/tickets/staff-list");' +
+'            const staff = await res.json();' +
+'            const select = document.getElementById("filterStaff");' +
+'            select.innerHTML = \'<option value="">All Staff</option>\';' +
+'            staff.forEach(s => {' +
+'                select.innerHTML += \'<option value="\'+s.name+\'">\'+s.name+\'</option>\';' +
+'            });' +
+'        }' +
+'        async function loadRegionFilterOptions() {' +
+'            if (!isAdmin) return;' +
+'            const res = await fetch("/tickets/regions");' +
+'            const regions = await res.json();' +
+'            const filterWrapper = document.getElementById("regionFilterWrapper");' +
+'            if (filterWrapper) filterWrapper.style.display = "block";' +
+'            const filterSelect = document.getElementById("filterRegion");' +
+'            if (filterSelect) {' +
+'                filterSelect.innerHTML = \'<option value="">All Regions</option>\';' +
+'                regions.forEach(r => { filterSelect.innerHTML += \'<option value="\'+r.name+\'">\'+r.name+\'</option>\'; });' +
+'            }' +
+'            const reportSelect = document.getElementById("reportRegion");' +
+'            if (reportSelect) {' +
+'                reportSelect.innerHTML = \'<option value="">All Regions</option>\';' +
+'                regions.forEach(r => { reportSelect.innerHTML += \'<option value="\'+r.name+\'">\'+r.name+\'</option>\'; });' +
+'            }' +
+'        }' +
+'        function sortOpenFirstThenResolvedByRecency(list) {' +
+'            const openTickets = list.filter(t => t.status !== "Resolved");' +
+'            const resolvedTickets = list.filter(t => t.status === "Resolved");' +
+'            resolvedTickets.sort((a, b) => new Date(b.resolvedAt || 0) - new Date(a.resolvedAt || 0));' +
+'            return openTickets.concat(resolvedTickets);' +
+'        }' +
+'        async function loadTickets() {' +
+'            try {' +
+'            const controller = new AbortController();' +
+'            const timeout = setTimeout(() => controller.abort(), 15000);' +
+'            const response = await fetch("/tickets", { signal: controller.signal });' +
+'            clearTimeout(timeout);' +
+'            if (response.status === 401) { window.location.href = "/login"; return; }' +
+'            if (!response.ok) { throw new Error("Ticket request failed (" + response.status + ")"); }' +
+'            let tickets = await response.json();' +
+'            const staffFilterEl = document.getElementById("filterStaff");' +
+'            const staffFilterValue = staffFilterEl ? staffFilterEl.value : "";' +
+'            if (staffFilterValue) { tickets = tickets.filter(t => t.assignedTo === staffFilterValue); }' +
+'            const regionFilterEl = document.getElementById("filterRegion");' +
+'            const regionFilterValue = regionFilterEl ? regionFilterEl.value : "";' +
+'            if (regionFilterValue) {' +
+'                const branchRes = await fetch("/public-branches");' +
+'                const allBranches = await branchRes.json();' +
+'                const branchNamesInRegion = allBranches.filter(b => (b.region || "Unassigned") === regionFilterValue).map(b => b.name);' +
+'                tickets = tickets.filter(t => branchNamesInRegion.includes(t.branch));' +
+'            }' +
+'            const categoryFilterValue = document.getElementById("filterCategory").value;' +
+'            if (categoryFilterValue) { tickets = tickets.filter(t => (t.category || "Other") === categoryFilterValue); }' +
+'            const searchTextValue = document.getElementById("filterSearchText").value.trim().toLowerCase();' +
+'            if (searchTextValue) {' +
+'                tickets = tickets.filter(t => {' +
+'                    const ticketNumStr = String(t.ticketNumber || "").toLowerCase();' +
+'                    const ticketNumPadded = String(t.ticketNumber || "").padStart(4, "0").toLowerCase();' +
+'                    const submittedBy = (t.submittedBy || "").toLowerCase();' +
+'                    const branch = (t.branch || "").toLowerCase();' +
+'                    const mobile = (t.mobile || "").toLowerCase();' +
+'                    return ticketNumStr.includes(searchTextValue) || ticketNumPadded.includes(searchTextValue) || submittedBy.includes(searchTextValue) || branch.includes(searchTextValue) || mobile.includes(searchTextValue);' +
+'                });' +
+'            }' +
+'            const fromVal = document.getElementById("filterFromDate").value;' +
+'            const toVal = document.getElementById("filterToDate").value;' +
+'            if (fromVal) { const fromDate = new Date(fromVal + "T00:00:00"); tickets = tickets.filter(t => t.createdAt && new Date(t.createdAt) >= fromDate); }' +
+'            if (toVal) { const toDate = new Date(toVal + "T23:59:59"); tickets = tickets.filter(t => t.createdAt && new Date(t.createdAt) <= toDate); }' +
+'            document.getElementById("statOpen").innerText = tickets.filter(t => t.status === "Open").length;' +
+'            document.getElementById("statResolved").innerText = tickets.filter(t => t.status === "Resolved").length;' +
+'            document.getElementById("statEscalated").innerText = tickets.filter(t => t.escalated && t.status !== "Resolved").length;' +
+'            document.getElementById("statMine").innerText = tickets.length;' +
+'            if (currentStatusFilter === "default-view") { tickets = tickets.filter(t => t.status === "Open"); }' +
+'            else if (currentStatusFilter === "Escalated") { tickets = tickets.filter(t => t.escalated); tickets = sortOpenFirstThenResolvedByRecency(tickets); }' +
+'            else if (currentStatusFilter === "Resolved") { tickets = tickets.filter(t => t.status === "Resolved"); tickets.sort((a, b) => new Date(b.resolvedAt || 0) - new Date(a.resolvedAt || 0)); }' +
+'            else if (currentStatusFilter === "all") { tickets = sortOpenFirstThenResolvedByRecency(tickets); }' +
+'            else if (currentStatusFilter !== "all") { tickets = tickets.filter(t => t.status === currentStatusFilter); }' +
+'            const totalFilteredCount = tickets.length;' +
+'            const totalPages = Math.max(1, Math.ceil(totalFilteredCount / PAGE_SIZE));' +
+'            if (currentPage > totalPages) currentPage = totalPages;' +
+'            if (currentPage < 1) currentPage = 1;' +
+'            const pageStart = (currentPage - 1) * PAGE_SIZE;' +
+'            const pagedTickets = tickets.slice(pageStart, pageStart + PAGE_SIZE);' +
+'            const listDiv = document.getElementById("ticketList");' +
+'            if (pagedTickets.length === 0) {' +
+'                listDiv.innerHTML = \'<p style="text-align: center; color: #718096; padding: 40px 0;">No support requests logs found.</p>\';' +
+'                renderPagination(totalFilteredCount);' +
+'                return;' +
+'            }' +
+'            let ticketCardsHtml = "";' +
+'            pagedTickets.forEach(ticket => {' +
+'                const isResolved = ticket.status === "Resolved";' +
+'                const isMineOrAdmin = isAdmin || ticket.assignedTo === currentUser;' +
+'                const reallocateBtn = (isAdmin && !isResolved && ticket.escalated) ? \'<button class="reallocate-btn" onclick="reallocateTicket(\\\'\'+ticket._id+\'\\\')">Reallocate</button>\' : "";' +
+'                const actionBtn = (!isResolved && isMineOrAdmin) ? \'<button class="resolve-btn" onclick="resolveTicket(\\\'\'+ticket._id+\'\\\')">Resolve Ticket</button>\' : "";' +
+'                const escalateBtn = (!isAdmin && !isResolved && !ticket.escalated && ticket.assignedTo === currentUser) ? \'<button class="escalate-btn" onclick="escalateTicket(\\\'\'+ticket._id+\'\\\')">Escalate to Admin</button>\' : "";' +
+'                const waitingNote = (!isAdmin && !isResolved && !isMineOrAdmin) ? \'<span class="badge" style="background:#fef3c7;color:#92400e;">Waiting on Admin</span>\' : "";' +
+'                const actionsHtml = (reallocateBtn || actionBtn || escalateBtn || waitingNote) ? \'<div class="ticket-actions">\'+reallocateBtn+actionBtn+escalateBtn+waitingNote+\'</div>\' : "";' +
+'                const escalatedBadge = ticket.escalated ? \'<span class="badge badge-escalated">Escalated</span>\' : "";' +
+'                const resolvedLine = (ticket.status === "Resolved" && ticket.resolvedAt) ? \'<div class="assignment-row"><span class="assignment-label">Resolved</span><span class="assignment-value">\'+new Date(ticket.resolvedAt).toLocaleString()+(ticket.resolvedBy ? \' by \'+ticket.resolvedBy : "")+\'</span></div>\' : "";' +
+'                const escalationLine = ticket.escalated ? \'<div class="assignment-row"><span class="assignment-label">Escalation</span><span class="assignment-value">\'+ticket.status+\' (\'+(ticket.escalatedBy || "Staff")+\' escalated\'+(ticket.escalatedAt ? " on "+new Date(ticket.escalatedAt).toLocaleString() : "")+\')</span></div>\'+(ticket.escalationReason ? \'<div class="assignment-row"><span class="assignment-label">Reason</span><span class="assignment-value">\'+ticket.escalationReason+\'</span></div>\' : "") : "";' +
+'                const cardStateClass = isResolved ? "ticket-resolved" : (ticket.priority === "High" ? "ticket-high-priority" : (ticket.escalated ? "ticket-escalated" : ""));' +
+'                const imageHtml = ticket.screenshot ? \'<a href="\'+ticket.screenshot+\'" target="_blank"><img src="\'+ticket.screenshot+\'" class="screenshot-preview"></a>\' : "";' +
+'                let commentListHtml = "";' +
+'                if (ticket.comments) {' +
+'                    ticket.comments.forEach(c => {' +
+'                        commentListHtml += \'<div class="comment-item"><strong>\'+c.author+\':</strong> \'+c.text+(c.attachment ? \' <a href="\'+c.attachment+\'" target="_blank">\uD83D\uDCCE Attachment</a>\' : "")+\'</div>\';' +
+'                    });' +
+'                }' +
+'                ticketCardsHtml += \'<div class="ticket-card \'+cardStateClass+\'"><div class="ticket-header"><div><h3 class="ticket-title">#\'+String(ticket.ticketNumber).padStart(4,"0")+\' \'+ticket.title+\'</h3><div style="margin-top: 8px;"><span class="badge p-\'+ticket.priority+\'">\'+ticket.priority+\'</span><span class="badge status-\'+ticket.status.toLowerCase()+\'">\'+ticket.status+\'</span><span class="badge badge-category">\'+(ticket.category || "Other")+\'</span>\'+escalatedBadge+\'</div></div>\'+actionsHtml+\'</div><p class="ticket-desc">\'+ticket.description+\'</p>\'+imageHtml+\'<div class="assignment-info"><div class="assignment-row"><span class="assignment-label">Submitted By</span><span class="assignment-value">\'+(ticket.submittedBy || "Unknown")+(ticket.designation ? " ("+ticket.designation+")" : "")+\'</span></div><div class="assignment-row"><span class="assignment-label">Branch</span><span class="assignment-value">\'+ticket.branch+\'</span></div><div class="assignment-row"><span class="assignment-label">Mobile</span><span class="assignment-value">\'+ticket.mobile+\'</span></div><div class="assignment-row"><span class="assignment-label">Assigned</span><span class="assignment-value">\'+ticket.assignedTo+\'</span></div><div class="assignment-row"><span class="assignment-label">Submitted</span><span class="assignment-value">\'+(ticket.createdAt ? new Date(ticket.createdAt).toLocaleString() : "N/A")+\'</span></div>\'+escalationLine+resolvedLine+\'</div><div class="comments-section"><h4 class="comments-header">Internal Work Notes</h4><div>\'+(commentListHtml || "No updates.")+\'</div><div class="comment-form"><input type="text" id="input-\'+ticket._id+\'" placeholder="Write operational update..."><label class="comment-attach-btn" title="Attach a file (optional)">📎<input type="file" id="attachment-\'+ticket._id+\'" style="display:none;" accept="image/jpeg,image/png,image/webp,image/gif,application/pdf,.jpg,.jpeg,.png,.webp,.gif,.pdf" onchange="updateAttachmentLabel(\\\'\'+ticket._id+\'\\\')"></label><span id="attachmentName-\'+ticket._id+\'" class="attachment-name-tag"></span><button onclick="addComment(\\\'\'+ticket._id+\'\\\')">Post</button></div></div></div>\';' +
+'            });' +
+'            listDiv.innerHTML = ticketCardsHtml;' +
+'            renderPagination(totalFilteredCount);' +
+'            } catch (err) {' +
+'                console.error("Could not load tickets:", err);' +
+'                const message = err.name === "AbortError" ? "Ticket loading timed out. Check that the MongoDB connection is available." : "Could not load tickets. Please refresh the page. If this continues, check the server connection.";' +
+'                document.getElementById("ticketList").innerHTML = \'<p style="text-align:center;color:#c53030;padding:40px 0;">\'+message+\'</p>\';' +
+'                document.getElementById("ticketPagination").style.display = "none";' +
+'            }' +
+'        }' +
+'async function loadRegionsList() {' +
+'    const response = await fetch("/tickets/regions");' +
+'    const regions = await response.json();' +
+'    const tbody = document.getElementById("regionTableBody");' +
+'    if (tbody) {' +
+'        if (regions.length === 0) {' +
+'            tbody.innerHTML = \'<tr><td colspan="3" style="text-align: center; color: #a0aec0; padding: 20px;">No regions added yet.</td></tr>\';' +
+'        } else {' +
+'            let regionRowsHtml = "";' +
+'            regions.forEach(r => {' +
+'                const safeName = r.name.replace(/\'/g, "\\\\\'");' +
+'                regionRowsHtml += \'<tr><td>\'+r.name+\'</td><td><button class="branch-delete-btn" onclick="editRegion(\\\'\'+r._id+\'\\\', \\\'\'+safeName+\'\\\')">Edit</button></td><td><button class="branch-delete-btn" onclick="deleteRegion(\\\'\'+r._id+\'\\\')">Delete</button></td></tr>\';' +
+'            });' +
+'            tbody.innerHTML = regionRowsHtml;' +
+'        }' +
+'    }' +
+'    const select = document.getElementById("newBranchRegion");' +
+'    if (select) {' +
+'        let optionsHtml = \'<option value="" disabled selected>Select Region</option>\';' +
+'        regions.forEach(r => {' +
+'            optionsHtml += \'<option value="\'+r.name+\'">\'+r.name+\'</option>\';' +
+'        });' +
+'        select.innerHTML = optionsHtml;' +
+'    }' +
+'}' +
+'async function addNewRegion() {' +
+'    const input = document.getElementById("newRegionName");' +
+'    const name = input.value.trim();' +
+'    if (!name) return;' +
+'    const btn = document.getElementById("addRegionBtn");' +
+'    const defaultHTML = btn.innerHTML;' +
+'    btn.disabled = true;' +
+'    btn.innerHTML = \'<span class="admin-spinner"></span>Adding...\';' +
+'    try {' +
+'        const response = await fetch("/tickets/regions", {' +
+'            method: "POST",' +
+'            headers: { "Content-Type": "application/json" },' +
+'            body: JSON.stringify({ name })' +
+'        });' +
+'        if (response.ok) {' +
+'            input.value = "";' +
+'            showAdminToast("Region added successfully.");' +
+'            loadRegionsList();' +
+'            loadBranchesList();' +
+'        } else {' +
+'            const err = await response.json();' +
+'            showAdminToast(err.error || "Could not add region.", true);' +
+'        }' +
+'    } catch (err) {' +
+'        showAdminToast("Something went wrong. Please try again.", true);' +
+'    } finally {' +
+'        btn.disabled = false;' +
+'        btn.innerHTML = defaultHTML;' +
+'    }' +
+'}' +
+'async function editRegion(id, currentName) {' +
+'    showPromptModal("Edit region name:", currentName, async (newName) => {' +
+'        if (!newName || !newName.trim() || newName === currentName) return;' +
+'        const response = await fetch("/tickets/regions/" + id, {' +
+'            method: "PUT",' +
+'            headers: { "Content-Type": "application/json" },' +
+'            body: JSON.stringify({ name: newName.trim() })' +
+'        });' +
+'        if (response.ok) { showAdminToast("Region updated successfully."); loadRegionsList(); loadBranchesList(); }' +
+'        else { const err = await response.json(); showAdminToast(err.error || "Could not update region.", true); }' +
+'    }, "Save");' +
+'}' +
+'async function deleteRegion(id) {' +
+'    showConfirmModal("Remove this region?", async () => {' +
+'        const response = await fetch("/tickets/regions/" + id, { method: "DELETE" });' +
+'        if (response.ok) { showAdminToast("Region removed."); loadRegionsList(); loadBranchesList(); }' +
+'        else { const err = await response.json(); showAdminToast(err.error || "Could not delete region.", true); }' +
+'    }, "Delete");' +
+'}' +
+'async function loadBranchesList() {' +
+'    const [branchRes, regionRes] = await Promise.all([fetch("/public-branches"), fetch("/tickets/regions")]);' +
+'    const branches = await branchRes.json();' +
+'    const regions = await regionRes.json();' +
+'    const allRegionNames = regions.map(r => r.name);' +
+'    if (allRegionNames.indexOf("Unassigned") === -1) allRegionNames.push("Unassigned");' +
+'    const container = document.getElementById("branchGroupsContainer");' +
+'    if (branches.length === 0) {' +
+'        container.innerHTML = \'<p style="text-align: center; color: #a0aec0; padding: 20px;">No branch locations added yet.</p>\';' +
+'        return;' +
+'    }' +
+'    const groups = {};' +
+'    branches.forEach(b => {' +
+'        const region = b.region || "Unassigned";' +
+'        if (!groups[region]) groups[region] = [];' +
+'        groups[region].push(b);' +
+'    });' +
+'    let groupsHtml = "";' +
+'    Object.keys(groups).sort().forEach(region => {' +
+'        let rowsHtml = "";' +
+'        groups[region].forEach(b => {' +
+'            const safeName = b.name.replace(/\'/g, "\\\\\'");' +
+'            let regionOptionsHtml = "";' +
+'            allRegionNames.forEach(rn => {' +
+'                regionOptionsHtml += \'<option value="\'+rn+\'"\'+(rn === region ? \' selected\' : \'\')+\'>\'+rn+\'</option>\';' +
+'            });' +
+'            rowsHtml += \'<tr><td>\'+b.name+\'</td><td><select onchange="moveBranchRegion(\\\'\'+b._id+\'\\\', this.value)" style="padding:6px;border:1px solid #cbd5e0;border-radius:4px;font-size:13px;">\'+regionOptionsHtml+\'</select></td><td><button class="branch-delete-btn" onclick="editBranch(\\\'\'+b._id+\'\\\', \\\'\'+safeName+\'\\\')">Edit</button></td><td><button class="branch-delete-btn" onclick="deleteBranch(\\\'\'+b._id+\'\\\')">Delete</button></td></tr>\';' +
+'        });' +
+'        groupsHtml +=' +
+'            \'<h3 style="margin: 20px 0 8px; font-size: 14px; font-weight: 700; color: #4a5568; text-transform: uppercase; letter-spacing: 0.5px;">\' + region + \'</h3>\' +' +
+'            \'<table class="branch-table"><thead><tr><th>Branch Name</th><th>Region</th><th>Edit</th><th>Delete</th></tr></thead><tbody>\' + rowsHtml + \'</tbody></table>\';' +
+'    });' +
+'    container.innerHTML = groupsHtml;' +
+'}' +
+'async function addNewBranch() {' +
+'    const input = document.getElementById("newBranchName");' +
+'    const regionSelect = document.getElementById("newBranchRegion");' +
+'    const name = input.value.trim();' +
+'    const region = regionSelect ? regionSelect.value : "";' +
+'    if (!name || (isSuperAdmin && !region)) { showAdminToast("Please enter a branch name and select a region.", true); return; }' +
+'    const btn = document.getElementById("addBranchBtn");' +
+'    const defaultHTML = btn.innerHTML;' +
+'    btn.disabled = true;' +
+'    btn.innerHTML = \'<span class="admin-spinner"></span>Adding...\';' +
+'    try {' +
+'        const response = await fetch("/tickets/branches", {' +
+'            method: "POST",' +
+'            headers: { "Content-Type": "application/json" },' +
+'            body: JSON.stringify({ name, region })' +
+'        });' +
+'        if (response.ok) {' +
+'            input.value = "";' +
+'            if (regionSelect) regionSelect.value = "";' +
+'            showAdminToast("Branch added successfully.");' +
+'            loadBranchesList();' +
+'        } else {' +
+'            const err = await response.json();' +
+'            showAdminToast(err.error || "Could not add branch.", true);' +
+'        }' +
+'    } catch (err) {' +
+'        showAdminToast("Something went wrong. Please try again.", true);' +
+'    } finally {' +
+'        btn.disabled = false;' +
+'        btn.innerHTML = defaultHTML;' +
+'    }' +
+'}' +
+'async function editBranch(id, currentName) {' +
+'    showPromptModal("Edit branch name:", currentName, async (newName) => {' +
+'        if (!newName || !newName.trim() || newName === currentName) return;' +
+'        const response = await fetch("/tickets/branches/" + id, {' +
+'            method: "PUT",' +
+'            headers: { "Content-Type": "application/json" },' +
+'            body: JSON.stringify({ name: newName.trim() })' +
+'        });' +
+'        if (response.ok) { showAdminToast("Branch updated successfully."); loadBranchesList(); }' +
+'        else { showAdminToast("Could not update branch.", true); }' +
+'    }, "Save");' +
+'}' +
+'async function deleteBranch(id) {' +
+'    showConfirmModal("Remove this branch option?", async () => {' +
+'        const response = await fetch("/tickets/branches/" + id, { method: "DELETE" });' +
+'        if(response.ok) { showAdminToast("Branch removed."); loadBranchesList(); }' +
+'        else { showAdminToast("Could not delete branch.", true); }' +
+'    }, "Delete");' +
+'}' +
+'async function moveBranchRegion(id, newRegion) {' +
+'    const response = await fetch("/tickets/branches/" + id, {' +
+'        method: "PUT",' +
+'        headers: { "Content-Type": "application/json" },' +
+'        body: JSON.stringify({ region: newRegion })' +
+'    });' +
+'    if (response.ok) { showAdminToast("Branch moved to " + newRegion + "."); loadBranchesList(); }' +
+'    else { showAdminToast("Could not move branch to that region.", true); }' +
+'}' +
+'        let cachedStaffList = [];' +
+'        let cachedStaffBranches = [];' +
+'        let cachedStaffAssignments = {};' +
+'        let cachedRegionsForStaff = [];' +
+'        async function loadStaffList() {' +
+'            const requests = [fetch("/tickets/staff-list"), fetch("/public-branches"), fetch("/tickets/staff-branches")];' +
+'            if (isSuperAdmin) requests.push(fetch("/tickets/regions"));' +
+'            const responses = await Promise.all(requests);' +
+'            cachedStaffList = await responses[0].json();' +
+'            cachedStaffBranches = await responses[1].json();' +
+'            cachedStaffAssignments = await responses[2].json();' +
+'            if (isSuperAdmin) {' +
+'                cachedRegionsForStaff = await responses[3].json();' +
+'                const regionSelectEl = document.getElementById("newStaffRegion");' +
+'                if (regionSelectEl && !regionSelectEl.dataset.loaded) {' +
+'                    cachedRegionsForStaff.forEach(r => { regionSelectEl.innerHTML += \'<option value="\'+r.name+\'">\'+r.name+\'</option>\'; });' +
+'                    regionSelectEl.dataset.loaded = "1";' +
+'                }' +
+'            }' +
+'            renderStaffTable();' +
+'        }' +
+'        function renderStaffTable() {' +
+'            const searchInput = document.getElementById("staffSearchInput");' +
+'            const searchValue = searchInput ? searchInput.value.trim().toLowerCase() : "";' +
+'            const staff = searchValue' +
+'                ? cachedStaffList.filter(s => (s.name||"").toLowerCase().includes(searchValue) || (s.id||"").toLowerCase().includes(searchValue) || (s.email||"").toLowerCase().includes(searchValue) || (s.region||"").toLowerCase().includes(searchValue))' +
+'                : cachedStaffList;' +
+'            const branches = cachedStaffBranches;' +
+'            const assignments = cachedStaffAssignments;' +
+'            const tbody = document.getElementById("staffTableBody");' +
+'            if (staff.length === 0) {' +
+'                const colspan = isSuperAdmin ? 7 : 6;' +
+'                tbody.innerHTML = \'<tr><td colspan="\'+colspan+\'" style="text-align:center;color:#a0aec0;padding:20px;">No staff match your search.</td></tr>\';' +
+'                return;' +
+'            }' +
+'            let rowsHtml = "";' +
+'            staff.forEach(s => {' +
+'                const assigned = assignments[s.id] || [];' +
+'                let checkboxesHtml = "";' +
+'                if (branches.length === 0) {' +
+'                    checkboxesHtml = \'<span style="color:#a0aec0;">No branches added yet</span>\';' +
+'                } else {' +
+'                    const regionGroups = {};' +
+'                    branches.forEach(b => {' +
+'                        const region = b.region || "Unassigned";' +
+'                        if (!regionGroups[region]) regionGroups[region] = [];' +
+'                        regionGroups[region].push(b);' +
+'                    });' +
+'                    Object.keys(regionGroups).sort().forEach(region => {' +
+'                        checkboxesHtml += \'<div style="font-size:11px;font-weight:700;color:#718096;text-transform:uppercase;margin:6px 0 3px;">\' + region + \'</div>\';' +
+'                        regionGroups[region].forEach(b => {' +
+'                            const checked = assigned.includes(b.name) ? "checked" : "";' +
+'                            checkboxesHtml += \'<label style="display:inline-flex;align-items:center;gap:4px;margin-right:12px;font-weight:normal;font-size:13px;"><input type="checkbox" value="\'+b.name+\'" \'+checked+\' onchange="updateStaffBranches(\\\'\'+s.id+\'\\\')" class="branch-check-\'+s.id+\'"> \'+b.name+\'</label>\';' +
+'                        });' +
+'                    });' +
+'                }' +
+'                let idCell, nameCell, emailCell, editCell, deleteCell;' +
+'                if (editingStaffIds.has(s.id)) {' +
+'                    idCell = isSuperAdmin ? \'<input type="text" id="editStaffId-\'+s.id+\'" value="\'+s.id+\'" style="width:100%;padding:6px;border:1px solid #cbd5e0;border-radius:4px;">\' : s.id;' +
+'                    nameCell = \'<input type="text" id="editName-\'+s.id+\'" value="\'+s.name+\'" style="width:100%;padding:6px;border:1px solid #cbd5e0;border-radius:4px;">\';' +
+'                    emailCell = \'<input type="email" id="editEmail-\'+s.id+\'" value="\'+s.email+\'" style="width:100%;padding:6px;border:1px solid #cbd5e0;border-radius:4px;margin-bottom:4px;"><input type="text" id="editPassword-\'+s.id+\'" placeholder="New password (optional)" style="width:100%;padding:6px;border:1px solid #cbd5e0;border-radius:4px;">\';' +
+'                    editCell = \'<button type="button" class="resolve-btn" onclick="saveStaffEdit(\\\'\'+s.id+\'\\\')">Save</button>\';' +
+'                    deleteCell = \'<button type="button" class="branch-delete-btn" onclick="toggleEditStaff(\\\'\'+s.id+\'\\\')">Cancel</button>\';' +
+'                } else {' +
+'                    idCell = s.id;' +
+'                    nameCell = s.name;' +
+'                    emailCell = s.email;' +
+'                    editCell = \'<button type="button" class="branch-delete-btn" onclick="toggleEditStaff(\\\'\'+s.id+\'\\\')">Edit</button>\';' +
+'                    deleteCell = \'<button type="button" class="branch-delete-btn" onclick="deleteStaff(\\\'\'+s.id+\'\\\')">Delete</button>\';' +
+'                }' +
+'                let regionCell = "";' +
+'                if (isSuperAdmin) {' +
+'                    if (editingStaffIds.has(s.id)) {' +
+'                        let regionOptionsHtml = \'<option value="">Unassigned</option>\';' +
+'                        cachedRegionsForStaff.forEach(r => { regionOptionsHtml += \'<option value="\'+r.name+\'"\'+(r.name === s.region ? \' selected\' : \'\')+\'>\'+r.name+\'</option>\'; });' +
+'                        regionCell = \'<td><select id="editStaffRegion-\'+s.id+\'" style="padding:6px;border:1px solid #cbd5e0;border-radius:4px;">\'+regionOptionsHtml+\'</select></td>\';' +
+'                    } else {' +
+'                        regionCell = \'<td>\'+(s.region || "Unassigned")+\'</td>\';' +
+'                    }' +
+'                }' +
+'                rowsHtml += \'<tr><td>\'+idCell+\'</td><td>\'+nameCell+\'</td><td>\'+emailCell+\'</td>\'+regionCell+\'<td>\'+checkboxesHtml+\'</td><td>\'+editCell+\'</td><td>\'+deleteCell+\'</td></tr>\';' +
+'            });' +
+'            tbody.innerHTML = rowsHtml;' +
+'        }' +
+'        let editingStaffIds = new Set();' +
+'        function getMainScroll() {' +
+'            const mainEl = document.querySelector(".main-content");' +
+'            return { main: mainEl ? mainEl.scrollTop : 0, win: window.scrollY || document.documentElement.scrollTop || 0 };' +
+'        }' +
+'        function setMainScroll(pos) {' +
+'            const mainEl = document.querySelector(".main-content");' +
+'            const apply = () => {' +
+'                if (mainEl) mainEl.scrollTop = pos.main;' +
+'                window.scrollTo(0, pos.win);' +
+'            };' +
+'            apply();' +
+'            requestAnimationFrame(() => { apply(); requestAnimationFrame(apply); });' +
+'            setTimeout(apply, 50);' +
+'        }' +
+'        function toggleEditStaff(staffId) {' +
+'            const scrollPos = getMainScroll();' +
+'            if (document.activeElement && document.activeElement.blur) document.activeElement.blur();' +
+'            if (editingStaffIds.has(staffId)) editingStaffIds.delete(staffId);' +
+'            else editingStaffIds.add(staffId);' +
+'            renderStaffTable();' +
+'            setMainScroll(scrollPos);' +
+'        }' +
+'        async function saveStaffEdit(staffId) {' +
+'            const scrollPos = getMainScroll();' +
+'            if (document.activeElement && document.activeElement.blur) document.activeElement.blur();' +
+'            const name = document.getElementById("editName-" + staffId).value.trim();' +
+'            const email = document.getElementById("editEmail-" + staffId).value.trim();' +
+'            const password = document.getElementById("editPassword-" + staffId).value.trim();' +
+'            if (!name || !email) { showAdminToast("Name and email are required.", true); return; }' +
+'            const body = { name, email };' +
+'            if (password) body.password = password;' +
+'            if (isSuperAdmin) {' +
+'                const regionEl = document.getElementById("editStaffRegion-" + staffId);' +
+'                if (regionEl) body.region = regionEl.value;' +
+'                const idEl = document.getElementById("editStaffId-" + staffId);' +
+'                if (idEl) {' +
+'                    const newId = idEl.value.trim();' +
+'                    if (!newId) { showAdminToast("Staff ID cannot be empty.", true); return; }' +
+'                    body.newStaffId = newId;' +
+'                }' +
+'            }' +
+'            const response = await fetch("/tickets/staff/" + staffId, {' +
+'                method: "PUT",' +
+'                headers: { "Content-Type": "application/json" },' +
+'                body: JSON.stringify(body)' +
+'            });' +
+'            if (response.ok) {' +
+'                editingStaffIds.delete(staffId);' +
+'                showAdminToast("Staff member updated.");' +
+'                await loadStaffList();' +
+'                setMainScroll(scrollPos);' +
+'            } else {' +
+'                const err = await response.json().catch(() => ({}));' +
+'                showAdminToast(err.error || "Could not update staff member.", true);' +
+'                setMainScroll(scrollPos);' +
+'            }' +
+'        }' +
+'        async function deleteStaff(staffId) {' +
+'            showConfirmModal("Remove this staff member? This cannot be undone.", async () => {' +
+'                const scrollPos = getMainScroll();' +
+'                const response = await fetch("/tickets/staff/" + staffId, { method: "DELETE" });' +
+'                if (response.ok) { await loadStaffList(); setMainScroll(scrollPos); }' +
+'                else showAdminToast("Could not delete staff member.", true);' +
+'            }, "Delete");' +
+'        }' +
+'        let editingAdminIds = new Set();' +
+'        async function loadRegionAdminsList() {' +
+'            const [adminsRes, regionsRes] = await Promise.all([fetch("/region-admins"), fetch("/tickets/regions")]);' +
+'            const admins = await adminsRes.json();' +
+'            const regions = await regionsRes.json();' +
+'            const regionSelectEl = document.getElementById("newAdminRegion");' +
+'            if (regionSelectEl && !regionSelectEl.dataset.loaded) {' +
+'                regions.forEach(r => { regionSelectEl.innerHTML += \'<option value="\'+r.name+\'">\'+r.name+\'</option>\'; });' +
+'                regionSelectEl.dataset.loaded = "1";' +
+'            }' +
+'            const tbody = document.getElementById("regionAdminsTableBody");' +
+'            if (admins.length === 0) {' +
+'                tbody.innerHTML = \'<tr><td colspan="6" style="text-align: center; color: #a0aec0; padding: 20px;">No region admins added yet.</td></tr>\';' +
+'                return;' +
+'            }' +
+'            let rowsHtml = "";' +
+'            admins.forEach(a => {' +
+'                let nameCell, regionCell, editCell;' +
+'                if (editingAdminIds.has(a.id)) {' +
+'                    nameCell = \'<input type="text" id="editAdminName-\'+a.id+\'" value="\'+a.name+\'" style="width:100%;padding:6px;border:1px solid #cbd5e0;border-radius:4px;">\';' +
+'                    let regionOptionsHtml = "";' +
+'                    regions.forEach(r => { regionOptionsHtml += \'<option value="\'+r.name+\'"\'+(r.name === a.region ? \' selected\' : \'\')+\'>\'+r.name+\'</option>\'; });' +
+'                    regionCell = \'<select id="editAdminRegion-\'+a.id+\'" style="padding:6px;border:1px solid #cbd5e0;border-radius:4px;">\'+regionOptionsHtml+\'</select>\';' +
+'                    editCell = \'<input type="text" id="editAdminPassword-\'+a.id+\'" placeholder="New password (optional)" style="width:100%;padding:6px;border:1px solid #cbd5e0;border-radius:4px;margin-bottom:4px;"><button type="button" class="resolve-btn" onclick="saveRegionAdminEdit(\\\'\'+a.id+\'\\\')">Save</button> <button type="button" class="branch-delete-btn" onclick="toggleEditRegionAdmin(\\\'\'+a.id+\'\\\')">Cancel</button>\';' +
+'                } else {' +
+'                    nameCell = a.name;' +
+'                    regionCell = a.region;' +
+'                    editCell = \'<button type="button" class="branch-delete-btn" onclick="toggleEditRegionAdmin(\\\'\'+a.id+\'\\\')">Edit</button>\';' +
+'                }' +
+'                const statusBadge = a.enabled ? \'<span class="badge status-resolved">Enabled</span>\' : \'<span class="badge p-High">Disabled</span>\';' +
+'                const toggleBtn = \'<button type="button" class="branch-delete-btn" onclick="toggleRegionAdminEnabled(\\\'\'+a.id+\'\\\', \'+(!a.enabled)+\')">\'+ (a.enabled ? "Disable" : "Enable") +\'</button>\';' +
+'                rowsHtml += \'<tr><td>\'+nameCell+\'</td><td>\'+a.username+\'</td><td>\'+regionCell+\'</td><td>\'+statusBadge+\' \'+toggleBtn+\'</td><td>\'+editCell+\'</td><td><button type="button" class="branch-delete-btn" onclick="deleteRegionAdmin(\\\'\'+a.id+\'\\\')">Delete</button></td></tr>\';' +
+'            });' +
+'            tbody.innerHTML = rowsHtml;' +
+'        }' +
+'        function toggleEditRegionAdmin(id) {' +
+'            const scrollPos = getMainScroll();' +
+'            if (editingAdminIds.has(id)) editingAdminIds.delete(id);' +
+'            else editingAdminIds.add(id);' +
+'            loadRegionAdminsList().then(() => setMainScroll(scrollPos));' +
+'        }' +
+'        async function saveRegionAdminEdit(id) {' +
+'            const scrollPos = getMainScroll();' +
+'            const name = document.getElementById("editAdminName-" + id).value.trim();' +
+'            const region = document.getElementById("editAdminRegion-" + id).value;' +
+'            const password = document.getElementById("editAdminPassword-" + id).value.trim();' +
+'            if (!name || !region) { showAdminToast("Name and region are required.", true); return; }' +
+'            const body = { name, region };' +
+'            if (password) body.password = password;' +
+'            const response = await fetch("/region-admins/" + id, {' +
+'                method: "PUT",' +
+'                headers: { "Content-Type": "application/json" },' +
+'                body: JSON.stringify(body)' +
+'            });' +
+'            if (response.ok) { editingAdminIds.delete(id); showAdminToast("Region admin updated."); await loadRegionAdminsList(); }' +
+'            else { const err = await response.json(); showAdminToast(err.error || "Could not update region admin.", true); }' +
+'            setMainScroll(scrollPos);' +
+'        }' +
+'        async function toggleRegionAdminEnabled(id, enabled) {' +
+'            const scrollPos = getMainScroll();' +
+'            const response = await fetch("/region-admins/" + id, {' +
+'                method: "PUT",' +
+'                headers: { "Content-Type": "application/json" },' +
+'                body: JSON.stringify({ enabled })' +
+'            });' +
+'            if (response.ok) { showAdminToast(enabled ? "Admin enabled." : "Admin disabled."); await loadRegionAdminsList(); }' +
+'            else { showAdminToast("Could not update region admin.", true); }' +
+'            setMainScroll(scrollPos);' +
+'        }' +
+'        async function deleteRegionAdmin(id) {' +
+'            showConfirmModal("Remove this region admin? This cannot be undone.", async () => {' +
+'                const scrollPos = getMainScroll();' +
+'                const response = await fetch("/region-admins/" + id, { method: "DELETE" });' +
+'                if (response.ok) { showAdminToast("Region admin removed."); await loadRegionAdminsList(); }' +
+'                else showAdminToast("Could not delete region admin.", true);' +
+'                setMainScroll(scrollPos);' +
+'            }, "Delete");' +
+'        }' +
+'        async function addNewRegionAdmin() {' +
+'            const name = document.getElementById("newAdminName").value.trim();' +
+'            const username = document.getElementById("newAdminUsername").value.trim();' +
+'            const password = document.getElementById("newAdminPassword").value.trim();' +
+'            const region = document.getElementById("newAdminRegion").value;' +
+'            if (!name || !username || !password || !region) { showAdminToast("Please fill in name, username, password, and region.", true); return; }' +
+'            const btn = document.getElementById("addAdminBtn");' +
+'            const defaultHTML = btn.innerHTML;' +
+'            btn.disabled = true;' +
+'            btn.innerHTML = \'<span class="admin-spinner"></span>Adding...\';' +
+'            try {' +
+'                const response = await fetch("/region-admins", {' +
+'                    method: "POST",' +
+'                    headers: { "Content-Type": "application/json" },' +
+'                    body: JSON.stringify({ name, username, password, region })' +
+'                });' +
+'                if (response.ok) {' +
+'                    document.getElementById("newAdminName").value = "";' +
+'                    document.getElementById("newAdminUsername").value = "";' +
+'                    document.getElementById("newAdminPassword").value = "";' +
+'                    document.getElementById("newAdminRegion").value = "";' +
+'                    showAdminToast("Region admin added successfully.");' +
+'                    loadRegionAdminsList();' +
+'                } else {' +
+'                    const err = await response.json();' +
+'                    showAdminToast(err.error || "Could not add region admin.", true);' +
+'                }' +
+'            } catch (err) {' +
+'                showAdminToast("Something went wrong. Please try again.", true);' +
+'            } finally {' +
+'                btn.disabled = false;' +
+'                btn.innerHTML = defaultHTML;' +
+'            }' +
+'        }' +
+'        async function loadAuditLog() {' +
+'            const tbody = document.getElementById("auditLogTableBody");' +
+'            if (!isSuperAdmin) {' +
+'                tbody.innerHTML = \'<tr><td colspan="4" style="text-align: center; color: #c53030; padding: 30px; font-weight: 600;">You are not authorized to access this page.</td></tr>\';' +
+'                return;' +
+'            }' +
+'            const response = await fetch("/audit-log");' +
+'            if (!response.ok) {' +
+'                const err = await response.json().catch(() => ({}));' +
+'                tbody.innerHTML = \'<tr><td colspan="4" style="text-align: center; color: #c53030; padding: 30px; font-weight: 600;">\'+(err.error || "You are not authorized to access this page.")+\'</td></tr>\';' +
+'                return;' +
+'            }' +
+'            const entries = await response.json();' +
+'            if (entries.length === 0) {' +
+'                tbody.innerHTML = \'<tr><td colspan="4" style="text-align: center; color: #a0aec0; padding: 20px;">No activity recorded yet.</td></tr>\';' +
+'                return;' +
+'            }' +
+'            let auditRowsHtml = "";' +
+'            entries.forEach(e => {' +
+'                auditRowsHtml += \'<tr><td>\'+new Date(e.createdAt).toLocaleString()+\'</td><td>\'+e.actor+\'</td><td>\'+e.action+\'</td><td>\'+(e.details || "")+\'</td></tr>\';' +
+'            });' +
+'            tbody.innerHTML = auditRowsHtml;' +
+'        }' +
+'        async function sendInboxMessage() {' +
+'            const subject = document.getElementById("inboxSubject").value.trim();' +
+'            const body = document.getElementById("inboxBody").value.trim();' +
+'            if (!subject || !body) { showAdminToast("Please fill in both subject and message.", true); return; }' +
+'            const btn = document.getElementById("sendInboxBtn");' +
+'            const defaultHTML = btn.innerHTML;' +
+'            btn.disabled = true;' +
+'            btn.innerHTML = \'<span class="admin-spinner"></span>Sending...\';' +
+'            try {' +
+'                const response = await fetch("/inbox", {' +
+'                    method: "POST",' +
+'                    headers: { "Content-Type": "application/json" },' +
+'                    body: JSON.stringify({ subject, body })' +
+'                });' +
+'                if (response.ok) {' +
+'                    document.getElementById("inboxSubject").value = "";' +
+'                    document.getElementById("inboxBody").value = "";' +
+'                    showAdminToast("Message sent to Admin.");' +
+'                    loadInbox();' +
+'                } else {' +
+'                    const err = await response.json();' +
+'                    showAdminToast(err.error || "Could not send message.", true);' +
+'                }' +
+'            } catch (err) {' +
+'                showAdminToast("Something went wrong. Please try again.", true);' +
+'            } finally {' +
+'                btn.disabled = false;' +
+'                btn.innerHTML = defaultHTML;' +
+'            }' +
+'        }' +
+'        async function markInboxRead(id) {' +
+'            await fetch("/inbox/" + id + "/read", { method: "POST" });' +
+'            loadInbox();' +
+'        }' +
+'        async function replyInboxMessage(id) {' +
+'            const reply = document.getElementById("inboxReplyInput-" + id).value.trim();' +
+'            if (!reply) { showAdminToast("Please write a reply first.", true); return; }' +
+'            const response = await fetch("/inbox/" + id + "/reply", {' +
+'                method: "POST",' +
+'                headers: { "Content-Type": "application/json" },' +
+'                body: JSON.stringify({ reply })' +
+'            });' +
+'            if (response.ok) { showAdminToast("Reply sent."); loadInbox(); }' +
+'            else { const err = await response.json(); showAdminToast(err.error || "Could not send reply.", true); }' +
+'        }' +
+'        async function loadInbox() {' +
+'            const listDiv = document.getElementById("inboxList");' +
+'            try {' +
+'                const response = await fetch("/inbox");' +
+'                if (!response.ok) { listDiv.innerHTML = \'<p style="text-align:center;color:#c53030;padding:30px 0;">Could not load messages.</p>\'; return; }' +
+'                const messages = await response.json();' +
+'                if (messages.length === 0) {' +
+'                    listDiv.innerHTML = \'<p style="text-align: center; color: #718096; padding: 40px 0;">\'+(isAdmin ? "No messages from staff yet." : "You have not sent any messages yet.")+\'</p>\';' +
+'                    updateInboxBadge(messages);' +
+'                    return;' +
+'                }' +
+'                let inboxCardsHtml = "";' +
+'                messages.forEach(m => {' +
+'                    const isUnread = isAdmin ? !m.adminRead : !m.staffRead;' +
+'                    const statusBadge = m.status === "Replied" ? \'<span class="badge status-resolved">Replied</span>\' : \'<span class="badge status-open">Open</span>\';' +
+'                    const senderLine = isAdmin ? \'<div class="inbox-meta">From: <strong>\'+m.sender+\'</strong>\'+(m.senderStaffId ? \' (\'+m.senderStaffId+\')\' : "")+\' \u2014 \'+new Date(m.createdAt).toLocaleString()+\'</div>\' : \'<div class="inbox-meta">\'+new Date(m.createdAt).toLocaleString()+\'</div>\';' +
+'                    const markReadBtn = isUnread ? \'<button class="branch-delete-btn" onclick="markInboxRead(\\\'\'+m._id+\'\\\')">Mark as read</button>\' : "";' +
+'                    let replySection = "";' +
+'                    if (m.status === "Replied") {' +
+'                        replySection = \'<div class="inbox-reply-shown"><strong>Reply from \'+m.repliedBy+\':</strong> \'+m.reply+\'<div class="inbox-meta">\'+new Date(m.repliedAt).toLocaleString()+\'</div></div>\';' +
+'                    } else if (isAdmin) {' +
+'                        replySection = \'<div class="inbox-reply-box"><textarea id="inboxReplyInput-\'+m._id+\'" rows="2" placeholder="Write a reply..."></textarea><button class="branch-add-btn" style="margin-top:8px;" onclick="replyInboxMessage(\\\'\'+m._id+\'\\\')">Send Reply</button></div>\';' +
+'                    }' +
+'                    inboxCardsHtml += \'<div class="inbox-card \'+(isUnread ? "inbox-unread" : "")+\'"><div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;"><div><div class="inbox-subject">\'+m.subject+\'</div>\'+senderLine+\'</div><div style="display:flex;align-items:center;gap:8px;">\'+statusBadge+\' \'+markReadBtn+\'</div></div><div class="inbox-body">\'+m.body+\'</div>\'+replySection+\'</div>\';' +
+'                });' +
+'                listDiv.innerHTML = inboxCardsHtml;' +
+'                updateInboxBadge(messages);' +
+'            } catch (err) {' +
+'                listDiv.innerHTML = \'<p style="text-align:center;color:#c53030;padding:30px 0;">Could not load messages.</p>\';' +
+'            }' +
+'        }' +
+'        function updateInboxBadge(messages) {' +
+'            const badge = document.getElementById("inboxUnreadBadge");' +
+'            if (!badge) return;' +
+'            const unreadCount = messages.filter(m => isAdmin ? !m.adminRead : !m.staffRead).length;' +
+'            badge.innerText = unreadCount > 99 ? "99+" : unreadCount;' +
+'            badge.style.display = unreadCount ? "flex" : "none";' +
+'        }' +
+'        async function pollInboxBadge() {' +
+'            try {' +
+'                const response = await fetch("/inbox");' +
+'                if (response.ok) { const messages = await response.json(); updateInboxBadge(messages); }' +
+'            } catch (err) { /* ignore */ }' +
+'        }' +
+'        async function updateStaffBranches(staffId) {' +
+'            const checks = document.querySelectorAll(".branch-check-" + staffId);' +
+'            const branches = Array.from(checks).filter(c => c.checked).map(c => c.value);' +
+'            await fetch("/tickets/staff-branches", {' +
+'                method: "POST",' +
+'                headers: { "Content-Type": "application/json" },' +
+'                body: JSON.stringify({ staffId, branches })' +
+'            });' +
+'        }' +
+'        async function addNewStaff() {' +
+'            const name = document.getElementById("newStaffName").value.trim();' +
+'            const staffId = document.getElementById("newStaffId").value.trim();' +
+'            const password = document.getElementById("newStaffPassword").value.trim();' +
+'            const email = document.getElementById("newStaffEmail").value.trim();' +
+'            const regionEl = document.getElementById("newStaffRegion");' +
+'            const region = regionEl ? regionEl.value : undefined;' +
+'            if (!name || !password || !email) { showAdminToast("Please fill in name, password, and email.", true); return; }' +
+'            const btn = document.getElementById("addStaffBtn");' +
+'            const defaultHTML = btn.innerHTML;' +
+'            btn.disabled = true;' +
+'            btn.innerHTML = \'<span class="admin-spinner"></span>Adding...\';' +
+'            try {' +
+'                const response = await fetch("/tickets/staff", {' +
+'                    method: "POST",' +
+'                    headers: { "Content-Type": "application/json" },' +
+'                    body: JSON.stringify({ name, staffId, password, email, region })' +
+'                });' +
+'                if (response.ok) {' +
+'                    const result = await response.json();' +
+'                    document.getElementById("newStaffName").value = "";' +
+'                    document.getElementById("newStaffId").value = "";' +
+'                    document.getElementById("newStaffPassword").value = "";' +
+'                    document.getElementById("newStaffEmail").value = "";' +
+'                    if (regionEl) regionEl.value = "";' +
+'                    showAdminToast("Staff member added successfully (" + result.staffId + ").");' +
+'                    loadStaffList();' +
+'                } else {' +
+'                    const err = await response.json();' +
+'                    showAdminToast(err.error || "Could not add staff member.", true);' +
+'                }' +
+'            } catch (err) {' +
+'                showAdminToast("Something went wrong. Please try again.", true);' +
+'            } finally {' +
+'                btn.disabled = false;' +
+'                btn.innerHTML = defaultHTML;' +
+'            }' +
+'        }' +
+'        function updateAttachmentLabel(id) {' +
+'            const fileInput = document.getElementById("attachment-" + id);' +
+'            const nameTag = document.getElementById("attachmentName-" + id);' +
+'            if (!fileInput || !nameTag) return;' +
+'            nameTag.innerText = (fileInput.files && fileInput.files[0]) ? fileInput.files[0].name : "";' +
+'        }' +
+'        async function addComment(id) {' +
+'            const textInput = document.getElementById("input-" + id);' +
+'            const fileInput = document.getElementById("attachment-" + id);' +
+'            const nameTag = document.getElementById("attachmentName-" + id);' +
+'            const text = textInput.value.trim();' +
+'            const file = fileInput && fileInput.files && fileInput.files[0];' +
+'            if (!text && !file) return;' +
+'            const formData = new FormData();' +
+'            formData.append("text", text);' +
+'            if (file) formData.append("attachment", file);' +
+'            const response = await fetch("/tickets/" + id + "/comment", {' +
+'                method: "POST",' +
+'                body: formData' +
+'            });' +
+'            if (response.ok) {' +
+'                textInput.value = "";' +
+'                if (fileInput) fileInput.value = "";' +
+'                if (nameTag) nameTag.innerText = "";' +
+'                loadTickets();' +
+'            } else {' +
+'                const err = await response.json().catch(() => ({}));' +
+'                showAdminToast(err.error || "Could not post update.", true);' +
+'            }' +
+'        }' +
+'        async function resolveTicket(id) {' +
+'            showConfirmModal("Mark this ticket as resolved? This action can\'t be undone.", async () => {' +
+'                const response = await fetch("/tickets/" + id + "/resolve", { method: "POST" });' +
+'                if (response.ok) { loadTickets(); }' +
+'                else { const err = await response.json(); showAdminToast(err.error || "Could not resolve ticket.", true); }' +
+'            }, "Mark Resolved");' +
+'        }' +
+'        async function escalateTicket(id) {' +
+'            showPromptModal("Enter the reason for escalating this ticket to Admin:", "", async (reason) => {' +
+'                if (!reason || !reason.trim()) { showAdminToast("Please provide a reason for escalation.", true); return; }' +
+'                const response = await fetch("/tickets/" + id + "/escalate", {' +
+'                    method: "POST",' +
+'                    headers: { "Content-Type": "application/json" },' +
+'                    body: JSON.stringify({ reason: reason.trim() })' +
+'                });' +
+'                if (response.ok) { showAdminToast("Ticket escalated to Admin."); loadTickets(); }' +
+'                else { const err = await response.json(); showAdminToast(err.error || "Could not escalate ticket.", true); }' +
+'            }, "Escalate");' +
+'        }' +
+'        async function reallocateTicket(id) {' +
+'            const res = await fetch("/tickets/staff-list");' +
+'            const staff = await res.json();' +
+'            if (!staff.length) { showAdminToast("No staff members available to reallocate to.", true); return; }' +
+'            showStaffSelectModal("Select a staff member to reassign this ticket:", staff, async (staffName) => {' +
+'                const response = await fetch("/tickets/" + id + "/reallocate", {' +
+'                    method: "POST",' +
+'                    headers: { "Content-Type": "application/json" },' +
+'                    body: JSON.stringify({ assignTo: staffName })' +
+'                });' +
+'                if (response.ok) { showAdminToast("Ticket reallocated to " + staffName + "."); loadTickets(); }' +
+'                else { const err = await response.json(); showAdminToast(err.error || "Could not reallocate ticket.", true); }' +
+'            }, "Reallocate");' +
+'        }' +
+'        let chartInstances = {};' +
+'        function renderChart(canvasId, config) {' +
+'            const el = document.getElementById(canvasId);' +
+'            if (!el) return;' +
+'            if (chartInstances[canvasId]) chartInstances[canvasId].destroy();' +
+'            chartInstances[canvasId] = new Chart(el, config);' +
+'        }' +
+'        async function loadReportCharts() {' +
+'            const response = await fetch("/tickets");' +
+'            if (response.status === 401) { window.location.href = "/login"; return; }' +
+'            let tickets = await response.json();' +
+'' +
+'            const openCount = tickets.filter(t => t.status === "Open").length;' +
+'            const resolvedCount = tickets.filter(t => t.status === "Resolved").length;' +
+'            renderChart("chartStatus", {' +
+'                type: "doughnut",' +
+'                data: { labels: ["Open", "Resolved"], datasets: [{ data: [openCount, resolvedCount], backgroundColor: ["#3182ce", "#38a169"] }] },' +
+'                options: { maintainAspectRatio: false, plugins: { legend: { position: "bottom" } } }' +
+'            });' +
+'' +
+'            const lowCount = tickets.filter(t => t.priority === "Low").length;' +
+'            const medCount = tickets.filter(t => t.priority === "Medium").length;' +
+'            const highCount = tickets.filter(t => t.priority === "High").length;' +
+'            renderChart("chartPriority", {' +
+'                type: "doughnut",' +
+'                data: { labels: ["Low", "Medium", "High"], datasets: [{ data: [lowCount, medCount, highCount], backgroundColor: ["#718096", "#dd6b20", "#e53e3e"] }] },' +
+'                options: { maintainAspectRatio: false, plugins: { legend: { position: "bottom" } } }' +
+'            });' +
+'' +
+'            const categoryTotals = {};' +
+'            tickets.forEach(t => { const key = t.category || "Other"; categoryTotals[key] = (categoryTotals[key] || 0) + 1; });' +
+'            renderChart("chartCategory", {' +
+'                type: "doughnut",' +
+'                data: { labels: Object.keys(categoryTotals), datasets: [{ data: Object.values(categoryTotals), backgroundColor: ["#319795", "#805ad5", "#3182ce", "#dd6b20", "#718096"] }] },' +
+'                options: { maintainAspectRatio: false, plugins: { legend: { position: "bottom" } } }' +
+'            });' +
+'' +
+'            const dayLabels = [];' +
+'            const dayCounts = [];' +
+'            const today = new Date();' +
+'            for (let i = 29; i >= 0; i--) {' +
+'                const d = new Date(today.getFullYear(), today.getMonth(), today.getDate() - i);' +
+'                dayLabels.push((d.getMonth() + 1) + "/" + d.getDate());' +
+'                const count = tickets.filter(t => {' +
+'                    if (!t.createdAt) return false;' +
+'                    const td = new Date(t.createdAt);' +
+'                    return td.getFullYear() === d.getFullYear() && td.getMonth() === d.getMonth() && td.getDate() === d.getDate();' +
+'                }).length;' +
+'                dayCounts.push(count);' +
+'            }' +
+'            renderChart("chartTrend", {' +
+'                type: "line",' +
+'                data: { labels: dayLabels, datasets: [{ label: "Tickets Submitted", data: dayCounts, borderColor: "#e53e3e", backgroundColor: "rgba(229,62,62,0.12)", tension: 0.3, fill: true }] },' +
+'                options: { maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } } }' +
+'            });' +
+'' +
+'            if (isAdmin) {' +
+'                const staffTotals = {};' +
+'                tickets.forEach(t => { const key = t.assignedTo || "Unassigned"; staffTotals[key] = (staffTotals[key] || 0) + 1; });' +
+'                renderChart("chartStaff", {' +
+'                    type: "bar",' +
+'                    data: { labels: Object.keys(staffTotals), datasets: [{ label: "Tickets Handled", data: Object.values(staffTotals), backgroundColor: "#0056b3" }] },' +
+'                    options: { indexAxis: "y", maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { beginAtZero: true, ticks: { stepSize: 1 } } } }' +
+'                });' +
+'' +
+'                const branchTotals = {};' +
+'                tickets.forEach(t => { const key = t.branch || "N/A"; branchTotals[key] = (branchTotals[key] || 0) + 1; });' +
+'                renderChart("chartBranch", {' +
+'                    type: "bar",' +
+'                    data: { labels: Object.keys(branchTotals), datasets: [{ label: "Tickets", data: Object.values(branchTotals), backgroundColor: "#319795" }] },' +
+'                    options: { indexAxis: "y", maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { beginAtZero: true, ticks: { stepSize: 1 } } } }' +
+'                });' +
+'            }' +
+'        }' +
+'        function downloadReport() {' +
+'            const month = document.getElementById("reportMonth").value;' +
+'            if (!month) { alert("Please select a month."); return; }' +
+'            const region = document.getElementById("reportRegion").value;' +
+'            let url = "/tickets/report?month=" + month;' +
+'            if (region) url += "&region=" + encodeURIComponent(region);' +
+'            window.location.href = url;' +
+'        }' +
+'        function downloadReportByRange() {' +
+'            const from = document.getElementById("reportFromDate").value;' +
+'            const to = document.getElementById("reportToDate").value;' +
+'            if (!from || !to) { alert("Please select both a From and To date."); return; }' +
+'            const region = document.getElementById("reportRegion").value;' +
+'            let url = "/tickets/report?from=" + from + "&to=" + to;' +
+'            if (region) url += "&region=" + encodeURIComponent(region);' +
+'            window.location.href = url;' +
+'        }' +
+'        async function changePassword() {' +
+'            const current = document.getElementById("currentPassword").value;' +
+'            const next = document.getElementById("newPassword").value;' +
+'            const confirmVal = document.getElementById("confirmPassword").value;' +
+'            if (!current || !next || !confirmVal) { alert("Please fill in all fields."); return; }' +
+'            if (next !== confirmVal) { alert("New password and confirmation do not match."); return; }' +
+'            const response = await fetch("/change-password", {' +
+'                method: "POST",' +
+'                headers: { "Content-Type": "application/json" },' +
+'                body: JSON.stringify({ currentPassword: current, newPassword: next })' +
+'            });' +
+'            const data = await response.json();' +
+'            if (response.ok) {' +
+'                alert("Password updated successfully.");' +
+'                document.getElementById("currentPassword").value = "";' +
+'                document.getElementById("newPassword").value = "";' +
+'                document.getElementById("confirmPassword").value = "";' +
+'            } else {' +
+'                alert(data.error || "Could not update password.");' +
+'            }' +
+'        }' +
+'        document.getElementById("reportMonth").value = new Date().toISOString().slice(0, 7);' +
+'        loadNotifications();' +
+'        setInterval(loadNotifications, 30000);' +
+'        pollInboxBadge();' +
+'        setInterval(pollInboxBadge, 30000);' +
+'        loadStaffFilterOptions();' +
+'        loadRegionFilterOptions();' +
+'        loadTickets();' +
+'    </script>' +
+'</body>' +
+'</html>';
 
     res.send(html);
 });
@@ -2682,7 +2673,7 @@ app.get('/public-branches', async (req, res) => {
         }
         const branches = await Branch.find(query).sort({ region: 1, name: 1 });
         res.json(branches);
-    } catch (err) {
+    } catch(err) {
         res.status(500).json([]);
     }
 });
@@ -2777,7 +2768,7 @@ app.post('/tickets/branches', checkAdminLogin, async (req, res) => {
         await newBranch.save();
         await logAudit(req.session.username, 'Add Branch', `Added branch "${newBranch.name}" under region "${region}"`);
         res.status(201).json({ success: true });
-    } catch (err) {
+    } catch(err) {
         res.status(500).json({ error: err.message });
     }
 });
@@ -3158,7 +3149,7 @@ app.post('/tickets', (req, res, next) => {
             priority: req.body.priority,
             description: req.body.description,
             screenshot: req.file ? req.file.path : null,
-            assignedTo: assignedStaff.name
+            assignedTo: assignedStaff.name 
         });
 
         await newTicket.save();
