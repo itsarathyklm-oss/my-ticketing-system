@@ -6,13 +6,17 @@ const dns = require('dns');
 // reaches Google. Forcing IPv4 first fixes that.
 dns.setDefaultResultOrder('ipv4first');
 const session = require('express-session');
-const mongoose = require('mongoose');
 const multer = require('multer');
 const cloudinary = require('cloudinary').v2;
 const { CloudinaryStorage } = require('multer-storage-cloudinary');
 const nodemailer = require('nodemailer');
 const bcrypt = require('bcryptjs');
 const ExcelJS = require('exceljs');
+const { Op } = require('sequelize');
+const {
+    sequelize, Region, Branch, Staff, StaffBranchAssignment, RegionAdmin,
+    Ticket, TicketComment, AuditLog, Notification, InboxMessage
+} = require('./db');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -21,92 +25,32 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(__dirname));
 
-// 1. CONNECT TO MONGOOSE DB
-const MONGO_URI = process.env.MONGO_URI || "mongodb://localhost:27017/helpdesk"; 
-mongoose.connect(MONGO_URI)
+// 1. CONNECT TO MYSQL
+sequelize.authenticate()
+    .then(() => sequelize.sync()) // creates any tables that don't exist yet — safe to run every startup
     .then(() => {
-        console.log("Connected permanently to MongoDB Cloud");
+        console.log('Connected to MySQL and schema is in sync');
         seedInitialStaff();
     })
-    .catch(err => console.error("Database connection error:", err));
+    .catch(err => console.error('Database connection error:', err));
 
-// Region Schema (e.g. TRIVANDRUM, KOLLAM) — groups branches together
-const regionSchema = new mongoose.Schema({
-    name: { type: String, required: true }
-});
-const Region = mongoose.model('Region', regionSchema);
-
-// Branch Schema
-const branchSchema = new mongoose.Schema({
-    name: { type: String, required: true },
-    region: { type: String, default: 'Unassigned' }
-});
-const Branch = mongoose.model('Branch', branchSchema);
-
-// Staff-Branch Assignment Schema (which branches each staff member covers)
-const staffBranchSchema = new mongoose.Schema({
-    staffId: { type: String, required: true, unique: true },
-    branches: [{ type: String }]
-});
-const StaffBranch = mongoose.model('StaffBranch', staffBranchSchema);
-
-// Ticket Schema
-const ticketSchema = new mongoose.Schema({
-    ticketNumber: { type: Number, unique: true, sparse: true },
-    title: String,
-    submittedBy: { type: String, default: 'Unknown' },
-    designation: { type: String, default: '' },
-    category: { type: String, default: 'Other' },
-    branch: { type: String, default: 'N/A' },
-    priority: { type: String, default: 'Medium' },
-    description: String,
-    mobile: { type: String, required: true },
-    screenshot: String, 
-    status: { type: String, default: 'Open' },
-    assignedTo: { type: String, default: 'Unassigned' },
-    escalated: { type: Boolean, default: false },
-    escalatedBy: { type: String, default: '' },
-    escalatedAt: { type: Date },
-    escalationReason: { type: String, default: '' },
-    createdAt: { type: Date, default: Date.now },
-    resolvedAt: { type: Date },
-    resolvedBy: { type: String, default: '' },
-    comments: [{
-        author: String,
-        text: String,
-        attachment: { type: String, default: null },
-        createdAt: { type: Date, default: Date.now }
-    }]
-});
-const Ticket = mongoose.model('Ticket', ticketSchema);
-
-// Counter Schema, used to hand out sequential, human-friendly ticket numbers
-const counterSchema = new mongoose.Schema({
-    name: { type: String, required: true, unique: true },
-    value: { type: Number, default: 0 }
-});
-const Counter = mongoose.model('Counter', counterSchema);
-
-// Audit Log Schema — tracks admin management actions (staff/branch changes)
-const auditLogSchema = new mongoose.Schema({
-    actor: { type: String, required: true },
-    action: { type: String, required: true },
-    details: { type: String },
-    createdAt: { type: Date, default: Date.now }
-});
-const AuditLog = mongoose.model('AuditLog', auditLogSchema);
-
-// In-app notifications for newly assigned or reallocated tickets.
-const notificationSchema = new mongoose.Schema({
-    recipient: { type: String, required: true },
-    ticketId: { type: mongoose.Schema.Types.ObjectId, ref: 'Ticket', required: true },
-    ticketNumber: { type: Number, required: true },
-    title: { type: String, required: true },
-    message: { type: String, required: true },
-    read: { type: Boolean, default: false },
-    createdAt: { type: Date, default: Date.now }
-});
-const Notification = mongoose.model('Notification', notificationSchema);
+// --- ID-aliasing helpers ---
+// The client-side JS (unchanged from the MongoDB version) expects MongoDB-style field
+// names: `_id` on most records, and `ticketNumber` as the ticket's own field (originally
+// handed out by a separate Counter model, since Mongo has no native auto-increment).
+// In MySQL, ticketNumber is now just the row's own auto-increment `id` — these helpers
+// keep every API response shaped exactly the way the frontend already expects, so none
+// of the ~2000 lines of embedded HTML/CSS/client-JS needed to change at all.
+function withId(instance) {
+    const obj = instance && instance.toJSON ? instance.toJSON() : instance;
+    if (!obj) return obj;
+    return { ...obj, _id: String(obj.id) };
+}
+function serializeTicket(instance) {
+    const t = instance && instance.toJSON ? instance.toJSON() : instance;
+    if (!t) return t;
+    return { ...t, _id: String(t.id), ticketNumber: t.id };
+}
 
 async function logAudit(actor, action, details) {
     try {
@@ -114,15 +58,6 @@ async function logAudit(actor, action, details) {
     } catch (err) {
         console.error('Failed to write audit log entry:', err.message);
     }
-}
-
-async function getNextTicketNumber() {
-    const counter = await Counter.findOneAndUpdate(
-        { name: 'ticketNumber' },
-        { $inc: { value: 1 } },
-        { upsert: true, returnDocument: 'after' }
-    );
-    return counter.value;
 }
 
 // 2. CONFIGURE CLOUDINARY PERMANENT STORAGE
@@ -176,47 +111,9 @@ const commentUpload = multer({
     fileFilter: uploadFileFilter
 });
 
-// Staff Schema (persisted so staff can be added via the admin panel)
-const staffSchema = new mongoose.Schema({
-    staffId: { type: String, required: true, unique: true },
-    name: { type: String, required: true },
-    password: { type: String, required: true },
-    email: { type: String, required: true },
-    region: { type: String, default: '' } // '' = unassigned/global, visible only to Super Admin until assigned
-});
-const Staff = mongoose.model('Staff', staffSchema);
-
-// Region Admin Schema — a region-scoped admin account created by the Super Admin.
-// Can see/manage tickets, branches, and staff within their own region only.
-const regionAdminSchema = new mongoose.Schema({
-    name: { type: String, required: true },
-    username: { type: String, required: true, unique: true },
-    password: { type: String, required: true },
-    region: { type: String, required: true },
-    enabled: { type: Boolean, default: true }
-});
-const RegionAdmin = mongoose.model('RegionAdmin', regionAdminSchema);
-
-// Inbox — a lightweight staff-to-admin messaging/request system. Any admin (Super or Region)
-// can view and reply; staff only see their own messages and any reply.
-const inboxMessageSchema = new mongoose.Schema({
-    sender: { type: String, required: true },
-    senderStaffId: { type: String, default: '' },
-    subject: { type: String, required: true },
-    body: { type: String, required: true },
-    status: { type: String, default: 'Open' }, // 'Open' | 'Replied'
-    reply: { type: String, default: '' },
-    repliedBy: { type: String, default: '' },
-    repliedAt: { type: Date },
-    adminRead: { type: Boolean, default: false },
-    staffRead: { type: Boolean, default: true }, // false once an admin reply hasn't been seen yet
-    createdAt: { type: Date, default: Date.now }
-});
-const InboxMessage = mongoose.model('InboxMessage', inboxMessageSchema);
-
-// One-time seed of the original IT staff accounts, only if the collection is empty
+// One-time seed of the original IT staff accounts, only if the table is empty
 async function seedInitialStaff() {
-    const existingCount = await Staff.countDocuments();
+    const existingCount = await Staff.count();
     if (existingCount === 0) {
         const defaults = [
             { staffId: 'IT001', name: 'SADIQ', password: 'sadiq123', email: 'itsarathy@gmail.com' },
@@ -227,14 +124,14 @@ async function seedInitialStaff() {
         for (const s of defaults) {
             s.password = await bcrypt.hash(s.password, 10);
         }
-        await Staff.insertMany(defaults);
+        await Staff.bulkCreate(defaults);
         console.log('Seeded initial IT staff accounts');
     }
 }
 
 // Generates the next sequential staff ID, e.g. IT005
 async function getNextStaffId() {
-    const allStaff = await Staff.find();
+    const allStaff = await Staff.findAll();
     let maxNum = 0;
     allStaff.forEach(s => {
         const match = s.staffId.match(/(\d+)$/);
@@ -246,8 +143,10 @@ async function getNextStaffId() {
 // Returns the branch names that belong to a given region — used to scope tickets,
 // staff, and reports for a Region Admin.
 async function getBranchNamesForRegion(regionName) {
-    return Branch.find({ region: regionName }).distinct('name');
+    const rows = await Branch.findAll({ where: { region: regionName }, attributes: ['name'] });
+    return rows.map(r => r.name);
 }
+
 
 // Configure Email Transporter
 // Start with a hostname-based transporter as a fallback in case IPv4 resolution below fails.
@@ -368,7 +267,7 @@ app.get('/', (req, res) => {
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body {
     font-family: 'Inter', 'Segoe UI', Arial, sans-serif;
-    height: 100vh; display: flex; align-items: center; justify-content: center;
+    min-height: 100vh; display: flex; align-items: center; justify-content: center;
     background-image:
         radial-gradient(circle at 18% 20%, rgba(229,62,62,0.32), transparent 42%),
         radial-gradient(circle at 85% 18%, rgba(229,62,62,0.14), transparent 40%),
@@ -380,9 +279,8 @@ body {
     background-repeat: no-repeat;
     background-attachment: fixed;
     padding: 16px;
-    overflow: hidden;
 }
-.ticket-card { width: 100%; max-width: 660px; max-height: 92vh; background: #fdfcfb; border-radius: 14px; box-shadow: 0 24px 70px rgba(0,0,0,0.45); overflow-y: auto; overflow-x: hidden; }
+.ticket-card { width: 100%; max-width: 760px; background: #fdfcfb; border-radius: 14px; box-shadow: 0 24px 70px rgba(0,0,0,0.45); overflow: visible; }
 .ticket-ribbon { background: #1e2229; padding: 12px 26px; display: flex; align-items: center; gap: 12px; }
 .ticket-ribbon img { height: 28px; width: auto; object-fit: contain; }
 .ticket-ribbon-text { font-family: 'Barlow Condensed', sans-serif; font-weight: 700; font-size: 16px; letter-spacing: 1px; color: #fff; text-transform: uppercase; }
@@ -710,7 +608,7 @@ app.post('/login', loginRateLimiter, async (req, res) => {
         return res.json({ success: true, redirect: '/admin' });
     }
 
-    const regionAdmin = await RegionAdmin.findOne({ username: username.trim() });
+    const regionAdmin = await RegionAdmin.findOne({ where: { username: username.trim() } });
     if (regionAdmin && regionAdmin.enabled && await verifyPassword(password, regionAdmin.password)) {
         if (!regionAdmin.password.startsWith('$2')) {
             regionAdmin.password = await bcrypt.hash(password, 10);
@@ -727,7 +625,7 @@ app.post('/login', loginRateLimiter, async (req, res) => {
         return res.status(401).json({ error: 'This admin account has been disabled. Contact your Super Admin.' });
     }
 
-    const allStaff = await Staff.find();
+    const allStaff = await Staff.findAll();
     const staffUser = allStaff.find(s => s.name.toLowerCase() === username.toLowerCase());
     if (staffUser && await verifyPassword(password, staffUser.password)) {
         // Lazily upgrade legacy plaintext passwords to a bcrypt hash on successful login
@@ -2373,20 +2271,21 @@ app.get('/admin', checkUserLogin, (req, res) => {
 // APIs
 app.get('/tickets', checkUserLogin, async (req, res) => {
     try {
-        if (mongoose.connection.readyState !== 1) {
-            return res.status(503).json({ error: 'Database connection is not ready.' });
-        }
-        let query;
+        let where;
         if (req.session.isSuperAdmin) {
-            query = {};
+            where = {};
         } else if (req.session.isAdmin) {
             const regionBranchNames = await getBranchNamesForRegion(req.session.region);
-            query = { branch: { $in: regionBranchNames } };
+            where = { branch: { [Op.in]: regionBranchNames } };
         } else {
-            query = { $or: [{ assignedTo: req.session.username }, { escalatedBy: req.session.username }] };
+            where = { [Op.or]: [{ assignedTo: req.session.username }, { escalatedBy: req.session.username }] };
         }
-        const tickets = await Ticket.find(query).sort({ _id: -1 });
-        res.json(tickets);
+        const tickets = await Ticket.findAll({
+            where,
+            order: [['id', 'DESC']],
+            include: [{ model: TicketComment, as: 'comments', separate: true, order: [['createdAt', 'ASC']] }]
+        });
+        res.json(tickets.map(serializeTicket));
     } catch (err) {
         console.error('Could not load tickets:', err.message);
         res.status(500).json({ error: 'Could not load tickets.' });
@@ -2395,8 +2294,12 @@ app.get('/tickets', checkUserLogin, async (req, res) => {
 
 app.get('/notifications', checkUserLogin, async (req, res) => {
     try {
-        const notifications = await Notification.find({ recipient: req.session.username }).sort({ createdAt: -1 }).limit(50);
-        res.json(notifications);
+        const notifications = await Notification.findAll({
+            where: { recipient: req.session.username },
+            order: [['createdAt', 'DESC']],
+            limit: 50
+        });
+        res.json(notifications.map(withId));
     } catch (err) {
         res.status(500).json({ error: 'Could not load notifications.' });
     }
@@ -2404,9 +2307,9 @@ app.get('/notifications', checkUserLogin, async (req, res) => {
 
 app.post('/notifications/:id/read', checkUserLogin, async (req, res) => {
     try {
-        await Notification.findOneAndUpdate(
-            { _id: req.params.id, recipient: req.session.username },
-            { $set: { read: true } }
+        await Notification.update(
+            { read: true },
+            { where: { id: req.params.id, recipient: req.session.username } }
         );
         res.json({ success: true });
     } catch (err) {
@@ -2416,7 +2319,7 @@ app.post('/notifications/:id/read', checkUserLogin, async (req, res) => {
 
 app.delete('/notifications', checkUserLogin, async (req, res) => {
     try {
-        await Notification.deleteMany({ recipient: req.session.username });
+        await Notification.destroy({ where: { recipient: req.session.username } });
         res.json({ success: true });
     } catch (err) {
         res.status(500).json({ error: 'Could not clear notifications.' });
@@ -2447,24 +2350,24 @@ app.get('/tickets/report', checkUserLogin, async (req, res) => {
             return res.status(400).send('Please provide either a month, or both a From and To date.');
         }
 
-        const query = { createdAt: { $gte: startDate, $lte: endDate } };
+        const where = { createdAt: { [Op.gte]: startDate, [Op.lte]: endDate } };
         if (!req.session.isAdmin) {
-            query.$or = [{ assignedTo: req.session.username }, { escalatedBy: req.session.username }];
+            where[Op.or] = [{ assignedTo: req.session.username }, { escalatedBy: req.session.username }];
         } else if (!req.session.isSuperAdmin) {
             // Region Admin: always scoped to their own region, regardless of any ?region= param
             const ownRegionBranches = await getBranchNamesForRegion(req.session.region);
-            query.branch = { $in: ownRegionBranches };
+            where.branch = { [Op.in]: ownRegionBranches };
         }
         let regionLabel = '';
         if (req.query.region && (req.session.isSuperAdmin || !req.session.isAdmin)) {
-            const branchNamesInRegion = await Branch.find({ region: req.query.region }).distinct('name');
-            query.branch = { $in: branchNamesInRegion };
+            const branchRows = await Branch.findAll({ where: { region: req.query.region }, attributes: ['name'] });
+            where.branch = { [Op.in]: branchRows.map(b => b.name) };
             regionLabel = '-' + req.query.region.replace(/\s+/g, '-');
         } else if (!req.session.isSuperAdmin && req.session.isAdmin) {
             regionLabel = '-' + req.session.region.replace(/\s+/g, '-');
         }
-        const tickets = await Ticket.find(query).sort({ ticketNumber: 1 });
-        const allStaffForReport = await Staff.find();
+        const tickets = await Ticket.findAll({ where, order: [['id', 'ASC']] });
+        const allStaffForReport = await Staff.findAll();
         const staffIdByName = {};
         allStaffForReport.forEach(s => { staffIdByName[s.name] = s.staffId; });
 
@@ -2487,7 +2390,7 @@ app.get('/tickets/report', checkUserLogin, async (req, res) => {
         sheet.getRow(1).font = { bold: true };
         tickets.forEach(t => {
             sheet.addRow({
-                ticketNumber: t.ticketNumber,
+                ticketNumber: t.id,
                 title: t.title,
                 submittedBy: t.submittedBy,
                 designation: t.designation,
@@ -2514,7 +2417,7 @@ app.get('/tickets/report', checkUserLogin, async (req, res) => {
 
 app.post('/tickets/:id/resolve', checkUserLogin, async (req, res) => {
     try {
-        const ticket = await Ticket.findById(req.params.id);
+        const ticket = await Ticket.findByPk(req.params.id);
         if (!ticket) return res.status(404).json({ error: 'Ticket not found.' });
         if (!req.session.isAdmin && ticket.assignedTo !== req.session.username) {
             return res.status(403).json({ error: 'This ticket is no longer assigned to you, so you cannot resolve it.' });
@@ -2543,7 +2446,7 @@ app.post('/tickets/:id/escalate', checkUserLogin, async (req, res) => {
         if (!reason) {
             return res.status(400).json({ error: 'Please provide a reason for escalation.' });
         }
-        const ticket = await Ticket.findById(req.params.id);
+        const ticket = await Ticket.findByPk(req.params.id);
         if (!ticket) {
             return res.status(404).json({ error: 'Ticket not found.' });
         }
@@ -2557,9 +2460,9 @@ app.post('/tickets/:id/escalate', checkUserLogin, async (req, res) => {
         // Route to the Region Admin who owns this ticket's branch, if one exists —
         // otherwise fall back to the Super Admin (single-admin / unassigned-region setups).
         let recipientName = 'Admin';
-        const branchDoc = await Branch.findOne({ name: ticket.branch });
+        const branchDoc = await Branch.findOne({ where: { name: ticket.branch } });
         if (branchDoc && branchDoc.region) {
-            const regionAdmin = await RegionAdmin.findOne({ region: branchDoc.region, enabled: true });
+            const regionAdmin = await RegionAdmin.findOne({ where: { region: branchDoc.region, enabled: true } });
             if (regionAdmin) {
                 recipientName = regionAdmin.name;
             }
@@ -2574,12 +2477,12 @@ app.post('/tickets/:id/escalate', checkUserLogin, async (req, res) => {
 
         await Notification.create({
             recipient: recipientName,
-            ticketId: ticket._id,
-            ticketNumber: ticket.ticketNumber,
+            ticketId: ticket.id,
+            ticketNumber: ticket.id,
             title: ticket.title,
-            message: `Ticket #${String(ticket.ticketNumber).padStart(4, '0')} - ${ticket.title} was escalated to you by ${req.session.username}. Reason: ${reason}`
+            message: `Ticket #${String(ticket.id).padStart(4, '0')} - ${ticket.title} was escalated to you by ${req.session.username}. Reason: ${reason}`
         });
-        await logAudit(req.session.username, 'Escalate Ticket', `Escalated ticket #${ticket.ticketNumber} to ${recipientName}. Reason: ${reason}`);
+        await logAudit(req.session.username, 'Escalate Ticket', `Escalated ticket #${ticket.id} to ${recipientName}. Reason: ${reason}`);
 
         res.json({ success: true });
     } catch (err) {
@@ -2596,7 +2499,7 @@ app.post('/tickets/:id/reallocate', checkAdminLogin, async (req, res) => {
             return res.status(400).json({ error: 'Please select a staff member.' });
         }
 
-        const ticket = await Ticket.findById(req.params.id);
+        const ticket = await Ticket.findByPk(req.params.id);
         if (!ticket) {
             return res.status(404).json({ error: 'Ticket not found.' });
         }
@@ -2607,7 +2510,7 @@ app.post('/tickets/:id/reallocate', checkAdminLogin, async (req, res) => {
             return res.status(400).json({ error: 'Only escalated tickets can be reallocated.' });
         }
 
-        const staff = await Staff.findOne({ name: assignTo });
+        const staff = await Staff.findOne({ where: { name: assignTo } });
         if (!staff) {
             return res.status(400).json({ error: 'The selected staff member no longer exists.' });
         }
@@ -2626,12 +2529,12 @@ app.post('/tickets/:id/reallocate', checkAdminLogin, async (req, res) => {
         await ticket.save();
         await Notification.create({
             recipient: staff.name,
-            ticketId: ticket._id,
-            ticketNumber: ticket.ticketNumber,
+            ticketId: ticket.id,
+            ticketNumber: ticket.id,
             title: ticket.title,
-            message: `Ticket #${String(ticket.ticketNumber).padStart(4, '0')} - ${ticket.title} was reallocated to you.`
+            message: `Ticket #${String(ticket.id).padStart(4, '0')} - ${ticket.title} was reallocated to you.`
         });
-        await logAudit(req.session.username, 'Reallocate Escalated Ticket', `Reallocated ticket #${ticket.ticketNumber} to ${staff.name}`);
+        await logAudit(req.session.username, 'Reallocate Escalated Ticket', `Reallocated ticket #${ticket.id} to ${staff.name}`);
         res.json({ success: true, assignedTo: staff.name });
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -2656,9 +2559,7 @@ app.post('/tickets/:id/comment', checkUserLogin, (req, res, next) => {
             return res.status(400).json({ error: 'Please write an update or attach a file.' });
         }
         const author = req.session.username;
-        await Ticket.findByIdAndUpdate(req.params.id, {
-            $push: { comments: { author, text, attachment } }
-        });
+        await TicketComment.create({ ticketId: req.params.id, author, text, attachment });
         res.json({ success: true });
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -2667,12 +2568,12 @@ app.post('/tickets/:id/comment', checkUserLogin, (req, res, next) => {
 
 app.get('/public-branches', async (req, res) => {
     try {
-        let query = {};
+        let where = {};
         if (req.session && req.session.isAdmin && !req.session.isSuperAdmin && req.session.region) {
-            query = { region: req.session.region };
+            where = { region: req.session.region };
         }
-        const branches = await Branch.find(query).sort({ region: 1, name: 1 });
-        res.json(branches);
+        const branches = await Branch.findAll({ where, order: [['region', 'ASC'], ['name', 'ASC']] });
+        res.json(branches.map(withId));
     } catch(err) {
         res.status(500).json([]);
     }
@@ -2681,17 +2582,16 @@ app.get('/public-branches', async (req, res) => {
 // Regions (admin only — used to organize the branch list into groups). Region Admins only
 // see their own region here; only the Super Admin can create/rename/delete whole regions.
 app.get('/tickets/regions', checkAdminLogin, async (req, res) => {
-    const query = req.session.isSuperAdmin ? {} : { name: req.session.region };
-    const regions = await Region.find(query).sort({ name: 1 });
-    res.json(regions);
+    const where = req.session.isSuperAdmin ? {} : { name: req.session.region };
+    const regions = await Region.findAll({ where, order: [['name', 'ASC']] });
+    res.json(regions.map(withId));
 });
 
 app.post('/tickets/regions', checkSuperAdminLogin, async (req, res) => {
     try {
         const name = (req.body.name || '').trim();
         if (!name) return res.status(400).json({ error: 'Region name is required' });
-        const newRegion = new Region({ name });
-        await newRegion.save();
+        const newRegion = await Region.create({ name });
         await logAudit(req.session.username, 'Add Region', `Added region "${newRegion.name}"`);
         res.status(201).json({ success: true });
     } catch (err) {
@@ -2703,15 +2603,15 @@ app.put('/tickets/regions/:id', checkSuperAdminLogin, async (req, res) => {
     try {
         const name = (req.body.name || '').trim();
         if (!name) return res.status(400).json({ error: 'Region name is required' });
-        const region = await Region.findById(req.params.id);
+        const region = await Region.findByPk(req.params.id);
         if (!region) return res.status(404).json({ error: 'Region not found' });
         const oldName = region.name;
         region.name = name;
         await region.save();
         if (oldName !== name) {
-            await Branch.updateMany({ region: oldName }, { $set: { region: name } });
-            await RegionAdmin.updateMany({ region: oldName }, { $set: { region: name } });
-            await Staff.updateMany({ region: oldName }, { $set: { region: name } });
+            await Branch.update({ region: name }, { where: { region: oldName } });
+            await RegionAdmin.update({ region: name }, { where: { region: oldName } });
+            await Staff.update({ region: name }, { where: { region: oldName } });
         }
         await logAudit(req.session.username, 'Edit Region', `Renamed region "${oldName}" to "${name}"`);
         res.json({ success: true });
@@ -2722,17 +2622,17 @@ app.put('/tickets/regions/:id', checkSuperAdminLogin, async (req, res) => {
 
 app.delete('/tickets/regions/:id', checkSuperAdminLogin, async (req, res) => {
     try {
-        const region = await Region.findById(req.params.id);
+        const region = await Region.findByPk(req.params.id);
         if (!region) return res.status(404).json({ error: 'Region not found' });
-        const branchCount = await Branch.countDocuments({ region: region.name });
+        const branchCount = await Branch.count({ where: { region: region.name } });
         if (branchCount > 0) {
             return res.status(400).json({ error: `Cannot delete — ${branchCount} branch(es) still belong to this region. Reassign or remove them first.` });
         }
-        const adminCount = await RegionAdmin.countDocuments({ region: region.name });
+        const adminCount = await RegionAdmin.count({ where: { region: region.name } });
         if (adminCount > 0) {
             return res.status(400).json({ error: `Cannot delete — ${adminCount} region admin(s) are assigned to this region. Reassign or remove them first.` });
         }
-        await Region.findByIdAndDelete(req.params.id);
+        await region.destroy();
         await logAudit(req.session.username, 'Delete Region', `Removed region "${region.name}"`);
         res.json({ success: true });
     } catch (err) {
@@ -2745,10 +2645,12 @@ app.get('/tickets/lookup', async (req, res) => {
     try {
         const mobile = req.query.mobile;
         if (!mobile) return res.status(400).json({ error: 'Mobile number required' });
-        const tickets = await Ticket.find({ mobile })
-            .sort({ _id: -1 })
-            .select('ticketNumber title branch priority status createdAt resolvedAt assignedTo');
-        res.json(tickets);
+        const tickets = await Ticket.findAll({
+            where: { mobile },
+            order: [['id', 'DESC']],
+            attributes: ['id', 'title', 'branch', 'priority', 'status', 'createdAt', 'resolvedAt', 'assignedTo']
+        });
+        res.json(tickets.map(serializeTicket));
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
@@ -2764,8 +2666,7 @@ app.post('/tickets/branches', checkAdminLogin, async (req, res) => {
         if (!name || !region) {
             return res.status(400).json({ error: 'Branch name and region are both required' });
         }
-        const newBranch = new Branch({ name, region });
-        await newBranch.save();
+        const newBranch = await Branch.create({ name, region });
         await logAudit(req.session.username, 'Add Branch', `Added branch "${newBranch.name}" under region "${region}"`);
         res.status(201).json({ success: true });
     } catch(err) {
@@ -2774,13 +2675,13 @@ app.post('/tickets/branches', checkAdminLogin, async (req, res) => {
 });
 
 app.delete('/tickets/branches/:id', checkAdminLogin, async (req, res) => {
-    const branch = await Branch.findById(req.params.id);
+    const branch = await Branch.findByPk(req.params.id);
     if (branch && !req.session.isSuperAdmin && branch.region !== req.session.region) {
         return res.status(403).json({ error: 'You can only manage branches in your own region.' });
     }
-    await Branch.findByIdAndDelete(req.params.id);
     if (branch) {
-        await StaffBranch.updateMany({}, { $pull: { branches: branch.name } });
+        await branch.destroy();
+        await StaffBranchAssignment.destroy({ where: { branchName: branch.name } });
         await logAudit(req.session.username, 'Delete Branch', `Removed branch "${branch.name}"`);
     }
     res.json({ success: true });
@@ -2789,7 +2690,7 @@ app.delete('/tickets/branches/:id', checkAdminLogin, async (req, res) => {
 // Update a branch's name and/or region, keeping staff assignments in sync
 app.put('/tickets/branches/:id', checkAdminLogin, async (req, res) => {
     try {
-        const branch = await Branch.findById(req.params.id);
+        const branch = await Branch.findByPk(req.params.id);
         if (!branch) return res.status(404).json({ error: 'Branch not found' });
         if (!req.session.isSuperAdmin && branch.region !== req.session.region) {
             return res.status(403).json({ error: 'You can only manage branches in your own region.' });
@@ -2808,10 +2709,9 @@ app.put('/tickets/branches/:id', checkAdminLogin, async (req, res) => {
         await branch.save();
 
         if (oldName !== branch.name) {
-            await StaffBranch.updateMany(
-                { branches: oldName },
-                { $set: { 'branches.$[elem]': branch.name } },
-                { arrayFilters: [{ elem: oldName }] }
+            await StaffBranchAssignment.update(
+                { branchName: branch.name },
+                { where: { branchName: oldName } }
             );
             await logAudit(req.session.username, 'Edit Branch', `Renamed branch "${oldName}" to "${branch.name}"`);
         }
@@ -2825,15 +2725,15 @@ app.put('/tickets/branches/:id', checkAdminLogin, async (req, res) => {
 });
 
 app.get('/tickets/staff-list', checkAdminLogin, async (req, res) => {
-    const query = req.session.isSuperAdmin ? {} : { region: req.session.region };
-    const staff = await Staff.find(query).sort({ staffId: 1 });
+    const where = req.session.isSuperAdmin ? {} : { region: req.session.region };
+    const staff = await Staff.findAll({ where, order: [['staffId', 'ASC']] });
     res.json(staff.map(s => ({ id: s.staffId, name: s.name, email: s.email, region: s.region })));
 });
 
 // Recent admin activity — staff/branch changes
 app.get('/audit-log', checkSuperAdminLogin, async (req, res) => {
-    const entries = await AuditLog.find().sort({ createdAt: -1 }).limit(200);
-    res.json(entries);
+    const entries = await AuditLog.findAll({ order: [['createdAt', 'DESC']], limit: 200 });
+    res.json(entries.map(withId));
 });
 
 // Add a new staff member (auto-generates the next sequential staff ID)
@@ -2845,7 +2745,7 @@ app.post('/tickets/staff', checkAdminLogin, async (req, res) => {
         }
         let staffId = (req.body.staffId || '').trim();
         if (staffId) {
-            const existing = await Staff.findOne({ staffId });
+            const existing = await Staff.findOne({ where: { staffId } });
             if (existing) {
                 return res.status(400).json({ error: `Staff ID "${staffId}" is already in use.` });
             }
@@ -2855,8 +2755,7 @@ app.post('/tickets/staff', checkAdminLogin, async (req, res) => {
         // Region Admins can only add staff to their own region; Super Admin can optionally set one
         const region = req.session.isSuperAdmin ? (req.body.region || '').trim() : req.session.region;
         const hashedPassword = await bcrypt.hash(password, 10);
-        const newStaff = new Staff({ staffId, name, password: hashedPassword, email, region });
-        await newStaff.save();
+        await Staff.create({ staffId, name, password: hashedPassword, email, region });
         await logAudit(req.session.username, 'Add Staff', `Added staff ${name} (${staffId})${region ? ' — region: ' + region : ''}`);
         res.status(201).json({ success: true, staffId });
     } catch (err) {
@@ -2871,7 +2770,7 @@ app.put('/tickets/staff/:staffId', checkAdminLogin, async (req, res) => {
         if (!name || !email) {
             return res.status(400).json({ error: 'Name and email are required' });
         }
-        const existingStaff = await Staff.findOne({ staffId: req.params.staffId });
+        const existingStaff = await Staff.findOne({ where: { staffId: req.params.staffId } });
         if (!existingStaff) return res.status(404).json({ error: 'Staff member not found' });
         if (!req.session.isSuperAdmin && existingStaff.region !== req.session.region) {
             return res.status(403).json({ error: 'You can only manage staff in your own region.' });
@@ -2889,7 +2788,7 @@ app.put('/tickets/staff/:staffId', checkAdminLogin, async (req, res) => {
         if (req.session.isSuperAdmin && req.body.newStaffId !== undefined) {
             const trimmedNewId = (req.body.newStaffId || '').trim();
             if (trimmedNewId && trimmedNewId !== existingStaff.staffId) {
-                const idTaken = await Staff.findOne({ staffId: trimmedNewId });
+                const idTaken = await Staff.findOne({ where: { staffId: trimmedNewId } });
                 if (idTaken) {
                     return res.status(400).json({ error: `Staff ID "${trimmedNewId}" is already in use.` });
                 }
@@ -2897,10 +2796,10 @@ app.put('/tickets/staff/:staffId', checkAdminLogin, async (req, res) => {
                 update.staffId = newStaffId;
             }
         }
-        await Staff.findOneAndUpdate({ staffId: req.params.staffId }, update);
+        await Staff.update(update, { where: { staffId: req.params.staffId } });
         if (newStaffId) {
             // Keep branch coverage assignments pointing at the same staff member under their new ID
-            await StaffBranch.findOneAndUpdate({ staffId: req.params.staffId }, { staffId: newStaffId });
+            await StaffBranchAssignment.update({ staffId: newStaffId }, { where: { staffId: req.params.staffId } });
         }
         await logAudit(req.session.username, 'Edit Staff', `Updated staff ${req.params.staffId}${newStaffId ? ' (ID changed to ' + newStaffId + ')' : ''}${password ? ' (password reset)' : ''}`);
         res.json({ success: true, staffId: newStaffId || req.params.staffId });
@@ -2912,13 +2811,13 @@ app.put('/tickets/staff/:staffId', checkAdminLogin, async (req, res) => {
 // Remove a staff member (their existing tickets keep their historical assignedTo name)
 app.delete('/tickets/staff/:staffId', checkAdminLogin, async (req, res) => {
     try {
-        const existingStaff = await Staff.findOne({ staffId: req.params.staffId });
+        const existingStaff = await Staff.findOne({ where: { staffId: req.params.staffId } });
         if (!existingStaff) return res.status(404).json({ error: 'Staff member not found' });
         if (!req.session.isSuperAdmin && existingStaff.region !== req.session.region) {
             return res.status(403).json({ error: 'You can only manage staff in your own region.' });
         }
-        await Staff.findOneAndDelete({ staffId: req.params.staffId });
-        await StaffBranch.findOneAndDelete({ staffId: req.params.staffId });
+        await Staff.destroy({ where: { staffId: req.params.staffId } });
+        await StaffBranchAssignment.destroy({ where: { staffId: req.params.staffId } });
         await logAudit(req.session.username, 'Delete Staff', `Removed staff ${req.params.staffId}`);
         res.json({ success: true });
     } catch (err) {
@@ -2929,11 +2828,15 @@ app.delete('/tickets/staff/:staffId', checkAdminLogin, async (req, res) => {
 // Get branch coverage for all staff, as a { staffId: [branchNames] } map
 app.get('/tickets/staff-branches', checkAdminLogin, async (req, res) => {
     try {
-        const assignments = await StaffBranch.find();
+        const assignments = await StaffBranchAssignment.findAll();
         let map = {};
-        assignments.forEach(a => { map[a.staffId] = a.branches; });
+        assignments.forEach(a => {
+            if (!map[a.staffId]) map[a.staffId] = [];
+            map[a.staffId].push(a.branchName);
+        });
         if (!req.session.isSuperAdmin) {
-            const regionStaffIds = (await Staff.find({ region: req.session.region }).distinct('staffId'));
+            const regionStaff = await Staff.findAll({ where: { region: req.session.region }, attributes: ['staffId'] });
+            const regionStaffIds = regionStaff.map(s => s.staffId);
             const scopedMap = {};
             regionStaffIds.forEach(id => { if (map[id]) scopedMap[id] = map[id]; });
             map = scopedMap;
@@ -2944,12 +2847,13 @@ app.get('/tickets/staff-branches', checkAdminLogin, async (req, res) => {
     }
 });
 
-// Set which branches one staff member covers
+// Set which branches one staff member covers — replaces their whole assignment set,
+// matching the old Mongo upsert-the-whole-array behavior
 app.post('/tickets/staff-branches', checkAdminLogin, async (req, res) => {
     try {
         const { staffId, branches } = req.body;
         if (!req.session.isSuperAdmin) {
-            const targetStaff = await Staff.findOne({ staffId });
+            const targetStaff = await Staff.findOne({ where: { staffId } });
             if (!targetStaff || targetStaff.region !== req.session.region) {
                 return res.status(403).json({ error: 'You can only manage staff in your own region.' });
             }
@@ -2959,11 +2863,10 @@ app.post('/tickets/staff-branches', checkAdminLogin, async (req, res) => {
                 return res.status(403).json({ error: `"${invalidBranch}" is outside your region.` });
             }
         }
-        await StaffBranch.findOneAndUpdate(
-            { staffId },
-            { staffId, branches },
-            { upsert: true, returnDocument: 'after' }
-        );
+        await StaffBranchAssignment.destroy({ where: { staffId } });
+        if (branches && branches.length) {
+            await StaffBranchAssignment.bulkCreate(branches.map(branchName => ({ staffId, branchName })));
+        }
         await logAudit(req.session.username, 'Update Branch Assignment', `Set branches for staff ${staffId}: ${branches && branches.length ? branches.join(', ') : 'none'}`);
         res.json({ success: true });
     } catch (err) {
@@ -2974,8 +2877,8 @@ app.post('/tickets/staff-branches', checkAdminLogin, async (req, res) => {
 // --- Region Admin management (Super Admin only) ---
 app.get('/region-admins', checkSuperAdminLogin, async (req, res) => {
     try {
-        const admins = await RegionAdmin.find().sort({ region: 1, name: 1 });
-        res.json(admins.map(a => ({ id: a._id, name: a.name, username: a.username, region: a.region, enabled: a.enabled })));
+        const admins = await RegionAdmin.findAll({ order: [['region', 'ASC'], ['name', 'ASC']] });
+        res.json(admins.map(a => ({ id: a.id, name: a.name, username: a.username, region: a.region, enabled: a.enabled })));
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
@@ -2990,13 +2893,12 @@ app.post('/region-admins', checkSuperAdminLogin, async (req, res) => {
         if (!name || !username || !password || !region) {
             return res.status(400).json({ error: 'Name, username, password, and region are all required.' });
         }
-        const existing = await RegionAdmin.findOne({ username });
+        const existing = await RegionAdmin.findOne({ where: { username } });
         if (existing) {
             return res.status(400).json({ error: `Username "${username}" is already in use.` });
         }
         const hashedPassword = await bcrypt.hash(password, 10);
-        const newAdmin = new RegionAdmin({ name, username, password: hashedPassword, region, enabled: true });
-        await newAdmin.save();
+        await RegionAdmin.create({ name, username, password: hashedPassword, region, enabled: true });
         await logAudit(req.session.username, 'Add Region Admin', `Added region admin ${name} (${username}) for region "${region}"`);
         res.status(201).json({ success: true });
     } catch (err) {
@@ -3006,7 +2908,7 @@ app.post('/region-admins', checkSuperAdminLogin, async (req, res) => {
 
 app.put('/region-admins/:id', checkSuperAdminLogin, async (req, res) => {
     try {
-        const admin = await RegionAdmin.findById(req.params.id);
+        const admin = await RegionAdmin.findByPk(req.params.id);
         if (!admin) return res.status(404).json({ error: 'Region admin not found.' });
         if (req.body.name !== undefined && req.body.name.trim()) admin.name = req.body.name.trim();
         if (req.body.region !== undefined && req.body.region.trim()) admin.region = req.body.region.trim();
@@ -3022,8 +2924,9 @@ app.put('/region-admins/:id', checkSuperAdminLogin, async (req, res) => {
 
 app.delete('/region-admins/:id', checkSuperAdminLogin, async (req, res) => {
     try {
-        const admin = await RegionAdmin.findByIdAndDelete(req.params.id);
+        const admin = await RegionAdmin.findByPk(req.params.id);
         if (admin) {
+            await admin.destroy();
             await logAudit(req.session.username, 'Delete Region Admin', `Removed region admin ${admin.username}`);
         }
         res.json({ success: true });
@@ -3035,9 +2938,9 @@ app.delete('/region-admins/:id', checkSuperAdminLogin, async (req, res) => {
 // --- Inbox: staff can message any admin; any admin (Super or Region) can reply ---
 app.get('/inbox', checkUserLogin, async (req, res) => {
     try {
-        const query = req.session.isAdmin ? {} : { sender: req.session.username };
-        const messages = await InboxMessage.find(query).sort({ createdAt: -1 });
-        res.json(messages);
+        const where = req.session.isAdmin ? {} : { sender: req.session.username };
+        const messages = await InboxMessage.findAll({ where, order: [['createdAt', 'DESC']] });
+        res.json(messages.map(withId));
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
@@ -3052,7 +2955,7 @@ app.post('/inbox', checkUserLogin, async (req, res) => {
         }
         let senderStaffId = '';
         if (!req.session.isAdmin) {
-            const senderStaff = await Staff.findOne({ name: req.session.username });
+            const senderStaff = await Staff.findOne({ where: { name: req.session.username } });
             if (senderStaff) senderStaffId = senderStaff.staffId;
         }
         const message = await InboxMessage.create({
@@ -3063,7 +2966,7 @@ app.post('/inbox', checkUserLogin, async (req, res) => {
             adminRead: false,
             staffRead: true
         });
-        res.status(201).json({ success: true, id: message._id });
+        res.status(201).json({ success: true, id: message.id });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
@@ -3073,7 +2976,7 @@ app.post('/inbox/:id/reply', checkAdminLogin, async (req, res) => {
     try {
         const reply = (req.body.reply || '').trim();
         if (!reply) return res.status(400).json({ error: 'Reply message is required.' });
-        const message = await InboxMessage.findById(req.params.id);
+        const message = await InboxMessage.findByPk(req.params.id);
         if (!message) return res.status(404).json({ error: 'Message not found.' });
         message.reply = reply;
         message.repliedBy = req.session.username;
@@ -3090,7 +2993,7 @@ app.post('/inbox/:id/reply', checkAdminLogin, async (req, res) => {
 
 app.post('/inbox/:id/read', checkUserLogin, async (req, res) => {
     try {
-        const message = await InboxMessage.findById(req.params.id);
+        const message = await InboxMessage.findByPk(req.params.id);
         if (!message) return res.status(404).json({ error: 'Message not found.' });
         if (req.session.isAdmin) {
             message.adminRead = true;
@@ -3119,10 +3022,10 @@ app.post('/tickets', (req, res, next) => {
 }, async (req, res) => {
     try {
         const branchName = req.body.branch || 'N/A';
-        const allStaff = await Staff.find();
+        const allStaff = await Staff.findAll();
 
         // Find which staff explicitly cover this branch
-        const coveringAssignments = await StaffBranch.find({ branches: branchName });
+        const coveringAssignments = await StaffBranchAssignment.findAll({ where: { branchName } });
         let eligibleStaff = coveringAssignments
             .map(a => allStaff.find(s => s.staffId === a.staffId))
             .filter(Boolean);
@@ -3133,13 +3036,12 @@ app.post('/tickets', (req, res, next) => {
         }
 
         // Round-robin among eligible staff, based on tickets already logged for this branch
-        const branchTicketCount = await Ticket.countDocuments({ branch: branchName });
+        const branchTicketCount = await Ticket.count({ where: { branch: branchName } });
         const staffIndex = branchTicketCount % eligibleStaff.length;
         const assignedStaff = eligibleStaff[staffIndex];
-        const ticketNumber = await getNextTicketNumber();
 
-        const newTicket = new Ticket({
-            ticketNumber,
+        // ticketNumber is just this row's own auto-increment id — no separate counter needed
+        const newTicket = await Ticket.create({
             title: req.body.title,
             submittedBy: req.body.submittedBy || 'Unknown',
             designation: req.body.designation || '',
@@ -3149,13 +3051,13 @@ app.post('/tickets', (req, res, next) => {
             priority: req.body.priority,
             description: req.body.description,
             screenshot: req.file ? req.file.path : null,
-            assignedTo: assignedStaff.name 
+            assignedTo: assignedStaff.name
         });
+        const ticketNumber = newTicket.id;
 
-        await newTicket.save();
         await Notification.create({
             recipient: assignedStaff.name,
-            ticketId: newTicket._id,
+            ticketId: newTicket.id,
             ticketNumber,
             title: newTicket.title,
             message: `Ticket #${String(ticketNumber).padStart(4, '0')} - ${newTicket.title} has been assigned to you.`
@@ -3176,7 +3078,7 @@ app.post('/tickets', (req, res, next) => {
             }
         });
 
-        res.status(201).json(newTicket);
+        res.status(201).json(serializeTicket(newTicket));
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
