@@ -30,7 +30,6 @@ sequelize.authenticate()
     .then(() => sequelize.sync()) // creates any tables that don't exist yet — safe to run every startup
     .then(() => {
         console.log('Connected to MySQL and schema is in sync');
-        seedInitialStaff();
     })
     .catch(err => console.error('Database connection error:', err));
 
@@ -111,23 +110,7 @@ const commentUpload = multer({
     fileFilter: uploadFileFilter
 });
 
-// One-time seed of the original IT staff accounts, only if the table is empty
-async function seedInitialStaff() {
-    const existingCount = await Staff.count();
-    if (existingCount === 0) {
-        const defaults = [
-            { staffId: 'IT001', name: 'SADIQ', password: 'sadiq123', email: 'itsarathy@gmail.com' },
-            { staffId: 'IT002', name: 'ABHIMANYU', password: 'abhi123', email: 'abhimanyu@gmail.com' },
-            { staffId: 'IT003', name: 'ANANDHU', password: 'anandhu123', email: 'anandhu@gmail.com' },
-            { staffId: 'IT004', name: 'sabari', password: 'sabari123', email: 'sabari@gmail.com' }
-        ];
-        for (const s of defaults) {
-            s.password = await bcrypt.hash(s.password, 10);
-        }
-        await Staff.bulkCreate(defaults);
-        console.log('Seeded initial IT staff accounts');
-    }
-}
+
 
 // Generates the next sequential staff ID, e.g. IT005
 async function getNextStaffId() {
@@ -199,12 +182,13 @@ dns.promises.resolve4('smtp.gmail.com')
 // Needed so req.ip and secure cookies work correctly behind Render's reverse proxy
 app.set('trust proxy', 1);
 
+const sessionSecret = process.env.SESSION_SECRET || require('crypto').randomBytes(32).toString('hex');
 if (!process.env.SESSION_SECRET) {
-    console.warn('WARNING: SESSION_SECRET is not set — using an insecure default. Set SESSION_SECRET in your environment variables.');
+    console.warn('WARNING: SESSION_SECRET is not set — using a random secret (sessions will invalidate on restart). Set SESSION_SECRET in your environment variables for persistence.');
 }
 
 app.use(session({
-    secret: process.env.SESSION_SECRET || 'my-super-secret-key-123',
+    secret: sessionSecret,
     resave: false,
     rolling: true, // resets the expiry on every request, so it's truly inactivity-based
     saveUninitialized: true,
@@ -594,10 +578,11 @@ async function verifyPassword(plainInput, storedValue) {
 
 app.post('/login', loginRateLimiter, async (req, res) => {
     const { username, password } = req.body;
-    const adminUser = process.env.ADMIN_USERNAME || 'admin';
-    const adminPass = process.env.ADMIN_PASSWORD || '123';
-    if (!process.env.ADMIN_USERNAME || !process.env.ADMIN_PASSWORD) {
-        console.warn('WARNING: ADMIN_USERNAME/ADMIN_PASSWORD not set — using insecure defaults. Set these in your environment variables.');
+    const adminUser = process.env.ADMIN_USERNAME;
+    const adminPass = process.env.ADMIN_PASSWORD;
+    if (!adminUser || !adminPass) {
+        console.error('CRITICAL: ADMIN_USERNAME and/or ADMIN_PASSWORD env vars are not set. Admin login is disabled until they are configured.');
+        return res.status(500).json({ error: 'Admin credentials are not configured. Please set ADMIN_USERNAME and ADMIN_PASSWORD environment variables.' });
     }
     if (username === adminUser && password === adminPass) {
         req.session.isAdmin = true;
