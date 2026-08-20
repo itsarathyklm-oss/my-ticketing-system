@@ -265,7 +265,7 @@ body {
     background-attachment: fixed;
     padding: 16px;
 }
-.ticket-card { width: 100%; max-width: 760px; background: #fdfcfb; border-radius: 14px; box-shadow: 0 24px 70px rgba(0,0,0,0.45); overflow: visible; }
+.ticket-card { width: 100%; max-width: 760px; background: #fdfcfb; border-radius: 14px; box-shadow: 0 24px 70px rgba(0,0,0,0.45); overflow: hidden; }
 .ticket-ribbon { background: #1e2229; padding: 12px 26px; display: flex; align-items: center; gap: 12px; }
 .ticket-ribbon img { height: 28px; width: auto; object-fit: contain; }
 .ticket-ribbon-text { font-family: 'Barlow Condensed', sans-serif; font-weight: 700; font-size: 16px; letter-spacing: 1px; color: #fff; text-transform: uppercase; }
@@ -702,7 +702,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '        .sidebar-scroll::-webkit-scrollbar-thumb:hover { background: #4a5568; }' +
 '        .sidebar-brand { padding: 24px; display: flex; align-items: center; gap: 12px; border-bottom: 1px solid #2d323e; }' +
 '        .sidebar-logo { height: 35px; width: auto; object-fit: contain; }' +
-'        .sidebar-title { font-size: 18px; font-weight: 700; color: #fff; letter-spacing: 0.5px; }' +
+'        .sidebar-title { font-family: \"Inter\", sans-serif; font-size: 15px; font-weight: 700; color: #fff; letter-spacing: 1.5px; white-space: nowrap; text-transform: uppercase; }' +
 '        .sidebar-menu { list-style: none; padding: 20px 0; }' +
 '        .menu-category { font-size: 11px; font-weight: 700; text-transform: uppercase; color: #4a5568; padding: 10px 24px 5px 24px; letter-spacing: 0.5px; }' +
 '        .menu-item { padding: 12px 24px; display: flex; align-items: center; gap: 12px; color: #a0aec0; text-decoration: none; font-size: 14px; font-weight: 500; cursor: pointer; transition: all 0.2s; border-left: 4px solid transparent; }' +
