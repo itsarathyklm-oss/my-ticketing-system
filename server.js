@@ -31,6 +31,13 @@ sequelize.authenticate()
     .then(() => sequelize.sync()) // creates any tables that don't exist yet — safe to run every startup
     .then(() => {
         console.log('Connected to MySQL and schema is in sync');
+        // Auto-purge audit log entries older than 30 days
+        const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+        AuditLog.destroy({ where: { createdAt: { [Op.lt]: thirtyDaysAgo } } })
+            .then(count => {
+                if (count > 0) console.log('Purged ' + count + ' audit log entries older than 30 days.');
+            })
+            .catch(err => console.error('Audit log cleanup failed:', err.message));
     })
     .catch(err => console.error('Database connection error:', err));
 
@@ -248,7 +255,7 @@ function checkSuperAdminLogin(req, res, next) {
 
 // User Ticket Submission Page
 app.get('/', (req, res) => {
-    res.send(`<!DOCTYPE html><html><head><title>Submit a Ticket | SARATHY IT</title><link rel="icon" type="image/png" href="/logo.png"><link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"><style>
+    res.send(`<!DOCTYPE html><html><head><title>Submit a Ticket | IT DEPARTMENT SARATHY</title><meta name="theme-color" content="#e53e3e"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="Sarathy IT"><link rel="manifest" href="/manifest.json"><link rel="icon" type="image/png" href="/logo.png"><link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"><style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body {
     font-family: 'Inter', 'Segoe UI', Arial, sans-serif;
@@ -460,12 +467,13 @@ button[type="submit"]:active { transform: translateY(0); }
         });
         container.innerHTML = html;
     }
+        if ("serviceWorker" in navigator) { navigator.serviceWorker.register("/service-worker.js"); }
     </script></body></html>`);
 });
 
 // Login Page
 app.get('/login', (req, res) => {
-    res.send(`<!DOCTYPE html><html><head><title>Login | SARATHY IT</title><link rel="icon" type="image/png" href="/logo.png"><link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"><style>
+    res.send(`<!DOCTYPE html><html><head><title>Login | IT DEPARTMENT SARATHY</title><meta name="theme-color" content="#e53e3e"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="Sarathy IT"><link rel="manifest" href="/manifest.json"><link rel="icon" type="image/png" href="/logo.png"><link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"><style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body {
     font-family: 'Inter', 'Segoe UI', Arial, sans-serif;
@@ -497,7 +505,11 @@ input:focus { outline: none; border-color: #e53e3e; box-shadow: 0 0 0 3px rgba(2
 .toggle-password:hover { transform: translateY(-50%); box-shadow: none; color: #4a5568; }
 .caps-warning { display: none; margin-top: 6px; font-size: 11.5px; color: #c05621; font-weight: 600; }
 .login-error { display: none; margin-top: 14px; padding: 10px 12px; background: #fed7d7; color: #9b2c2c; border-radius: 8px; font-size: 13px; font-weight: 500; }
-button[type="submit"] { margin-top: 24px; padding: 13px; width: 100%; background: linear-gradient(120deg, #e53e3e, #c53030); color: #fff; border: none; border-radius: 9px; cursor: pointer; font-family: 'Barlow Condensed', sans-serif; font-weight: 700; font-size: 16px; letter-spacing: 1px; text-transform: uppercase; box-shadow: 0 8px 20px rgba(197,48,48,.4); transition: transform .15s, box-shadow .15s; display: flex; align-items: center; justify-content: center; gap: 8px; }
+button[type="submit"].login-submit-btn { position: relative; margin-top: 24px; padding: 11px 36px; width: 100%; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; border-radius: 16px; background: #ef4444; border-bottom: 8px solid #dc2626; color: #fff; cursor: pointer; font-family: 'Barlow Condensed', sans-serif; font-size: 16px; transition: all .1s; box-shadow: 0 15px 25px -10px rgba(239,68,68,.8); outline: none; display: flex; align-items: center; justify-content: center; gap: 8px; }
+button[type="submit"].login-submit-btn::after { content: ''; position: absolute; inset: 0; border-radius: 16px; background: linear-gradient(to top, rgba(0,0,0,.2), transparent); pointer-events: none; }
+button[type="submit"].login-submit-btn:active { border-bottom-width: 0px; transform: translateY(8px); }
+button[type="submit"].login-submit-btn:focus { box-shadow: 0 0 0 4px rgba(239,68,68,.5); }
+button[type="submit"].login-submit-btn:disabled { opacity: .7; cursor: not-allowed; transform: none; border-bottom-width: 8px; }
 button[type="submit"]:hover { transform: translateY(-2px); box-shadow: 0 12px 28px rgba(197,48,48,.5); }
 button[type="submit"]:active { transform: translateY(0); }
 button[type="submit"]:disabled { opacity: .7; cursor: not-allowed; transform: none; box-shadow: 0 8px 20px rgba(197,48,48,.4); }
@@ -505,7 +517,7 @@ button[type="submit"]:disabled { opacity: .7; cursor: not-allowed; transform: no
 @keyframes spin { to { transform: rotate(360deg); } }
 .page-footer { position: fixed; bottom: 8px; left: 0; width: 100%; text-align: center; font-size: 11px; color: rgba(255,255,255,0.55); letter-spacing: .3px; }
 @media (max-width: 400px) { .login-ribbon { padding: 20px 22px 16px; } .login-body { padding: 22px 22px 26px; } }
-</style></head><body><div class="login-card"><div class="badge-hole"></div><div class="login-ribbon"><img src="/logo.png" alt="Company Logo" onerror="this.style.display='none'"><span class="login-ribbon-text">Sarathy IT</span><span class="login-ribbon-sub">Staff &amp; Admin Access</span></div><div class="login-body"><form id="loginForm"><label>Username / Staff Name</label><input type="text" id="username" required><label>Password</label><div class="password-wrapper"><input type="password" id="password" required><button type="button" class="toggle-password" id="togglePassword" aria-label="Show password"><svg id="eyeIcon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button></div><div class="caps-warning" id="capsWarning">Caps Lock is on</div><div class="login-error" id="loginError"></div><button type="submit" id="loginBtn">Login</button></form></div></div><div class="page-footer">&copy; 2026 Sarathy Pvt Ltd</div><script>
+</style></head><body><div class="login-card"><div class="badge-hole"></div><div class="login-ribbon"><img src="/logo.png" alt="Company Logo" onerror="this.style.display='none'"><span class="login-ribbon-text">IT DEPARTMENT SARATHY</span><span class="login-ribbon-sub">Staff &amp; Admin Access</span></div><div class="login-body"><form id="loginForm"><label>Username / Staff Name</label><input type="text" id="username" required><label>Password</label><div class="password-wrapper"><input type="password" id="password" required><button type="button" class="toggle-password" id="togglePassword" aria-label="Show password"><svg id="eyeIcon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button></div><div class="caps-warning" id="capsWarning">Caps Lock is on</div><div class="login-error" id="loginError"></div><button type="submit" id="loginBtn" class="login-submit-btn"><span style="display:flex;align-items:center;justify-content:center;gap:8px;"><svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg> LOGIN</span></button></form></div></div><div class="page-footer">&copy; 2026 Sarathy Pvt Ltd</div><script>
     const loginForm = document.getElementById('loginForm');
     const loginBtn = document.getElementById('loginBtn');
     const loginError = document.getElementById('loginError');
@@ -551,7 +563,7 @@ button[type="submit"]:disabled { opacity: .7; cursor: not-allowed; transform: no
             });
             const data = await response.json();
             if (response.ok && data.success) {
-                window.location.href = data.redirect || '/admin';
+                window.location.href = (data.redirect || '/admin') + '?t=' + Date.now();
                 return;
             }
             loginError.textContent = data.error || 'Invalid username or password.';
@@ -674,7 +686,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '<head>' +
 '    <meta charset="UTF-8">' +
 '    <meta name="viewport" content="width=device-width, initial-scale=1.0">' +
-'    <title>IT Helpdesk | Dashboard</title>' +
+'    <meta name="theme-color" content="#e53e3e"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><link rel="manifest" href="/manifest.json"><link rel="icon" type="image/png" href="/logo.png"><title>IT Helpdesk | Dashboard</title>' +
 '    <link rel="icon" type="image/png" href="/logo.png">' +
 '    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>' +
 '    <style>' +
@@ -700,9 +712,9 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '        .sidebar-scroll::-webkit-scrollbar-track { background: transparent; }' +
 '        .sidebar-scroll::-webkit-scrollbar-thumb { background: #3a4150; border-radius: 10px; }' +
 '        .sidebar-scroll::-webkit-scrollbar-thumb:hover { background: #4a5568; }' +
-'        .sidebar-brand { padding: 24px; display: flex; align-items: center; gap: 12px; border-bottom: 1px solid #2d323e; }' +
-'        .sidebar-logo { height: 35px; width: auto; object-fit: contain; }' +
-'        .sidebar-title { font-family: \"Inter\", sans-serif; font-size: 15px; font-weight: 700; color: #fff; letter-spacing: 1.5px; white-space: nowrap; text-transform: uppercase; }' +
+'        .sidebar-brand { padding: 24px; display: flex; flex-direction: column; align-items: center; gap: 8px; border-bottom: 1px solid #2d323e; }' +
+'        .sidebar-logo { height: 40px; width: auto; object-fit: contain; }' +
+'        .sidebar-title { font-family: \"Inter\", sans-serif; font-size: 13px; font-weight: 700; color: #fff; letter-spacing: 1px; white-space: nowrap; text-transform: uppercase; text-align: center; }' +
 '        .sidebar-menu { list-style: none; padding: 20px 0; }' +
 '        .menu-category { font-size: 11px; font-weight: 700; text-transform: uppercase; color: #4a5568; padding: 10px 24px 5px 24px; letter-spacing: 0.5px; }' +
 '        .menu-item { padding: 12px 24px; display: flex; align-items: center; gap: 12px; color: #a0aec0; text-decoration: none; font-size: 14px; font-weight: 500; cursor: pointer; transition: all 0.2s; border-left: 4px solid transparent; }' +
@@ -862,20 +874,21 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '    <div id="adminToast" class="admin-toast"></div>' +
 '    <div class="sidebar-backdrop" id="sidebarBackdrop" onclick="closeSidebar()"></div>' +
 '    <aside class="sidebar" id="sidebar">' +
-'        <div class="sidebar-scroll">' +
-'            <div class="sidebar-brand" style="cursor:pointer;" onclick="window.location.href=\'/admin\'" title="Refresh dashboard">' +
+'        <div class="sidebar-brand" style="cursor:pointer;" onclick="window.location.href=\'/admin\'" title="Refresh dashboard">' +
 '                <img src="/logo.png" alt="Logo" class="sidebar-logo" onerror="this.style.display=\'none\'">' +
-'                <span class="sidebar-title">SARATHY IT</span>' +
+'                <span class="sidebar-title">IT DEPARTMENT SARATHY</span>' +
 '            </div>' +
+'            <div class="sidebar-scroll">' +
 '            <div class="menu-category">Navigation</div>' +
 '            <ul class="sidebar-menu">' +
 '                <li class="menu-item active" id="tabTicketsLink" onclick="refreshTicketsDashboard()"><svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v2z"></path><line x1="13" y1="5" x2="13" y2="19"></line></svg>Tickets System</li>' +
+(isAdminUser ? '                <li class="menu-item" id="tabNewTicketLink" onclick="switchView(\'newticket\')"><svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>New Ticket</li>' : '') +
 (isSuperAdminUser ? '                <li class="menu-item" id="tabAdminsLink" onclick="switchView(\'admins\')"><svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l3 6 6.5 1-5 4.5 1.5 6.5-6-3.5-6 3.5 1.5-6.5-5-4.5 6.5-1z"></path></svg>Manage Admins</li>' : '') +
 (isAdminUser ? '                <li class="menu-item" id="tabBranchesLink" onclick="switchView(\'branches\')"><svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>Manage Branches</li>' : '') +
 (isAdminUser ? '                <li class="menu-item" id="tabStaffLink" onclick="switchView(\'staff\')"><svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>Manage IT Staff</li>' : '') +
-(isAdminUser ? '                <li class="menu-item" id="tabAuditLink" onclick="switchView(\'audit\')"><svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"></path><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg>Audit Log</li>' : '') +
-'                <li class="menu-item" id="tabReportsLink" onclick="switchView(\'reports\')"><svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>Reports</li>' +
 '                <li class="menu-item" id="tabInboxLink" onclick="switchView(\'inbox\')"><svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-6l-2 3h-4l-2-3H2"></path><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"></path></svg>Inbox<span id="inboxUnreadBadge" style="display:none;margin-left:auto;background:#e53e3e;color:#fff;font-size:10px;font-weight:700;border-radius:10px;min-width:16px;height:16px;padding:0 5px;align-items:center;justify-content:center;"></span></li>' +
+'                <li class="menu-item" id="tabReportsLink" onclick="switchView(\'reports\')"><svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>Reports</li>' +
+(isAdminUser ? '                <li class="menu-item" id="tabAuditLink" onclick="switchView(\'audit\')"><svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"></path><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg>Audit Log</li>' : '') +
 '                <li class="menu-item" id="tabPasswordLink" onclick="switchView(\'password\')"><svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>Change Password</li>' +
 '            </ul>' +
 '        </div>' +
@@ -1045,6 +1058,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                    </table>' +
 '                </div>' +
 '            </div>' +
+'                <div id="viewNewTicket" class="dashboard-view"></div>' +
 '            <div id="viewInbox" class="dashboard-view">' +
 (isAdminUser ? '' :
 '                <div class="branch-panel-card" style="margin-bottom: 20px;">' +
@@ -1282,6 +1296,11 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                document.getElementById("tabAdminsLink").classList.add("active");' +
 '                document.getElementById("panelViewTitle").innerText = "Manage Region Admins";' +
 '                loadRegionAdminsList();' +
+'            } else if (target === "newticket") {' +
+'                document.getElementById("viewNewTicket").classList.add("active");' +
+'                document.getElementById("tabNewTicketLink").classList.add("active");' +
+'                document.getElementById("panelViewTitle").innerText = "Create New Ticket";' +
+'                loadNewTicketForm();' +
 '            } else if (target === "inbox") {' +
 '                document.getElementById("viewInbox").classList.add("active");' +
 '                document.getElementById("tabInboxLink").classList.add("active");' +
@@ -1355,7 +1374,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '        async function loadStaffFilterOptions() {' +
 '            if (!isAdmin) return;' +
 '            document.getElementById("staffFilterWrapper").style.display = "block";' +
-'            const res = await fetch("/tickets/staff-list");' +
+'            const res = await fetch("/tickets/staff-list", { cache: "no-store" });' +
 '            const staff = await res.json();' +
 '            const select = document.getElementById("filterStaff");' +
 '            select.innerHTML = \'<option value="">All Staff</option>\';' +
@@ -1390,7 +1409,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            try {' +
 '            const controller = new AbortController();' +
 '            const timeout = setTimeout(() => controller.abort(), 15000);' +
-'            const response = await fetch("/tickets", { signal: controller.signal });' +
+'            const response = await fetch("/tickets", { signal: controller.signal, cache: "no-store" });' +
 '            clearTimeout(timeout);' +
 '            if (response.status === 401) { window.location.href = "/login"; return; }' +
 '            if (!response.ok) { throw new Error("Ticket request failed (" + response.status + ")"); }' +
@@ -1990,13 +2009,14 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                    const statusBadge = m.status === "Replied" ? \'<span class="badge status-resolved">Replied</span>\' : \'<span class="badge status-open">Open</span>\';' +
 '                    const senderLine = isAdmin ? \'<div class="inbox-meta">From: <strong>\'+m.sender+\'</strong>\'+(m.senderStaffId ? \' (\'+m.senderStaffId+\')\' : "")+\' \u2014 \'+new Date(m.createdAt).toLocaleString()+\'</div>\' : \'<div class="inbox-meta">\'+new Date(m.createdAt).toLocaleString()+\'</div>\';' +
 '                    const markReadBtn = isUnread ? \'<button class="branch-delete-btn" onclick="markInboxRead(\\\'\'+m._id+\'\\\')">Mark as read</button>\' : "";' +
+'                    const deleteBtn = isUnread ? \'<button class="branch-delete-btn" style="color:#e53e3e;border-color:#e5e1de;margin-left:6px" onclick="deleteInboxMessage(\\\'\'+m._id+\'\\\')">Delete</button>\' : "";' +
 '                    let replySection = "";' +
 '                    if (m.status === "Replied") {' +
 '                        replySection = \'<div class="inbox-reply-shown"><strong>Reply from \'+m.repliedBy+\':</strong> \'+m.reply+\'<div class="inbox-meta">\'+new Date(m.repliedAt).toLocaleString()+\'</div></div>\';' +
 '                    } else if (isAdmin) {' +
 '                        replySection = \'<div class="inbox-reply-box"><textarea id="inboxReplyInput-\'+m._id+\'" rows="2" placeholder="Write a reply..."></textarea><button class="branch-add-btn" style="margin-top:8px;" onclick="replyInboxMessage(\\\'\'+m._id+\'\\\')">Send Reply</button></div>\';' +
 '                    }' +
-'                    inboxCardsHtml += \'<div class="inbox-card \'+(isUnread ? "inbox-unread" : "")+\'"><div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;"><div><div class="inbox-subject">\'+m.subject+\'</div>\'+senderLine+\'</div><div style="display:flex;align-items:center;gap:8px;">\'+statusBadge+\' \'+markReadBtn+\'</div></div><div class="inbox-body">\'+m.body+\'</div>\'+replySection+\'</div>\';' +
+'                    inboxCardsHtml += \'<div class="inbox-card \'+(isUnread ? "inbox-unread" : "")+\'"><div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;"><div><div class="inbox-subject">\'+m.subject+\'</div>\'+senderLine+\'</div><div style="display:flex;align-items:center;gap:8px;">\'+statusBadge+\' \'+deleteBtn+markReadBtn+\'</div></div><div class="inbox-body">\'+m.body+\'</div>\'+replySection+\'</div>\';' +
 '                });' +
 '                listDiv.innerHTML = inboxCardsHtml;' +
 '                updateInboxBadge(messages);' +
@@ -2114,7 +2134,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            }, "Escalate");' +
 '        }' +
 '        async function reallocateTicket(id) {' +
-'            const res = await fetch("/tickets/staff-list");' +
+'            const res = await fetch("/tickets/staff-list", { cache: "no-store" });' +
 '            const staff = await res.json();' +
 '            if (!staff.length) { showAdminToast("No staff members available to reallocate to.", true); return; }' +
 '            showStaffSelectModal("Select a staff member to reassign this ticket:", staff, async (staffName) => {' +
@@ -2247,7 +2267,9 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '        loadStaffFilterOptions();' +
 '        loadRegionFilterOptions();' +
 '        loadTickets();' +
+
 '    </script>' +
+'    <script>(function(){var s=document.createElement("script");s.src="/admin_features.js";document.head.appendChild(s);})()</script>' +
 '</body>' +
 '</html>';
 
@@ -2469,6 +2491,19 @@ app.post('/tickets/:id/escalate', checkUserLogin, async (req, res) => {
             message: `Ticket #${String(ticket.id).padStart(4, '0')} - ${ticket.title} was escalated to you by ${req.session.username}. Reason: ${reason}`
         });
         await logAudit(req.session.username, 'Escalate Ticket', `Escalated ticket #${ticket.id} to ${recipientName}. Reason: ${reason}`);
+        // Super admin notification
+        try {
+            const superAdmins = await RegionAdmin.findAll({ where: { isSuperAdmin: true } });
+            for (const sa of superAdmins) {
+                await Notification.create({
+                    recipient: sa.username,
+                    ticketId: ticket.id,
+                    ticketNumber: ticket.id,
+                    title: ticket.title,
+                    message: 'Ticket #' + String(ticket.id).padStart(4, '0') + ' was escalated by ' + req.session.username + ' to ' + recipientName
+                });
+            }
+        } catch(nErr) { console.error('Super admin notification error:', nErr); }
 
         res.json({ success: true });
     } catch (err) {
@@ -2995,6 +3030,12 @@ app.post('/inbox/:id/read', checkUserLogin, async (req, res) => {
     }
 });
 
+app.delete('/inbox/:id', checkAdminLogin, async (req, res) => {
+    try {
+        await InboxMessage.destroy({ where: { id: req.params.id } });
+        res.json({ success: true });
+    } catch(err) { res.status(500).json({ error: err.message }); }
+});
 app.post('/tickets', (req, res, next) => {
     upload.single('screenshot')(req, res, (err) => {
         if (err) {
@@ -3010,21 +3051,31 @@ app.post('/tickets', (req, res, next) => {
         const branchName = req.body.branch || 'N/A';
         const allStaff = await Staff.findAll();
 
-        // Find which staff explicitly cover this branch
-        const coveringAssignments = await StaffBranchAssignment.findAll({ where: { branchName } });
-        let eligibleStaff = coveringAssignments
-            .map(a => allStaff.find(s => s.staffId === a.staffId))
-            .filter(Boolean);
+        let assignedStaff = null;
+        const requestedStaffName = req.body.assignedTo;
 
-        // Nobody assigned to this branch yet -> fall back to round-robin across everyone
-        if (eligibleStaff.length === 0) {
-            eligibleStaff = allStaff;
+        // If admin selected a specific staff member, assign directly to them
+        if (requestedStaffName && requestedStaffName.trim()) {
+            assignedStaff = allStaff.find(s => s.name === requestedStaffName.trim());
         }
 
-        // Round-robin among eligible staff, based on tickets already logged for this branch
-        const branchTicketCount = await Ticket.count({ where: { branch: branchName } });
-        const staffIndex = branchTicketCount % eligibleStaff.length;
-        const assignedStaff = eligibleStaff[staffIndex];
+        // Fall back to round-robin if no specific staff was selected or staff not found
+        if (!assignedStaff) {
+            const coveringAssignments = await StaffBranchAssignment.findAll({ where: { branchName } });
+            let eligibleStaff = coveringAssignments
+                .map(a => allStaff.find(s => s.staffId === a.staffId))
+                .filter(Boolean);
+
+            // Nobody assigned to this branch yet -> fall back to round-robin across everyone
+            if (eligibleStaff.length === 0) {
+                eligibleStaff = allStaff;
+            }
+
+            // Round-robin among eligible staff, based on tickets already logged for this branch
+            const branchTicketCount = await Ticket.count({ where: { branch: branchName } });
+            const staffIndex = branchTicketCount % eligibleStaff.length;
+            assignedStaff = eligibleStaff[staffIndex];
+        }
 
         // ticketNumber is just this row's own auto-increment id — no separate counter needed
         const newTicket = await Ticket.create({

@@ -1,0 +1,15 @@
+{
+  "name": "Sarathy IT Helpdesk",
+  "short_name": "Sarathy IT",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#1e2229",
+  "theme_color": "#e53e3e",
+  "icons": [
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
