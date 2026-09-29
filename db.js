@@ -18,7 +18,21 @@
 // keys) — matching the original's loose, rename-by-string-update design — to keep the port
 // mechanical and low-risk rather than introducing a schema redesign.
 
+const fs = require('fs');
 const { Sequelize, DataTypes } = require('sequelize');
+
+// Managed MySQL (Aiven, Render, etc.) refuses plain connections — TLS is required,
+// while a local XAMPP/Workbench MySQL has no TLS. So: enable TLS whenever we are not
+// connecting to localhost, or when MYSQL_SSL=1 forces it. If MYSQL_CA_FILE points at
+// the service's CA certificate we verify it strictly; otherwise TLS still encrypts but
+// skips certificate verification, so the app works before the cert is downloaded.
+const useTls = process.env.MYSQL_SSL === '1' ||
+    (!!process.env.MYSQL_HOST && !['localhost', '127.0.0.1'].includes(process.env.MYSQL_HOST));
+const tlsOptions = useTls
+    ? (process.env.MYSQL_CA_FILE
+        ? { require: true, rejectUnauthorized: true, ca: fs.readFileSync(process.env.MYSQL_CA_FILE, 'utf8') }
+        : { require: true, rejectUnauthorized: false })
+    : undefined;
 
 const sequelize = new Sequelize(
     process.env.MYSQL_DATABASE || 'helpdesk',
@@ -29,7 +43,8 @@ const sequelize = new Sequelize(
         port: process.env.MYSQL_PORT || 3306,
         dialect: 'mysql',
         logging: false, // set to console.log while debugging a specific query
-        pool: { max: 10, min: 0, acquire: 30000, idle: 10000 }
+        pool: { max: 10, min: 0, acquire: 30000, idle: 10000 },
+        dialectOptions: { ssl: tlsOptions } // ssl: undefined = plain connection (local dev)
     }
 );
 

@@ -19,7 +19,6 @@
     "express": "^5.2.1",
     "express-basic-auth": "^1.2.1",
     "express-session": "^1.19.0",
-    "mongoose": "^9.7.4",
     "multer": "^2.2.0",
     "multer-storage-cloudinary": "^4.0.0",
     "mysql2": "^3.23.3",
