@@ -58,7 +58,12 @@ const Region = sequelize.define('Region', {
 const Branch = sequelize.define('Branch', {
     id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
     name: { type: DataTypes.STRING(150), allowNull: false },
-    region: { type: DataTypes.STRING(120), defaultValue: 'Unassigned' }
+    region: { type: DataTypes.STRING(120), defaultValue: 'Unassigned' },
+    // Branch code stamped at the front of ticket numbers issued through this branch
+    // (e.g. SAC70 -> #SAC70/0001). NULL = branch keeps legacy #0001 numbering.
+    code: { type: DataTypes.STRING(12), allowNull: true, unique: true },
+    // Per-branch ticket counter - bumped atomically when a ticket is created.
+    ticketSeq: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0, field: 'ticket_seq' }
 }, { tableName: 'branches', timestamps: false });
 
 // --- Staff ---
@@ -113,7 +118,11 @@ const Ticket = sequelize.define('Ticket', {
     escalationReason: { type: DataTypes.STRING(500), defaultValue: '', field: 'escalation_reason' },
     createdAt: { type: DataTypes.DATE, defaultValue: DataTypes.NOW, field: 'created_at' },
     resolvedAt: { type: DataTypes.DATE, field: 'resolved_at' },
-    resolvedBy: { type: DataTypes.STRING(150), defaultValue: '', field: 'resolved_by' }
+    resolvedBy: { type: DataTypes.STRING(150), defaultValue: '', field: 'resolved_by' },
+    // Number stamped at creation for coded branches (SAC70/0001); NULL = legacy
+    // id-based number (#0001). Never rewritten, so renaming a branch or changing its
+    // code never alters numbers already issued.
+    displayNumber: { type: DataTypes.STRING(40), allowNull: true, unique: true, field: 'display_number' }
 }, { tableName: 'tickets', timestamps: false });
 
 // --- TicketComment (was Ticket.comments[] in Mongo) ---
@@ -166,8 +175,50 @@ const InboxMessage = sequelize.define('InboxMessage', {
     createdAt: { type: DataTypes.DATE, defaultValue: DataTypes.NOW, field: 'created_at' }
 }, { tableName: 'inbox_messages', timestamps: false });
 
+// --- TicketChecklist (mandatory resolution checklist: one row per ticket+item) ---
+const TicketChecklist = sequelize.define('TicketChecklist', {
+    id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+    ticketId: { type: DataTypes.INTEGER, allowNull: false, field: 'ticket_id' },
+    itemKey: { type: DataTypes.STRING(60), allowNull: false, field: 'item_key' },
+    state: { type: DataTypes.STRING(10), allowNull: false, defaultValue: 'pending' }, // pending | done | na
+    answer: { type: DataTypes.TEXT, allowNull: false, defaultValue: '' },
+    updatedBy: { type: DataTypes.STRING(150), allowNull: false, defaultValue: '', field: 'updated_by' },
+    updatedAt: { type: DataTypes.DATE, defaultValue: DataTypes.NOW, field: 'updated_at' }
+}, {
+    tableName: 'ticket_checklists',
+    timestamps: false,
+    indexes: [{ unique: true, fields: ['ticket_id', 'item_key'] }]
+});
+
+Ticket.hasMany(TicketChecklist, { foreignKey: 'ticketId', as: 'checklist' });
+TicketChecklist.belongsTo(Ticket, { foreignKey: 'ticketId' });
+
+// --- Startup migration -------------------------------------------------------
+// Plain sequelize.sync() only creates missing tables - it never ALTERs an existing
+// one, so the branch-code columns are added here. Checks information_schema first
+// and only issues the ALTER when the column is missing (MySQL has no
+// "ADD COLUMN IF NOT EXISTS"), so it is safe on every boot, local and production.
+async function ensureBranchCodeColumns() {
+    const wanted = [
+        { table: 'branches', column: 'code', ddl: 'ADD COLUMN code VARCHAR(12) NULL UNIQUE AFTER region' },
+        { table: 'branches', column: 'ticket_seq', ddl: 'ADD COLUMN ticket_seq INT NOT NULL DEFAULT 0 AFTER code' },
+        { table: 'tickets', column: 'display_number', ddl: 'ADD COLUMN display_number VARCHAR(40) NULL UNIQUE AFTER resolved_by' }
+    ];
+    for (const w of wanted) {
+        const [[row]] = await sequelize.query(
+            'SELECT COUNT(*) AS n FROM information_schema.COLUMNS ' +
+            'WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = :table AND COLUMN_NAME = :column',
+            { replacements: { table: w.table, column: w.column } }
+        );
+        if (Number(row.n) === 0) {
+            await sequelize.query('ALTER TABLE ' + w.table + ' ' + w.ddl);
+        }
+    }
+}
+
 module.exports = {
     sequelize,
+    ensureBranchCodeColumns,
     Region,
     Branch,
     Staff,
@@ -177,5 +228,6 @@ module.exports = {
     TicketComment,
     AuditLog,
     Notification,
-    InboxMessage
+    InboxMessage,
+    TicketChecklist
 };

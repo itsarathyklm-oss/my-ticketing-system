@@ -16,7 +16,9 @@ const ExcelJS = require('exceljs');
 const { Op } = require('sequelize');
 const {
     sequelize, Region, Branch, Staff, StaffBranchAssignment, RegionAdmin,
-    Ticket, TicketComment, AuditLog, Notification, InboxMessage
+    Ticket, TicketComment, AuditLog, Notification, InboxMessage,
+    TicketChecklist,
+    ensureBranchCodeColumns
 } = require('./db');
 
 const app = express();
@@ -29,6 +31,7 @@ app.use(express.static(__dirname));
 // 1. CONNECT TO MYSQL
 sequelize.authenticate()
     .then(() => sequelize.sync()) // creates any tables that don't exist yet — safe to run every startup
+    .then(() => ensureBranchCodeColumns()) // add branch-code columns to tables created before this feature
     .then(() => {
         console.log('Connected to MySQL and schema is in sync');
         // Auto-purge audit log entries older than 30 days
@@ -56,7 +59,25 @@ function withId(instance) {
 function serializeTicket(instance) {
     const t = instance && instance.toJSON ? instance.toJSON() : instance;
     if (!t) return t;
-    return { ...t, _id: String(t.id), ticketNumber: t.id };
+    return { ...t, _id: String(t.id), ticketNumber: t.id, displayNumber: t.displayNumber || String(t.id).padStart(4, '0') };
+}
+
+// Display number for a ticket: the stamped branch-code number (e.g. SAC70/0001)
+// when present, otherwise the legacy zero-padded auto-increment id (0001).
+function fmtTicketNumber(t) {
+    if (!t) return '';
+    if (t.displayNumber) return t.displayNumber;
+    const id = t.id != null ? t.id : t.ticketNumber;
+    return String(id == null ? '' : id).padStart(4, '0');
+}
+
+// Branch codes: uppercase letters, digits and slash; 2-10 characters; compulsory
+// when creating a branch. Returns an error message, or '' when valid.
+function validateBranchCode(raw) {
+    const code = String(raw == null ? '' : raw).trim().toUpperCase();
+    if (!code) return 'Branch code is required (e.g. SAC70).';
+    if (!/^[A-Z0-9/]{2,10}$/.test(code)) return 'Branch code must be 2-10 characters using only A-Z, 0-9 and / (e.g. SAC70).';
+    return '';
 }
 
 async function logAudit(actor, action, details) {
@@ -403,7 +424,7 @@ button[type="submit"]:active { transform: translateY(0); }
             if (response.ok) { 
                 const result = await response.json();
                 localStorage.setItem('sarathyTicketMobile', document.getElementById('mobile').value);
-                showToast('Ticket #' + String(result.ticketNumber).padStart(4, '0') + ' submitted successfully!'); 
+                showToast('Ticket #' + (result.displayNumber || String(result.ticketNumber).padStart(4, '0')) + ' submitted successfully!'); 
                 document.getElementById('ticketForm').reset(); 
                 loadFormBranches();
             } else {
@@ -457,7 +478,7 @@ button[type="submit"]:active { transform: translateY(0); }
                 ? '<div class="status-result-meta">Resolved by ' + (t.assignedTo || 'staff') + ' on ' + new Date(t.resolvedAt).toLocaleString() + '</div>'
                 : '<div class="status-result-meta">Being handled by: ' + (t.assignedTo || 'Unassigned') + '</div>';
             html += '<div class="status-result-card">' +
-                '<div class="status-result-top"><span class="status-result-number">#' + String(t.ticketNumber).padStart(4, '0') + '</span>' +
+                '<div class="status-result-top"><span class="status-result-number">#' + (t.displayNumber || String(t.ticketNumber).padStart(4, '0')) + '</span>' +
                 '<span class="badge ' + statusClass + '">' + t.status + '</span></div>' +
                 '<div class="status-result-title">' + t.title + '</div>' +
                 '<div class="status-result-meta">' + t.branch + ' &middot; ' + t.priority + ' priority</div>' +
@@ -1014,6 +1035,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                    <h2>Create New Branch Location</h2>' +
 '                    <div class="branch-input-group">' +
 '                        <input type="text" id="newBranchName" placeholder="Enter Branch Name">' +
+'                        <input type="text" id="newBranchCode" placeholder="Branch Code (e.g. SAC70)" maxlength="10" style="width: 180px; flex-shrink: 0; padding: 12px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 14px; text-transform: uppercase;" autocomplete="off">' +
 (isSuperAdminUser ?
 '                        <select id="newBranchRegion" style="flex-grow: 1; padding: 12px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 14px;"><option value="" disabled selected>Select Region</option></select>'
 :
@@ -1083,26 +1105,14 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '        document.getElementById("displayUserLabel").innerText = currentUser;' +
 '        let knownNotificationIds = new Set();' +
 '        let notificationsInitialized = false;' +
-'        let notifAudioCtx = null;' +
+'        const notifAudio = new Audio("/notification.mp3");' +
+'        notifAudio.preload = "auto";' +
+'        notifAudio.volume = 0.7;' +
 '        function playNotificationSound() {' +
 '            try {' +
-'                if (!notifAudioCtx) notifAudioCtx = new (window.AudioContext || window.webkitAudioContext)();' +
-'                const ctx = notifAudioCtx;' +
-'                const now = ctx.currentTime;' +
-'                [880, 1175].forEach((freq, i) => {' +
-'                    const osc = ctx.createOscillator();' +
-'                    const gain = ctx.createGain();' +
-'                    osc.type = "square";' +
-'                    osc.frequency.value = freq;' +
-'                    const start = now + i * 0.15;' +
-'                    gain.gain.setValueAtTime(0.0001, start);' +
-'                    gain.gain.exponentialRampToValueAtTime(0.5, start + 0.02);' +
-'                    gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.22);' +
-'                    osc.connect(gain);' +
-'                    gain.connect(ctx.destination);' +
-'                    osc.start(start);' +
-'                    osc.stop(start + 0.25);' +
-'                });' +
+'                if (notifAudio.readyState >= 1) notifAudio.currentTime = 0;' +
+'                const playPromise = notifAudio.play();' +
+'                if (playPromise && typeof playPromise.catch === "function") playPromise.catch(function () {});' +
 '            } catch (err) { console.warn("Notification sound could not play."); }' +
 '        }' +
 '        function toggleNotifications(event) {' +
@@ -1135,7 +1145,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                count.innerText = unread.length > 99 ? "99+" : unread.length;' +
 '                count.style.display = unread.length ? "flex" : "none";' +
 '                const list = document.getElementById("notificationList");' +
-'                list.innerHTML = notifications.length ? notifications.map(n => \'<div class="notification-item \'+(!n.read ? "unread" : "")+\'"><div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;"><div><strong>Ticket #\'+String(n.ticketNumber).padStart(4,"0")+\' assigned</strong>\'+n.message+\'<br><small>\'+new Date(n.createdAt).toLocaleString()+\'</small></div>\'+(!n.read ? \'<button onclick="markNotificationRead(\\\'\'+n._id+\'\\\')" style="flex-shrink:0;background:none;border:1px solid #cbd5e0;border-radius:5px;padding:3px 8px;font-size:10px;font-weight:600;color:#4a5568;cursor:pointer;">Mark as read</button>\' : "")+\'</div></div>\').join("") : \'<div class="notification-empty">No notifications.</div>\';' +
+'                list.innerHTML = notifications.length ? notifications.map(n => \'<div class="notification-item \'+(!n.read ? "unread" : "")+\'"><div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;"><div><strong>Ticket #\'+(n.displayNumber || String(n.ticketNumber).padStart(4,"0"))+\' assigned</strong>\'+n.message+\'<br><small>\'+new Date(n.createdAt).toLocaleString()+\'</small></div>\'+(!n.read ? \'<button onclick="markNotificationRead(\\\'\'+n._id+\'\\\')" style="flex-shrink:0;background:none;border:1px solid #cbd5e0;border-radius:5px;padding:3px 8px;font-size:10px;font-weight:600;color:#4a5568;cursor:pointer;">Mark as read</button>\' : "")+\'</div></div>\').join("") : \'<div class="notification-empty">No notifications.</div>\';' +
 '                const newUnread = unread.filter(n => !knownNotificationIds.has(n._id));' +
 '                if (newUnread.length && notificationsInitialized) { playNotificationSound(); showAdminToast(newUnread[0].message); }' +
 '                notifications.forEach(n => knownNotificationIds.add(n._id));' +
@@ -1432,10 +1442,11 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                tickets = tickets.filter(t => {' +
 '                    const ticketNumStr = String(t.ticketNumber || "").toLowerCase();' +
 '                    const ticketNumPadded = String(t.ticketNumber || "").padStart(4, "0").toLowerCase();' +
+'                    const ticketNumDisplay = String(t.displayNumber || "").toLowerCase();' +
 '                    const submittedBy = (t.submittedBy || "").toLowerCase();' +
 '                    const branch = (t.branch || "").toLowerCase();' +
 '                    const mobile = (t.mobile || "").toLowerCase();' +
-'                    return ticketNumStr.includes(searchTextValue) || ticketNumPadded.includes(searchTextValue) || submittedBy.includes(searchTextValue) || branch.includes(searchTextValue) || mobile.includes(searchTextValue);' +
+'                    return ticketNumStr.includes(searchTextValue) || ticketNumPadded.includes(searchTextValue) || ticketNumDisplay.includes(searchTextValue) || submittedBy.includes(searchTextValue) || branch.includes(searchTextValue) || mobile.includes(searchTextValue);' +
 '                });' +
 '            }' +
 '            const fromVal = document.getElementById("filterFromDate").value;' +
@@ -1483,7 +1494,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                        commentListHtml += \'<div class="comment-item"><strong>\'+c.author+\':</strong> \'+c.text+(c.attachment ? \' <a href="\'+c.attachment+\'" target="_blank">\uD83D\uDCCE Attachment</a>\' : "")+\'</div>\';' +
 '                    });' +
 '                }' +
-'                ticketCardsHtml += \'<div class="ticket-card \'+cardStateClass+\'"><div class="ticket-header"><div><h3 class="ticket-title">#\'+String(ticket.ticketNumber).padStart(4,"0")+\' \'+ticket.title+\'</h3><div style="margin-top: 8px;"><span class="badge p-\'+ticket.priority+\'">\'+ticket.priority+\'</span><span class="badge status-\'+ticket.status.toLowerCase()+\'">\'+ticket.status+\'</span><span class="badge badge-category">\'+(ticket.category || "Other")+\'</span>\'+escalatedBadge+\'</div></div>\'+actionsHtml+\'</div><p class="ticket-desc">\'+ticket.description+\'</p>\'+imageHtml+\'<div class="assignment-info"><div class="assignment-row"><span class="assignment-label">Submitted By</span><span class="assignment-value">\'+(ticket.submittedBy || "Unknown")+(ticket.designation ? " ("+ticket.designation+")" : "")+\'</span></div><div class="assignment-row"><span class="assignment-label">Branch</span><span class="assignment-value">\'+ticket.branch+\'</span></div><div class="assignment-row"><span class="assignment-label">Mobile</span><span class="assignment-value">\'+ticket.mobile+\'</span></div><div class="assignment-row"><span class="assignment-label">Assigned</span><span class="assignment-value">\'+ticket.assignedTo+\'</span></div><div class="assignment-row"><span class="assignment-label">Submitted</span><span class="assignment-value">\'+(ticket.createdAt ? new Date(ticket.createdAt).toLocaleString() : "N/A")+\'</span></div>\'+escalationLine+resolvedLine+\'</div><div class="comments-section"><h4 class="comments-header">Internal Work Notes</h4><div>\'+(commentListHtml || "No updates.")+\'</div><div class="comment-form"><input type="text" id="input-\'+ticket._id+\'" placeholder="Write operational update..."><label class="comment-attach-btn" title="Attach a file (optional)">📎<input type="file" id="attachment-\'+ticket._id+\'" style="display:none;" accept="image/jpeg,image/png,image/webp,image/gif,application/pdf,.jpg,.jpeg,.png,.webp,.gif,.pdf" onchange="updateAttachmentLabel(\\\'\'+ticket._id+\'\\\')"></label><span id="attachmentName-\'+ticket._id+\'" class="attachment-name-tag"></span><button onclick="addComment(\\\'\'+ticket._id+\'\\\')">Post</button></div></div></div>\';' +
+'                ticketCardsHtml += \'<div class="ticket-card \'+cardStateClass+\'"><div class="ticket-header"><div><h3 class="ticket-title">#\'+(ticket.displayNumber || String(ticket.ticketNumber).padStart(4,"0"))+\' \'+ticket.title+\'</h3><div style="margin-top: 8px;"><span class="badge p-\'+ticket.priority+\'">\'+ticket.priority+\'</span><span class="badge status-\'+ticket.status.toLowerCase()+\'">\'+ticket.status+\'</span><span class="badge badge-category">\'+(ticket.category || "Other")+\'</span>\'+escalatedBadge+\'</div></div>\'+actionsHtml+\'</div><p class="ticket-desc">\'+ticket.description+\'</p>\'+imageHtml+\'<div class="assignment-info"><div class="assignment-row"><span class="assignment-label">Submitted By</span><span class="assignment-value">\'+(ticket.submittedBy || "Unknown")+(ticket.designation ? " ("+ticket.designation+")" : "")+\'</span></div><div class="assignment-row"><span class="assignment-label">Branch</span><span class="assignment-value">\'+ticket.branch+\'</span></div><div class="assignment-row"><span class="assignment-label">Mobile</span><span class="assignment-value">\'+ticket.mobile+\'</span></div><div class="assignment-row"><span class="assignment-label">Assigned</span><span class="assignment-value">\'+ticket.assignedTo+\'</span></div><div class="assignment-row"><span class="assignment-label">Submitted</span><span class="assignment-value">\'+(ticket.createdAt ? new Date(ticket.createdAt).toLocaleString() : "N/A")+\'</span></div>\'+escalationLine+resolvedLine+\'</div><div class="comments-section"><h4 class="comments-header">Internal Work Notes</h4><div>\'+(commentListHtml || "No updates.")+\'</div><div class="comment-form"><input type="text" id="input-\'+ticket._id+\'" placeholder="Write operational update..."><label class="comment-attach-btn" title="Attach a file (optional)">📎<input type="file" id="attachment-\'+ticket._id+\'" style="display:none;" accept="image/jpeg,image/png,image/webp,image/gif,application/pdf,.jpg,.jpeg,.png,.webp,.gif,.pdf" onchange="updateAttachmentLabel(\\\'\'+ticket._id+\'\\\')"></label><span id="attachmentName-\'+ticket._id+\'" class="attachment-name-tag"></span><button onclick="addComment(\\\'\'+ticket._id+\'\\\')">Post</button></div></div></div>\';' +
 '            });' +
 '            listDiv.innerHTML = ticketCardsHtml;' +
 '            renderPagination(totalFilteredCount);' +
@@ -1594,11 +1605,11 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            allRegionNames.forEach(rn => {' +
 '                regionOptionsHtml += \'<option value="\'+rn+\'"\'+(rn === region ? \' selected\' : \'\')+\'>\'+rn+\'</option>\';' +
 '            });' +
-'            rowsHtml += \'<tr><td>\'+b.name+\'</td><td><select onchange="moveBranchRegion(\\\'\'+b._id+\'\\\', this.value)" style="padding:6px;border:1px solid #cbd5e0;border-radius:4px;font-size:13px;">\'+regionOptionsHtml+\'</select></td><td><button class="branch-delete-btn" onclick="editBranch(\\\'\'+b._id+\'\\\', \\\'\'+safeName+\'\\\')">Edit</button></td><td><button class="branch-delete-btn" onclick="deleteBranch(\\\'\'+b._id+\'\\\')">Delete</button></td></tr>\';' +
+'            rowsHtml += \'<tr><td>\'+b.name+\'</td><td>\'+(b.code || "—")+\'</td><td><select onchange="moveBranchRegion(\\\'\'+b._id+\'\\\', this.value)" style="padding:6px;border:1px solid #cbd5e0;border-radius:4px;font-size:13px;">\'+regionOptionsHtml+\'</select></td><td><button class="branch-delete-btn" onclick="editBranch(\\\'\'+b._id+\'\\\', \\\'\'+safeName+\'\\\')">Edit</button></td><td><button class="branch-delete-btn" onclick="deleteBranch(\\\'\'+b._id+\'\\\')">Delete</button></td></tr>\';' +
 '        });' +
 '        groupsHtml +=' +
 '            \'<h3 style="margin: 20px 0 8px; font-size: 14px; font-weight: 700; color: #4a5568; text-transform: uppercase; letter-spacing: 0.5px;">\' + region + \'</h3>\' +' +
-'            \'<table class="branch-table"><thead><tr><th>Branch Name</th><th>Region</th><th>Edit</th><th>Delete</th></tr></thead><tbody>\' + rowsHtml + \'</tbody></table>\';' +
+'            \'<table class="branch-table"><thead><tr><th>Branch Name</th><th>Code</th><th>Region</th><th>Edit</th><th>Delete</th></tr></thead><tbody>\' + rowsHtml + \'</tbody></table>\';' +
 '    });' +
 '    container.innerHTML = groupsHtml;' +
 '}' +
@@ -1606,8 +1617,12 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '    const input = document.getElementById("newBranchName");' +
 '    const regionSelect = document.getElementById("newBranchRegion");' +
 '    const name = input.value.trim();' +
+'    const codeInput = document.getElementById("newBranchCode");' +
+'    const code = codeInput ? codeInput.value.trim().toUpperCase() : "";' +
 '    const region = regionSelect ? regionSelect.value : "";' +
 '    if (!name || (isSuperAdmin && !region)) { showAdminToast("Please enter a branch name and select a region.", true); return; }' +
+'    if (!code) { showAdminToast("Branch code is required (e.g. SAC70).", true); if (codeInput) codeInput.focus(); return; }' +
+'    if (!/^[A-Z0-9/]{2,10}$/.test(code)) { showAdminToast("Branch code: 2-10 characters, A-Z, 0-9 and / only.", true); if (codeInput) codeInput.focus(); return; }' +
 '    const btn = document.getElementById("addBranchBtn");' +
 '    const defaultHTML = btn.innerHTML;' +
 '    btn.disabled = true;' +
@@ -1616,10 +1631,11 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '        const response = await fetch("/tickets/branches", {' +
 '            method: "POST",' +
 '            headers: { "Content-Type": "application/json" },' +
-'            body: JSON.stringify({ name, region })' +
+'            body: JSON.stringify({ name, region, code })' +
 '        });' +
 '        if (response.ok) {' +
 '            input.value = "";' +
+'            if (codeInput) codeInput.value = "";' +
 '            if (regionSelect) regionSelect.value = "";' +
 '            showAdminToast("Branch added successfully.");' +
 '            loadBranchesList();' +
@@ -1635,15 +1651,21 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '    }' +
 '}' +
 'async function editBranch(id, currentName) {' +
-'    showPromptModal("Edit branch name:", currentName, async (newName) => {' +
-'        if (!newName || !newName.trim() || newName === currentName) return;' +
-'        const response = await fetch("/tickets/branches/" + id, {' +
-'            method: "PUT",' +
-'            headers: { "Content-Type": "application/json" },' +
-'            body: JSON.stringify({ name: newName.trim() })' +
-'        });' +
-'        if (response.ok) { showAdminToast("Branch updated successfully."); loadBranchesList(); }' +
-'        else { showAdminToast("Could not update branch.", true); }' +
+'    let currentCode = "";' +
+'    try { const list = await fetch("/public-branches").then(r => r.json()); const b = list.find(x => String(x._id) === String(id)); if (b) currentCode = b.code || ""; } catch (e) {}' +
+'    showPromptModal("Edit branch name (keep as-is to only change the code):", currentName, async (newName) => {' +
+'        if (!newName || !newName.trim()) return;' +
+'        showPromptModal("Edit branch code (blank = legacy numbering):", currentCode, async (newCode) => {' +
+'            const code = (newCode || "").trim().toUpperCase();' +
+'            if (code && !/^[A-Z0-9/]{2,10}$/.test(code)) { showAdminToast("Branch code: 2-10 characters, A-Z, 0-9 and / only.", true); return; }' +
+'            const response = await fetch("/tickets/branches/" + id, {' +
+'                method: "PUT",' +
+'                headers: { "Content-Type": "application/json" },' +
+'                body: JSON.stringify({ name: newName.trim(), code })' +
+'            });' +
+'            if (response.ok) { showAdminToast("Branch updated successfully."); loadBranchesList(); }' +
+'            else { const err = await response.json(); showAdminToast(err.error || "Could not update branch.", true); }' +
+'        }, "Save");' +
 '    }, "Save");' +
 '}' +
 'async function deleteBranch(id) {' +
@@ -2307,7 +2329,15 @@ app.get('/notifications', checkUserLogin, async (req, res) => {
             order: [['createdAt', 'DESC']],
             limit: 50
         });
-        res.json(notifications.map(withId));
+        // Attach each ticket's display number (branch-coded e.g. SAC70/0001, else 0001)
+        // so the bell dropdown shows the real number with one extra query, not 50.
+        const notifTicketIds = [...new Set(notifications.map(n => n.ticketId))];
+        const displayByTicketId = {};
+        if (notifTicketIds.length) {
+            const rows = await Ticket.findAll({ where: { id: notifTicketIds }, attributes: ['id', 'displayNumber'] });
+            rows.forEach(r => { displayByTicketId[r.id] = r.displayNumber || String(r.id).padStart(4, '0'); });
+        }
+        res.json(notifications.map(n => ({ ...withId(n), displayNumber: displayByTicketId[n.ticketId] || String(n.ticketNumber).padStart(4, '0') })));
     } catch (err) {
         res.status(500).json({ error: 'Could not load notifications.' });
     }
@@ -2382,7 +2412,7 @@ app.get('/tickets/report', checkUserLogin, async (req, res) => {
         const workbook = new ExcelJS.Workbook();
         const sheet = workbook.addWorksheet('Report');
         sheet.columns = [
-            { header: 'Ticket #', key: 'ticketNumber', width: 12 },
+            { header: 'Ticket #', key: 'ticketNumber', width: 16 },
             { header: 'Title', key: 'title', width: 30 },
             { header: 'Submitted By', key: 'submittedBy', width: 20 },
             { header: 'Designation', key: 'designation', width: 18 },
@@ -2398,7 +2428,7 @@ app.get('/tickets/report', checkUserLogin, async (req, res) => {
         sheet.getRow(1).font = { bold: true };
         tickets.forEach(t => {
             sheet.addRow({
-                ticketNumber: t.id,
+                ticketNumber: fmtTicketNumber(t),
                 title: t.title,
                 submittedBy: t.submittedBy,
                 designation: t.designation,
@@ -2423,6 +2453,72 @@ app.get('/tickets/report', checkUserLogin, async (req, res) => {
     }
 });
 
+// --- Mandatory resolution checklist (staff must complete it before resolving) ---
+// Items 1,2,3,6 need a typed description when ticked; N/A skips an item entirely.
+const CHECKLIST_ITEMS = [
+    { key: 'first_call',  label: 'First response conveyed to customer on the first call', needsAnswer: true,  hint: 'Type what was conveyed to the customer on the first call.' },
+    { key: 'diagnosed',   label: 'Issue diagnosed / root cause identified', needsAnswer: true,  hint: 'Briefly describe the root cause found.' },
+    { key: 'fix_applied', label: 'Fix applied / necessary action taken', needsAnswer: true,  hint: 'Briefly describe the fix or action taken.' },
+    { key: 'tested_ok',   label: 'Issue verified working (tested)', needsAnswer: false, hint: '' },
+    { key: 'informed',    label: 'Customer informed about the resolution', needsAnswer: false, hint: '' },
+    { key: 'confirmed',   label: 'Customer confirmed the issue is resolved', needsAnswer: true,  hint: 'Type the customer confirmation response.' }
+];
+
+async function getChecklistState(ticketId) {
+    const rows = await TicketChecklist.findAll({ where: { ticketId } });
+    const saved = {};
+    rows.forEach(r => { saved[r.itemKey] = { state: r.state, answer: r.answer || '', updatedBy: r.updatedBy }; });
+    let done = 0;
+    const missing = [];
+    CHECKLIST_ITEMS.forEach(it => {
+        const s = saved[it.key];
+        const ok = s && (s.state === 'na' || (s.state === 'done' && (!it.needsAnswer || String(s.answer || '').trim())));
+        if (ok) done++; else missing.push(it.key);
+    });
+    return { saved, done, total: CHECKLIST_ITEMS.length, missing, complete: missing.length === 0 };
+}
+
+// Same access rule as resolving: admins (incl. region admins) or the assigned staff member.
+async function canUseChecklist(req, ticket) {
+    if (req.session.isAdmin) return true;
+    return ticket.assignedTo === req.session.username;
+}
+
+app.get('/tickets/:id/checklist', checkUserLogin, async (req, res) => {
+    try {
+        const ticket = await Ticket.findByPk(req.params.id);
+        if (!ticket) return res.status(404).json({ error: 'Ticket not found.' });
+        if (!(await canUseChecklist(req, ticket))) return res.status(403).json({ error: 'You do not have access to this checklist.' });
+        const st = await getChecklistState(ticket.id);
+        res.json({ items: CHECKLIST_ITEMS, saved: st.saved, done: st.done, total: st.total, complete: st.complete, canEdit: true, isAdmin: !!req.session.isAdmin, status: ticket.status });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.post('/tickets/:id/checklist', checkUserLogin, async (req, res) => {
+    try {
+        const body = req.body || {};
+        const key = body.key, newState = body.state;
+        const item = CHECKLIST_ITEMS.find(i => i.key === key);
+        if (!item) return res.status(400).json({ error: 'Unknown checklist item.' });
+        if (['done', 'na', 'pending'].indexOf(newState) === -1) return res.status(400).json({ error: 'Invalid checklist state.' });
+        const ticket = await Ticket.findByPk(req.params.id);
+        if (!ticket) return res.status(404).json({ error: 'Ticket not found.' });
+        if (!(await canUseChecklist(req, ticket))) return res.status(403).json({ error: 'You do not have access to this checklist.' });
+        const answer = String(body.answer || '').trim().slice(0, 2000);
+        if (newState === 'done' && item.needsAnswer && !answer) {
+            return res.status(400).json({ error: 'Please fill in the description for this item.' });
+        }
+        const found = await TicketChecklist.findOrCreate({
+            where: { ticketId: ticket.id, itemKey: key },
+            defaults: { state: newState, answer: answer, updatedBy: req.session.username }
+        });
+        const row = found[0];
+        if (!found[1]) { row.state = newState; row.answer = answer; row.updatedBy = req.session.username; await row.save(); }
+        const st = await getChecklistState(ticket.id);
+        res.json({ success: true, done: st.done, total: st.total, complete: st.complete });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 app.post('/tickets/:id/resolve', checkUserLogin, async (req, res) => {
     try {
         const ticket = await Ticket.findByPk(req.params.id);
@@ -2434,6 +2530,13 @@ app.post('/tickets/:id/resolve', checkUserLogin, async (req, res) => {
             const ownRegionBranches = await getBranchNamesForRegion(req.session.region);
             if (!ownRegionBranches.includes(ticket.branch)) {
                 return res.status(403).json({ error: 'This ticket is outside your region.' });
+            }
+        }
+        // Staff must complete the resolution checklist first (admins may bypass).
+        if (!req.session.isAdmin) {
+            const cl = await getChecklistState(ticket.id);
+            if (!cl.complete) {
+                return res.status(400).json({ error: 'Finish the resolution checklist before resolving this ticket (' + cl.done + '/' + cl.total + ' done).', needsChecklist: true });
             }
         }
         ticket.status = 'Resolved';
@@ -2488,7 +2591,7 @@ app.post('/tickets/:id/escalate', checkUserLogin, async (req, res) => {
             ticketId: ticket.id,
             ticketNumber: ticket.id,
             title: ticket.title,
-            message: `Ticket #${String(ticket.id).padStart(4, '0')} - ${ticket.title} was escalated to you by ${req.session.username}. Reason: ${reason}`
+            message: `Ticket #${fmtTicketNumber(ticket)} - ${ticket.title} was escalated to you by ${req.session.username}. Reason: ${reason}`
         });
         await logAudit(req.session.username, 'Escalate Ticket', `Escalated ticket #${ticket.id} to ${recipientName}. Reason: ${reason}`);
         // Super admin notification
@@ -2500,7 +2603,7 @@ app.post('/tickets/:id/escalate', checkUserLogin, async (req, res) => {
                     ticketId: ticket.id,
                     ticketNumber: ticket.id,
                     title: ticket.title,
-                    message: 'Ticket #' + String(ticket.id).padStart(4, '0') + ' was escalated by ' + req.session.username + ' to ' + recipientName
+                    message: 'Ticket #' + fmtTicketNumber(ticket) + ' was escalated by ' + req.session.username + ' to ' + recipientName
                 });
             }
         } catch(nErr) { console.error('Super admin notification error:', nErr); }
@@ -2553,7 +2656,7 @@ app.post('/tickets/:id/reallocate', checkAdminLogin, async (req, res) => {
             ticketId: ticket.id,
             ticketNumber: ticket.id,
             title: ticket.title,
-            message: `Ticket #${String(ticket.id).padStart(4, '0')} - ${ticket.title} was reallocated to you.`
+            message: `Ticket #${fmtTicketNumber(ticket)} - ${ticket.title} was reallocated to you.`
         });
         await logAudit(req.session.username, 'Reallocate Escalated Ticket', `Reallocated ticket #${ticket.id} to ${staff.name}`);
         res.json({ success: true, assignedTo: staff.name });
@@ -2669,7 +2772,7 @@ app.get('/tickets/lookup', async (req, res) => {
         const tickets = await Ticket.findAll({
             where: { mobile },
             order: [['id', 'DESC']],
-            attributes: ['id', 'title', 'branch', 'priority', 'status', 'createdAt', 'resolvedAt', 'assignedTo']
+            attributes: ['id', 'displayNumber', 'title', 'branch', 'priority', 'status', 'createdAt', 'resolvedAt', 'assignedTo']
         });
         res.json(tickets.map(serializeTicket));
     } catch (err) {
@@ -2687,8 +2790,13 @@ app.post('/tickets/branches', checkAdminLogin, async (req, res) => {
         if (!name || !region) {
             return res.status(400).json({ error: 'Branch name and region are both required' });
         }
-        const newBranch = await Branch.create({ name, region });
-        await logAudit(req.session.username, 'Add Branch', `Added branch "${newBranch.name}" under region "${region}"`);
+        const code = (req.body.code || '').trim().toUpperCase();
+        const codeError = validateBranchCode(code);
+        if (codeError) return res.status(400).json({ error: codeError });
+        const codeOwner = await Branch.findOne({ where: { code } });
+        if (codeOwner) return res.status(400).json({ error: 'Branch code "' + code + '" is already used by branch "' + codeOwner.name + '".' });
+        const newBranch = await Branch.create({ name, region, code });
+        await logAudit(req.session.username, 'Add Branch', 'code=' + (code || 'none') + ' ' + `Added branch "${newBranch.name}" under region "${region}"`);
         res.status(201).json({ success: true });
     } catch(err) {
         res.status(500).json({ error: err.message });
@@ -2727,6 +2835,22 @@ app.put('/tickets/branches/:id', checkAdminLogin, async (req, res) => {
         if (req.session.isSuperAdmin && req.body.region !== undefined && req.body.region.trim()) {
             branch.region = req.body.region.trim();
         }
+        // Optional code edit: blank removes the code (branch returns to legacy #0001
+        // numbering); existing tickets keep the numbers they were issued at creation.
+        let codeChanged = false;
+        if (req.body.code !== undefined) {
+            const newCode = String(req.body.code || '').trim().toUpperCase();
+            if (newCode) {
+                const codeError = validateBranchCode(newCode);
+                if (codeError) return res.status(400).json({ error: codeError });
+                const codeOwner = await Branch.findOne({ where: { code: newCode } });
+                if (codeOwner && codeOwner.id !== branch.id) {
+                    return res.status(400).json({ error: 'Branch code "' + newCode + '" is already used by branch "' + codeOwner.name + '".' });
+                }
+            }
+            codeChanged = String(branch.code || '') !== newCode;
+            branch.code = newCode || null;
+        }
         await branch.save();
 
         if (oldName !== branch.name) {
@@ -2735,6 +2859,9 @@ app.put('/tickets/branches/:id', checkAdminLogin, async (req, res) => {
                 { where: { branchName: oldName } }
             );
             await logAudit(req.session.username, 'Edit Branch', `Renamed branch "${oldName}" to "${branch.name}"`);
+        }
+        if (codeChanged) {
+            await logAudit(req.session.username, 'Edit Branch', 'Changed branch "' + branch.name + '" code to "' + (branch.code || 'none') + '"');
         }
         if (oldRegion !== branch.region) {
             await logAudit(req.session.username, 'Edit Branch', `Moved branch "${branch.name}" from region "${oldRegion}" to "${branch.region}"`);
@@ -3077,7 +3204,25 @@ app.post('/tickets', (req, res, next) => {
             assignedStaff = eligibleStaff[staffIndex];
         }
 
-        // ticketNumber is just this row's own auto-increment id — no separate counter needed
+        // Ticket number allocation: a ticket submitted through a branch that has a
+        // code is stamped CODE/0001 (independent per-branch counter, allocated
+        // atomically); everything else keeps the legacy id-based number (0001).
+        let displayNumber = null;
+        const sourceBranch = await Branch.findOne({ where: { name: branchName }, order: [['id', 'ASC']] });
+        if (sourceBranch && sourceBranch.code) {
+            const seq = await sequelize.transaction(async (tx) => {
+                // LAST_INSERT_ID() is per-connection, so both statements must share
+                // the transaction's pinned connection to stay race-free.
+                await sequelize.query(
+                    'UPDATE branches SET ticket_seq = LAST_INSERT_ID(ticket_seq + 1) WHERE id = :id',
+                    { replacements: { id: sourceBranch.id }, transaction: tx }
+                );
+                const [[row]] = await sequelize.query('SELECT LAST_INSERT_ID() AS seq', { transaction: tx });
+                return Number(row.seq);
+            });
+            displayNumber = sourceBranch.code + '/' + String(seq).padStart(4, '0');
+        }
+
         const newTicket = await Ticket.create({
             title: req.body.title,
             submittedBy: req.body.submittedBy || 'Unknown',
@@ -3088,7 +3233,8 @@ app.post('/tickets', (req, res, next) => {
             priority: req.body.priority,
             description: req.body.description,
             screenshot: req.file ? req.file.path : null,
-            assignedTo: assignedStaff.name
+            assignedTo: assignedStaff.name,
+            displayNumber
         });
         const ticketNumber = newTicket.id;
 
@@ -3097,21 +3243,21 @@ app.post('/tickets', (req, res, next) => {
             ticketId: newTicket.id,
             ticketNumber,
             title: newTicket.title,
-            message: `Ticket #${String(ticketNumber).padStart(4, '0')} - ${newTicket.title} has been assigned to you.`
+            message: `Ticket #${fmtTicketNumber(newTicket)} - ${newTicket.title} has been assigned to you.`
         });
 
         const mailOptions = {
             from: process.env.EMAIL_USER,
             to: assignedStaff.email,
-            subject: `[Ticket #${String(ticketNumber).padStart(4, '0')}] - ${newTicket.title}`,
-            text: `Hello ${assignedStaff.name},\n\nTicket Assigned:\nTicket #: ${String(ticketNumber).padStart(4, '0')}\nTitle: ${newTicket.title}\nSubmitted By: ${newTicket.submittedBy}\nBranch: ${newTicket.branch}\nMobile: ${newTicket.mobile}`
+            subject: `[Ticket #${fmtTicketNumber(newTicket)}] - ${newTicket.title}`,
+            text: `Hello ${assignedStaff.name},\n\nTicket Assigned:\nTicket #: ${fmtTicketNumber(newTicket)}\nTitle: ${newTicket.title}\nSubmitted By: ${newTicket.submittedBy}\nBranch: ${newTicket.branch}\nMobile: ${newTicket.mobile}`
         };
 
         transporter.sendMail(mailOptions, (err, info) => {
             if (err) {
-                console.error(`Assignment email FAILED for ticket #${String(ticketNumber).padStart(4, '0')} (to ${assignedStaff.email}):`, err.message);
+                console.error(`Assignment email FAILED for ticket #${fmtTicketNumber(newTicket)} (to ${assignedStaff.email}):`, err.message);
             } else {
-                console.log(`Assignment email sent for ticket #${String(ticketNumber).padStart(4, '0')} (to ${assignedStaff.email}):`, info.response);
+                console.log(`Assignment email sent for ticket #${fmtTicketNumber(newTicket)} (to ${assignedStaff.email}):`, info.response);
             }
         });
 

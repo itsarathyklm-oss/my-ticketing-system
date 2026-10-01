@@ -36,17 +36,36 @@ self.addEventListener('fetch', (event) => {
 
   if (!isStaticFile) return;
 
+  // Scripts and stylesheets are network-first; other static assets cache-first.
+  const isCode = /\.(js|css)$/.test(path);
+
+  // Hit the network and refresh the cache entry in the background so a
+  // deploy is always picked up.
+  const fetched = fetch(event.request).then((response) => {
+    if (response && response.status === 200) {
+      const clone = response.clone();
+      caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+    }
+    return response;
+  });
+
+  if (isCode) {
+    // Network-first for scripts and stylesheets: never run stale code after
+    // a deploy. The cache is only used when the network is unreachable.
+    event.respondWith(fetched.catch(() =>
+      caches.match(event.request).then((cached) => cached || Response.error())
+    ));
+    return;
+  }
+
+  // Cache-first with background revalidation for other static assets.
   event.respondWith(
     caches.match(event.request).then((cached) => {
-      const fetched = fetch(event.request).then((response) => {
-        if (response && response.status === 200) {
-          const clone = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
-        }
-        return response;
-      }).catch(() => cached);
-
-      return cached || fetched;
+      if (cached) {
+        fetched.catch(() => {}); // revalidation result was cached above
+        return cached;
+      }
+      return fetched.catch(() => Response.error());
     })
   );
 });

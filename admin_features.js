@@ -72,7 +72,7 @@ async function submitNewTicket() {
         const response = await fetch('/tickets', { method: 'POST', body: formData });
         if (response.ok) {
             const result = await response.json();
-            showAdminToast('Ticket #' + String(result.ticketNumber).padStart(4, '0') + ' submitted!');
+            showAdminToast('Ticket #' + (result.displayNumber || String(result.ticketNumber).padStart(4, '0')) + ' submitted!');
             nameEl.value = '';
             document.getElementById('newTktDesignation').value = '';
             mobileEl.value = '';
@@ -96,3 +96,6 @@ async function deleteInboxMessage(id) {
         } catch(e) { showAdminToast('Error deleting message.', true); }
     }, 'Delete');
 }
+
+// Load the resolution checklist UI (fully additive)
+(function(){var s=document.createElement("script");s.src="/checklist.js";document.head.appendChild(s);})();
