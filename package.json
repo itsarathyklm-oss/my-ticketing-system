@@ -17,7 +17,6 @@
     "dotenv": "^17.4.2",
     "exceljs": "^4.4.0",
     "express": "^5.2.1",
-    "express-basic-auth": "^1.2.1",
     "express-session": "^1.19.0",
     "multer": "^2.2.0",
     "multer-storage-cloudinary": "^4.0.0",

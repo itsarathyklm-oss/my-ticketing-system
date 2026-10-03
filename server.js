@@ -26,6 +26,26 @@ const PORT = process.env.PORT || 3000;
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+// Minimal security headers. No CSP on purpose: the dashboard is built from inline
+// scripts/styles, so a strict CSP would break it rather than protect it.
+app.use((req, res, next) => {
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("X-Frame-Options", "SAMEORIGIN");
+    res.setHeader("Referrer-Policy", "same-origin");
+    next();
+});
+app.disable("x-powered-by");
+
+// Do not serve server internals as static files. express.static already skips
+// dotfiles (.env, .git, .freebuff), but these non-dot files sit in the project root
+// and would otherwise be downloadable by anyone (source disclosure).
+const BLOCKED_STATIC_FILES = new Set(["/server.js", "/db.js", "/package.json", "/package-lock.json", "/start-preview.js", "/tickets.json"]);
+app.use((req, res, next) => {
+    if (BLOCKED_STATIC_FILES.has(req.path) || req.path.startsWith("/.env") || req.path.startsWith("/.git") || req.path.startsWith("/.freebuff")) {
+        return res.status(404).send("Not Found");
+    }
+    next();
+});
 app.use(express.static(__dirname));
 
 // 1. CONNECT TO MYSQL
@@ -465,6 +485,11 @@ button[type="submit"]:active { transform: translateY(0); }
         renderStatusResults(tickets);
     }
 
+    function escHtml(v) {
+        if (v === null || v === undefined) return "";
+        return String(v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+    }
+
     function renderStatusResults(tickets) {
         const container = document.getElementById('statusResults');
         if (tickets.length === 0) {
@@ -475,13 +500,13 @@ button[type="submit"]:active { transform: translateY(0); }
         tickets.forEach(t => {
             const statusClass = t.status === 'Resolved' ? 'status-resolved' : 'status-open';
             const resolvedLine = (t.status === 'Resolved' && t.resolvedAt)
-                ? '<div class="status-result-meta">Resolved by ' + (t.assignedTo || 'staff') + ' on ' + new Date(t.resolvedAt).toLocaleString() + '</div>'
-                : '<div class="status-result-meta">Being handled by: ' + (t.assignedTo || 'Unassigned') + '</div>';
+                ? '<div class="status-result-meta">Resolved by ' + escHtml(t.assignedTo || 'staff') + ' on ' + new Date(t.resolvedAt).toLocaleString() + '</div>'
+                : '<div class="status-result-meta">Being handled by: ' + escHtml(t.assignedTo || 'Unassigned') + '</div>';
             html += '<div class="status-result-card">' +
                 '<div class="status-result-top"><span class="status-result-number">#' + (t.displayNumber || String(t.ticketNumber).padStart(4, '0')) + '</span>' +
                 '<span class="badge ' + statusClass + '">' + t.status + '</span></div>' +
-                '<div class="status-result-title">' + t.title + '</div>' +
-                '<div class="status-result-meta">' + t.branch + ' &middot; ' + t.priority + ' priority</div>' +
+                '<div class="status-result-title">' + escHtml(t.title) + '</div>' +
+                '<div class="status-result-meta">' + escHtml(t.branch) + ' &middot; ' + escHtml(t.priority) + ' priority</div>' +
                 '<div class="status-result-meta">Submitted: ' + (t.createdAt ? new Date(t.createdAt).toLocaleString() : '') + '</div>' +
                 resolvedLine +
                 '</div>';
@@ -751,7 +776,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '        .main-content::-webkit-scrollbar-track { background: #f8f9fa; }' +
 '        .main-content::-webkit-scrollbar-thumb { background: #cbd5e0; border-radius: 10px; }' +
 '        .main-content::-webkit-scrollbar-thumb:hover { background: #a0aec0; }' +
-'        .top-navbar { height: 70px; background-color: #fff; border-bottom: 1px solid #e2e8f0; display: flex; align-items: center; justify-content: space-between; padding: 0 30px; }' +
+'        .top-navbar { position: sticky; top: 0; z-index: 100; height: 70px; background-color: #fff; border-bottom: 1px solid #e2e8f0; display: flex; align-items: center; justify-content: space-between; padding: 0 30px; }' +
 '        .page-title { font-size: 20px; font-weight: 600; color: #2d3748; }' +
 '        .notification-wrap { position: relative; }' +
 '        .notification-btn { position: relative; width: 40px; height: 40px; border: 1px solid #e2e8f0; border-radius: 50%; background: #fff; color: #2d3748; cursor: pointer; display: flex; align-items: center; justify-content: center; }' +
@@ -796,6 +821,13 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '        .ticket-desc { color: #4a5568; font-size: 14px; line-height: 1.5; margin-bottom: 16px; }' +
 '        .badge { padding: 4px 10px; border-radius: 50px; font-size: 11px; font-weight: 700; text-transform: uppercase; display: inline-block; margin-right: 8px; }' +
 '        .p-Low { background-color: #edf2f7; color: #4a5568; }' +
+'        .sla-clock { font-variant-numeric: tabular-nums; }' +
+'        .sla-ok { background-color: #c6f6d5; color: #22543d; }' +
+'        .sla-risk { background-color: #feebc8; color: #c05621; }' +
+'        .sla-breach { background-color: #fed7d7; color: #9b2c2c; animation: slaPulse 1.6s ease-in-out infinite; }' +
+'        .sla-met { background-color: #c6f6d5; color: #22543d; }' +
+'        .sla-missed { background-color: #fed7d7; color: #9b2c2c; }' +
+'        @keyframes slaPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.62; } }' +
 '        .p-Medium { background-color: #feebc8; color: #c05621; }' +
 '        .p-High { background-color: #fed7d7; color: #9b2c2c; }' +
 '        .status-open { background-color: #ebf8ff; color: #2b6cb0; }' +
@@ -904,6 +936,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            <ul class="sidebar-menu">' +
 '                <li class="menu-item active" id="tabTicketsLink" onclick="refreshTicketsDashboard()"><svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v2z"></path><line x1="13" y1="5" x2="13" y2="19"></line></svg>Tickets System</li>' +
 (isAdminUser ? '                <li class="menu-item" id="tabNewTicketLink" onclick="switchView(\'newticket\')"><svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>New Ticket</li>' : '') +
+(isSuperAdminUser ? '                <li class="menu-item" id="tabRegionsLink" onclick="switchView(\'regions\')"><svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>Manage Regions</li>' : '') +
 (isSuperAdminUser ? '                <li class="menu-item" id="tabAdminsLink" onclick="switchView(\'admins\')"><svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l3 6 6.5 1-5 4.5 1.5 6.5-6-3.5-6 3.5 1.5-6.5-5-4.5 6.5-1z"></path></svg>Manage Admins</li>' : '') +
 (isAdminUser ? '                <li class="menu-item" id="tabBranchesLink" onclick="switchView(\'branches\')"><svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>Manage Branches</li>' : '') +
 (isAdminUser ? '                <li class="menu-item" id="tabStaffLink" onclick="switchView(\'staff\')"><svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>Manage IT Staff</li>' : '') +
@@ -935,8 +968,9 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                    <div class="metric-card escalated" onclick="filterByStatus(\'Escalated\')"><div class="metric-icon-badge metric-icon-amber"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg></div><div class="metric-label">Escalated Tickets</div><div class="metric-value" id="statEscalated">0</div><div class="metric-subtitle">Needs admin action</div></div>' +
 '                    <div class="metric-card assigned" onclick="filterByStatus(\'all\')"><div class="metric-icon-badge metric-icon-red"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v2z"></path><line x1="13" y1="5" x2="13" y2="19"></line></svg></div><div class="metric-label">Total Tickets</div><div class="metric-value" id="statMine">0</div><div class="metric-subtitle">All requests in scope</div></div>' +
 '                </div>' +
-'                <div style="margin-bottom: 12px;">' +
+'                <div style="margin-bottom: 12px; display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap;">' +
 '                    <button type="button" id="toggleFilterBtn" class="branch-add-btn" onclick="toggleFilterPanel()" style="display:inline-flex; align-items:center; gap:8px; padding: 9px 18px;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>Filters</button>' +
+'                    <div id="slaSummary" onclick="toggleSlaFilter()" title="Click to show breached tickets" style="cursor:pointer; display:flex; align-items:center; gap:8px; background:#ffffff; border:1px solid #e2e8f0; border-radius:8px; padding:9px 14px; font-size:12.5px; font-weight:600; color:#4a5568; box-shadow:0 1px 3px rgba(0,0,0,0.06); white-space:nowrap;"><span style="color:#2d3748; letter-spacing:0.5px;">SLA</span><span id="slaBreached" style="color:#c53030;">0 breached</span><span style="color:#cbd5e0;">&middot;</span><span id="slaRisk" style="color:#dd6b20;">0 at risk</span><span style="color:#cbd5e0;">&middot;</span><span id="slaOnTrack" style="color:#2f855a;">0 on track</span></div>' +
 '                </div>' +
 '                <div class="branch-panel-card" id="ticketFilterPanel" style="display:none; margin-bottom: 20px; align-items: flex-end; gap: 14px; flex-wrap: wrap;">' +
 '                    <div style="flex-grow: 1; min-width: 220px;"><label style="display:block;font-size:12px;font-weight:600;color:#4a5568;margin-bottom:4px;">Search</label><input type="text" id="filterSearchText" placeholder="Ticket #, Submitted By, Branch, Mobile..." style="width:100%; padding: 8px 10px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 14px;" onkeydown="if(event.key===\'Enter\') applyTicketFilters();"></div>' +
@@ -1017,7 +1051,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                </div>' +
 '            </div>'
 : '') +
-'            <div id="viewBranches" class="dashboard-view">' +
+'            <div id="viewRegions" class="dashboard-view">' +
 (isSuperAdminUser ?
 '                <div class="branch-panel-card" style="margin-bottom: 20px;">' +
 '                    <h2>Manage Regions</h2>' +
@@ -1031,6 +1065,8 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                    </table>' +
 '                </div>'
 : '') +
+'            </div>' +
+'            <div id="viewBranches" class="dashboard-view">' +
 '                <div class="branch-panel-card">' +
 '                    <h2>Create New Branch Location</h2>' +
 '                    <div class="branch-input-group">' +
@@ -1145,7 +1181,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                count.innerText = unread.length > 99 ? "99+" : unread.length;' +
 '                count.style.display = unread.length ? "flex" : "none";' +
 '                const list = document.getElementById("notificationList");' +
-'                list.innerHTML = notifications.length ? notifications.map(n => \'<div class="notification-item \'+(!n.read ? "unread" : "")+\'"><div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;"><div><strong>Ticket #\'+(n.displayNumber || String(n.ticketNumber).padStart(4,"0"))+\' assigned</strong>\'+n.message+\'<br><small>\'+new Date(n.createdAt).toLocaleString()+\'</small></div>\'+(!n.read ? \'<button onclick="markNotificationRead(\\\'\'+n._id+\'\\\')" style="flex-shrink:0;background:none;border:1px solid #cbd5e0;border-radius:5px;padding:3px 8px;font-size:10px;font-weight:600;color:#4a5568;cursor:pointer;">Mark as read</button>\' : "")+\'</div></div>\').join("") : \'<div class="notification-empty">No notifications.</div>\';' +
+'                list.innerHTML = notifications.length ? notifications.map(n => \'<div class="notification-item \'+(!n.read ? "unread" : "")+\'"><div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;"><div><strong>Ticket #\'+(n.displayNumber || String(n.ticketNumber).padStart(4,"0"))+\' assigned</strong>\'+escHtml(n.message)+\'<br><small>\'+new Date(n.createdAt).toLocaleString()+\'</small></div>\'+(!n.read ? \'<button onclick="markNotificationRead(\\\'\'+n._id+\'\\\')" style="flex-shrink:0;background:none;border:1px solid #cbd5e0;border-radius:5px;padding:3px 8px;font-size:10px;font-weight:600;color:#4a5568;cursor:pointer;">Mark as read</button>\' : "")+\'</div></div>\').join("") : \'<div class="notification-empty">No notifications.</div>\';' +
 '                const newUnread = unread.filter(n => !knownNotificationIds.has(n._id));' +
 '                if (newUnread.length && notificationsInitialized) { playNotificationSound(); showAdminToast(newUnread[0].message); }' +
 '                notifications.forEach(n => knownNotificationIds.add(n._id));' +
@@ -1205,7 +1241,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            const select = document.getElementById("confirmStaffSelect");' +
 '            select.style.display = "block";' +
 '            select.innerHTML = \'<option value="" disabled selected>Select staff member</option>\';' +
-'            staffList.forEach(s => { select.innerHTML += \'<option value="\'+s.name+\'">\'+s.name+\'</option>\'; });' +
+'            staffList.forEach(s => { select.innerHTML += \'<option value="\'+escHtml(s.name)+\'">\'+escHtml(s.name)+\'</option>\'; });' +
 '            confirmHasInput = false;' +
 '            confirmHasSelect = true;' +
 '            confirmCallback = callback;' +
@@ -1233,7 +1269,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                : \'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>\';' +
 '            toast.innerHTML =' +
 '                \'<div class="admin-toast-icon">\' + iconSvg + \'</div>\' +' +
-'                \'<div class="admin-toast-text"><div class="admin-toast-title">\' + (isError ? "Error" : "Success") + \'</div><div class="admin-toast-message">\' + message + \'</div></div>\' +' +
+'                \'<div class="admin-toast-text"><div class="admin-toast-title">\' + (isError ? "Error" : "Success") + \'</div><div class="admin-toast-message">\' + escHtml(message) + \'</div></div>\' +' +
 '                \'<div class="admin-toast-progress"></div>\';' +
 '            toast.className = "admin-toast show" + (isError ? " error" : "");' +
 '            clearTimeout(adminToastTimer);' +
@@ -1263,7 +1299,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                alert("Access Denied: Admins only.");' +
 '                return;' +
 '            }' +
-'            if (target === "admins" && !isSuperAdmin) {' +
+'            if ((target === "admins" || target === "regions") && !isSuperAdmin) {' +
 '                alert("You are not authorized to access this page.");' +
 '                return;' +
 '            }' +
@@ -1306,6 +1342,11 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                document.getElementById("tabAdminsLink").classList.add("active");' +
 '                document.getElementById("panelViewTitle").innerText = "Manage Region Admins";' +
 '                loadRegionAdminsList();' +
+'            } else if (target === "regions") {' +
+'                document.getElementById("viewRegions").classList.add("active");' +
+'                document.getElementById("tabRegionsLink").classList.add("active");' +
+'                document.getElementById("panelViewTitle").innerText = "Manage Regions";' +
+'                loadRegionsList();' +
 '            } else if (target === "newticket") {' +
 '                document.getElementById("viewNewTicket").classList.add("active");' +
 '                document.getElementById("tabNewTicketLink").classList.add("active");' +
@@ -1389,7 +1430,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            const select = document.getElementById("filterStaff");' +
 '            select.innerHTML = \'<option value="">All Staff</option>\';' +
 '            staff.forEach(s => {' +
-'                select.innerHTML += \'<option value="\'+s.name+\'">\'+s.name+\'</option>\';' +
+'                select.innerHTML += \'<option value="\'+escHtml(s.name)+\'">\'+escHtml(s.name)+\'</option>\';' +
 '            });' +
 '        }' +
 '        async function loadRegionFilterOptions() {' +
@@ -1401,12 +1442,12 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            const filterSelect = document.getElementById("filterRegion");' +
 '            if (filterSelect) {' +
 '                filterSelect.innerHTML = \'<option value="">All Regions</option>\';' +
-'                regions.forEach(r => { filterSelect.innerHTML += \'<option value="\'+r.name+\'">\'+r.name+\'</option>\'; });' +
+'                regions.forEach(r => { filterSelect.innerHTML += \'<option value="\'+escHtml(r.name)+\'">\'+escHtml(r.name)+\'</option>\'; });' +
 '            }' +
 '            const reportSelect = document.getElementById("reportRegion");' +
 '            if (reportSelect) {' +
 '                reportSelect.innerHTML = \'<option value="">All Regions</option>\';' +
-'                regions.forEach(r => { reportSelect.innerHTML += \'<option value="\'+r.name+\'">\'+r.name+\'</option>\'; });' +
+'                regions.forEach(r => { reportSelect.innerHTML += \'<option value="\'+escHtml(r.name)+\'">\'+escHtml(r.name)+\'</option>\'; });' +
 '            }' +
 '        }' +
 '        function sortOpenFirstThenResolvedByRecency(list) {' +
@@ -1415,6 +1456,86 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            resolvedTickets.sort((a, b) => new Date(b.resolvedAt || 0) - new Date(a.resolvedAt || 0));' +
 '            return openTickets.concat(resolvedTickets);' +
 '        }' +
+'        function escHtml(v) {' +
+'            if (v === null || v === undefined) return "";' +
+'            return String(v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");' +
+'        }' +
+'        const SLA_TARGETS = { High: 14400000, Medium: 28800000, Low: 86400000 };' +
+'        function slaTargetMs(p) { return SLA_TARGETS[p] || SLA_TARGETS.Medium; }' +
+'        function slaDeadline(t) { return new Date(t.createdAt).getTime() + slaTargetMs(t.priority); }' +
+'        function fmtSlaClock(ms) {' +
+'            ms = Math.max(0, Math.floor(ms / 1000) * 1000);' +
+'            var s = Math.floor(ms / 1000);' +
+'            var d = Math.floor(s / 86400); s -= d * 86400;' +
+'            var h = Math.floor(s / 3600); s -= h * 3600;' +
+'            var m = Math.floor(s / 60); s -= m * 60;' +
+'            var pad = function (n) { return String(n).padStart(2, "0"); };' +
+'            return (d > 0 ? d + "d " : "") + pad(h) + ":" + pad(m) + ":" + pad(s);' +
+'        }' +
+'        function fmtDur(ms) {' +
+'            var mins = Math.max(1, Math.round(ms / 60000));' +
+'            var h = Math.floor(mins / 60);' +
+'            var m = mins % 60;' +
+'            if (h >= 24) { var d = Math.floor(h / 24); return d + "d " + (h % 24) + "h"; }' +
+'            if (h > 0) return h + "h " + String(m).padStart(2, "0") + "m";' +
+'            return m + "m";' +
+'        }' +
+'        function slaInfo(t) {' +
+'            var target = slaTargetMs(t.priority);' +
+'            var deadline = new Date(t.createdAt).getTime() + target;' +
+'            if (t.status === "Resolved") {' +
+'                var done = t.resolvedAt ? new Date(t.resolvedAt).getTime() : Date.now();' +
+'                if (done <= deadline) return { kind: "met", text: "SLA Met in " + fmtDur(done - new Date(t.createdAt).getTime()) };' +
+'                return { kind: "missed", text: "SLA Missed by " + fmtDur(done - deadline) };' +
+'            }' +
+'            var remaining = deadline - Date.now();' +
+'            if (remaining < 0) return { kind: "breached", deadline: deadline, target: target };' +
+'            if (remaining < target * 0.25) return { kind: "risk", deadline: deadline, target: target };' +
+'            return { kind: "ok", deadline: deadline, target: target };' +
+'        }' +
+'        function slaBadgeHtml(t) {' +
+'            var info = slaInfo(t);' +
+'            if (t.status === "Resolved") {' +
+'                return `<span class="badge ${info.kind === "met" ? "sla-met" : "sla-missed"}">${info.text}</span>`;' +
+'            }' +
+'            var cls = info.kind === "breached" ? "sla-breach" : (info.kind === "risk" ? "sla-risk" : "sla-ok");' +
+'            var label = info.kind === "breached" ? "BREACHED +" + fmtSlaClock(Date.now() - info.deadline) : "SLA " + fmtSlaClock(info.deadline - Date.now());' +
+'            return `<span class="sla-clock badge ${cls}" data-deadline="${info.deadline}" data-target="${info.target}">${label}</span>`;' +
+'        }' +
+'        function updateSlaSummary(list) {' +
+'            var breached = 0, risk = 0, onTrack = 0;' +
+'            list.forEach(function (t) {' +
+'                if (t.status === "Resolved") return;' +
+'                var kind = slaInfo(t).kind;' +
+'                if (kind === "breached") breached++;' +
+'                else if (kind === "risk") risk++;' +
+'                else onTrack++;' +
+'            });' +
+'            var set = function (id, txt) { var el = document.getElementById(id); if (el) el.textContent = txt; };' +
+'            set("slaBreached", breached + " breached");' +
+'            set("slaRisk", risk + " at risk");' +
+'            set("slaOnTrack", onTrack + " on track");' +
+'        }' +
+'        function tickSlaClocks() {' +
+'            if (window.__slaTickets) updateSlaSummary(window.__slaTickets);' +
+'            var now = Date.now();' +
+'            document.querySelectorAll(".sla-clock[data-deadline]").forEach(function (el) {' +
+'                var deadline = Number(el.getAttribute("data-deadline"));' +
+'                var target = Number(el.getAttribute("data-target")) || 28800000;' +
+'                var diff = deadline - now;' +
+'                var cls, txt;' +
+'                if (diff >= 0) {' +
+'                    cls = "sla-clock badge " + (diff < target * 0.25 ? "sla-risk" : "sla-ok");' +
+'                    txt = "SLA " + fmtSlaClock(diff);' +
+'                } else {' +
+'                    cls = "sla-clock badge sla-breach";' +
+'                    txt = "BREACHED +" + fmtSlaClock(-diff);' +
+'                }' +
+'                if (el.className !== cls) el.className = cls;' +
+'                if (el.textContent !== txt) el.textContent = txt;' +
+'            });' +
+'        }' +
+'        function toggleSlaFilter() { filterByStatus(currentStatusFilter === "SLA" ? "default-view" : "SLA"); }' +
 '        async function loadTickets() {' +
 '            try {' +
 '            const controller = new AbortController();' +
@@ -1457,10 +1578,13 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            document.getElementById("statResolved").innerText = tickets.filter(t => t.status === "Resolved").length;' +
 '            document.getElementById("statEscalated").innerText = tickets.filter(t => t.escalated && t.status !== "Resolved").length;' +
 '            document.getElementById("statMine").innerText = tickets.length;' +
+'            window.__slaTickets = tickets;' +
+'            updateSlaSummary(tickets);' +
 '            if (currentStatusFilter === "default-view") { tickets = tickets.filter(t => t.status === "Open"); }' +
 '            else if (currentStatusFilter === "Escalated") { tickets = tickets.filter(t => t.escalated); tickets = sortOpenFirstThenResolvedByRecency(tickets); }' +
 '            else if (currentStatusFilter === "Resolved") { tickets = tickets.filter(t => t.status === "Resolved"); tickets.sort((a, b) => new Date(b.resolvedAt || 0) - new Date(a.resolvedAt || 0)); }' +
 '            else if (currentStatusFilter === "all") { tickets = sortOpenFirstThenResolvedByRecency(tickets); }' +
+'            else if (currentStatusFilter === "SLA") { tickets = tickets.filter(t => t.status !== "Resolved" && slaInfo(t).kind === "breached"); tickets.sort((a, b) => slaDeadline(a) - slaDeadline(b)); }' +
 '            else if (currentStatusFilter !== "all") { tickets = tickets.filter(t => t.status === currentStatusFilter); }' +
 '            const totalFilteredCount = tickets.length;' +
 '            const totalPages = Math.max(1, Math.ceil(totalFilteredCount / PAGE_SIZE));' +
@@ -1484,19 +1608,20 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                const waitingNote = (!isAdmin && !isResolved && !isMineOrAdmin) ? \'<span class="badge" style="background:#fef3c7;color:#92400e;">Waiting on Admin</span>\' : "";' +
 '                const actionsHtml = (reallocateBtn || actionBtn || escalateBtn || waitingNote) ? \'<div class="ticket-actions">\'+reallocateBtn+actionBtn+escalateBtn+waitingNote+\'</div>\' : "";' +
 '                const escalatedBadge = ticket.escalated ? \'<span class="badge badge-escalated">Escalated</span>\' : "";' +
-'                const resolvedLine = (ticket.status === "Resolved" && ticket.resolvedAt) ? \'<div class="assignment-row"><span class="assignment-label">Resolved</span><span class="assignment-value">\'+new Date(ticket.resolvedAt).toLocaleString()+(ticket.resolvedBy ? \' by \'+ticket.resolvedBy : "")+\'</span></div>\' : "";' +
-'                const escalationLine = ticket.escalated ? \'<div class="assignment-row"><span class="assignment-label">Escalation</span><span class="assignment-value">\'+ticket.status+\' (\'+(ticket.escalatedBy || "Staff")+\' escalated\'+(ticket.escalatedAt ? " on "+new Date(ticket.escalatedAt).toLocaleString() : "")+\')</span></div>\'+(ticket.escalationReason ? \'<div class="assignment-row"><span class="assignment-label">Reason</span><span class="assignment-value">\'+ticket.escalationReason+\'</span></div>\' : "") : "";' +
+'                const resolvedLine = (ticket.status === "Resolved" && ticket.resolvedAt) ? \'<div class="assignment-row"><span class="assignment-label">Resolved</span><span class="assignment-value">\'+new Date(ticket.resolvedAt).toLocaleString()+(ticket.resolvedBy ? \' by \'+escHtml(ticket.resolvedBy) : "")+\'</span></div>\' : "";' +
+'                const escalationLine = ticket.escalated ? \'<div class="assignment-row"><span class="assignment-label">Escalation</span><span class="assignment-value">\'+ticket.status+\' (\'+escHtml(ticket.escalatedBy || "Staff")+\' escalated\'+(ticket.escalatedAt ? " on "+new Date(ticket.escalatedAt).toLocaleString() : "")+\')</span></div>\'+(ticket.escalationReason ? \'<div class="assignment-row"><span class="assignment-label">Reason</span><span class="assignment-value">\'+escHtml(ticket.escalationReason)+\'</span></div>\' : "") : "";' +
 '                const cardStateClass = isResolved ? "ticket-resolved" : (ticket.priority === "High" ? "ticket-high-priority" : (ticket.escalated ? "ticket-escalated" : ""));' +
 '                const imageHtml = ticket.screenshot ? \'<a href="\'+ticket.screenshot+\'" target="_blank"><img src="\'+ticket.screenshot+\'" class="screenshot-preview"></a>\' : "";' +
 '                let commentListHtml = "";' +
 '                if (ticket.comments) {' +
 '                    ticket.comments.forEach(c => {' +
-'                        commentListHtml += \'<div class="comment-item"><strong>\'+c.author+\':</strong> \'+c.text+(c.attachment ? \' <a href="\'+c.attachment+\'" target="_blank">\uD83D\uDCCE Attachment</a>\' : "")+\'</div>\';' +
+'                        commentListHtml += \'<div class="comment-item"><strong>\'+escHtml(c.author)+\':</strong> \'+escHtml(c.text)+(c.attachment ? \' <a href="\'+escHtml(c.attachment)+\'" target="_blank">\uD83D\uDCCE Attachment</a>\' : "")+\'</div>\';' +
 '                    });' +
 '                }' +
-'                ticketCardsHtml += \'<div class="ticket-card \'+cardStateClass+\'"><div class="ticket-header"><div><h3 class="ticket-title">#\'+(ticket.displayNumber || String(ticket.ticketNumber).padStart(4,"0"))+\' \'+ticket.title+\'</h3><div style="margin-top: 8px;"><span class="badge p-\'+ticket.priority+\'">\'+ticket.priority+\'</span><span class="badge status-\'+ticket.status.toLowerCase()+\'">\'+ticket.status+\'</span><span class="badge badge-category">\'+(ticket.category || "Other")+\'</span>\'+escalatedBadge+\'</div></div>\'+actionsHtml+\'</div><p class="ticket-desc">\'+ticket.description+\'</p>\'+imageHtml+\'<div class="assignment-info"><div class="assignment-row"><span class="assignment-label">Submitted By</span><span class="assignment-value">\'+(ticket.submittedBy || "Unknown")+(ticket.designation ? " ("+ticket.designation+")" : "")+\'</span></div><div class="assignment-row"><span class="assignment-label">Branch</span><span class="assignment-value">\'+ticket.branch+\'</span></div><div class="assignment-row"><span class="assignment-label">Mobile</span><span class="assignment-value">\'+ticket.mobile+\'</span></div><div class="assignment-row"><span class="assignment-label">Assigned</span><span class="assignment-value">\'+ticket.assignedTo+\'</span></div><div class="assignment-row"><span class="assignment-label">Submitted</span><span class="assignment-value">\'+(ticket.createdAt ? new Date(ticket.createdAt).toLocaleString() : "N/A")+\'</span></div>\'+escalationLine+resolvedLine+\'</div><div class="comments-section"><h4 class="comments-header">Internal Work Notes</h4><div>\'+(commentListHtml || "No updates.")+\'</div><div class="comment-form"><input type="text" id="input-\'+ticket._id+\'" placeholder="Write operational update..."><label class="comment-attach-btn" title="Attach a file (optional)">📎<input type="file" id="attachment-\'+ticket._id+\'" style="display:none;" accept="image/jpeg,image/png,image/webp,image/gif,application/pdf,.jpg,.jpeg,.png,.webp,.gif,.pdf" onchange="updateAttachmentLabel(\\\'\'+ticket._id+\'\\\')"></label><span id="attachmentName-\'+ticket._id+\'" class="attachment-name-tag"></span><button onclick="addComment(\\\'\'+ticket._id+\'\\\')">Post</button></div></div></div>\';' +
+'                ticketCardsHtml += \'<div class="ticket-card \'+cardStateClass+\'"><div class="ticket-header"><div><h3 class="ticket-title">#\'+(ticket.displayNumber || String(ticket.ticketNumber).padStart(4,"0"))+\' \'+escHtml(ticket.title)+\'</h3><div style="margin-top: 8px;"><span class="badge p-\'+escHtml(ticket.priority)+\'">\'+escHtml(ticket.priority)+\'</span><span class="badge status-\'+ticket.status.toLowerCase()+\'">\'+ticket.status+\'</span><span class="badge badge-category">\'+escHtml(ticket.category || "Other")+\'</span>\'+escalatedBadge+slaBadgeHtml(ticket)+\'</div></div>\'+actionsHtml+\'</div><p class="ticket-desc">\'+escHtml(ticket.description)+\'</p>\'+imageHtml+\'<div class="assignment-info"><div class="assignment-row"><span class="assignment-label">Submitted By</span><span class="assignment-value">\'+escHtml(ticket.submittedBy || "Unknown")+(ticket.designation ? " ("+escHtml(ticket.designation)+")" : "")+\'</span></div><div class="assignment-row"><span class="assignment-label">Branch</span><span class="assignment-value">\'+escHtml(ticket.branch)+\'</span></div><div class="assignment-row"><span class="assignment-label">Mobile</span><span class="assignment-value">\'+escHtml(ticket.mobile)+\'</span></div><div class="assignment-row"><span class="assignment-label">Assigned</span><span class="assignment-value">\'+escHtml(ticket.assignedTo)+\'</span></div><div class="assignment-row"><span class="assignment-label">Submitted</span><span class="assignment-value">\'+(ticket.createdAt ? new Date(ticket.createdAt).toLocaleString() : "N/A")+\'</span></div>\'+escalationLine+resolvedLine+\'</div><div class="comments-section"><h4 class="comments-header">Internal Work Notes</h4><div>\'+(commentListHtml || "No updates.")+\'</div><div class="comment-form"><input type="text" id="input-\'+ticket._id+\'" placeholder="Write operational update..."><label class="comment-attach-btn" title="Attach a file (optional)">📎<input type="file" id="attachment-\'+ticket._id+\'" style="display:none;" accept="image/jpeg,image/png,image/webp,image/gif,application/pdf,.jpg,.jpeg,.png,.webp,.gif,.pdf" onchange="updateAttachmentLabel(\\\'\'+ticket._id+\'\\\')"></label><span id="attachmentName-\'+ticket._id+\'" class="attachment-name-tag"></span><button onclick="addComment(\\\'\'+ticket._id+\'\\\')">Post</button></div></div></div>\';' +
 '            });' +
 '            listDiv.innerHTML = ticketCardsHtml;' +
+'            tickSlaClocks();' +
 '            renderPagination(totalFilteredCount);' +
 '            } catch (err) {' +
 '                console.error("Could not load tickets:", err);' +
@@ -1516,7 +1641,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            let regionRowsHtml = "";' +
 '            regions.forEach(r => {' +
 '                const safeName = r.name.replace(/\'/g, "\\\\\'");' +
-'                regionRowsHtml += \'<tr><td>\'+r.name+\'</td><td><button class="branch-delete-btn" onclick="editRegion(\\\'\'+r._id+\'\\\', \\\'\'+safeName+\'\\\')">Edit</button></td><td><button class="branch-delete-btn" onclick="deleteRegion(\\\'\'+r._id+\'\\\')">Delete</button></td></tr>\';' +
+'                regionRowsHtml += \'<tr><td>\'+escHtml(r.name)+\'</td><td><button class="branch-delete-btn" onclick="editRegion(\\\'\'+r._id+\'\\\', \\\'\'+safeName+\'\\\')">Edit</button></td><td><button class="branch-delete-btn" onclick="deleteRegion(\\\'\'+r._id+\'\\\')">Delete</button></td></tr>\';' +
 '            });' +
 '            tbody.innerHTML = regionRowsHtml;' +
 '        }' +
@@ -1525,7 +1650,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '    if (select) {' +
 '        let optionsHtml = \'<option value="" disabled selected>Select Region</option>\';' +
 '        regions.forEach(r => {' +
-'            optionsHtml += \'<option value="\'+r.name+\'">\'+r.name+\'</option>\';' +
+'            optionsHtml += \'<option value="\'+escHtml(r.name)+\'">\'+escHtml(r.name)+\'</option>\';' +
 '        });' +
 '        select.innerHTML = optionsHtml;' +
 '    }' +
@@ -1603,12 +1728,12 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            const safeName = b.name.replace(/\'/g, "\\\\\'");' +
 '            let regionOptionsHtml = "";' +
 '            allRegionNames.forEach(rn => {' +
-'                regionOptionsHtml += \'<option value="\'+rn+\'"\'+(rn === region ? \' selected\' : \'\')+\'>\'+rn+\'</option>\';' +
+'                regionOptionsHtml += \'<option value="\'+escHtml(rn)+\'"\'+(rn === region ? \' selected\' : \'\')+\'>\'+escHtml(rn)+\'</option>\';' +
 '            });' +
-'            rowsHtml += \'<tr><td>\'+b.name+\'</td><td>\'+(b.code || "—")+\'</td><td><select onchange="moveBranchRegion(\\\'\'+b._id+\'\\\', this.value)" style="padding:6px;border:1px solid #cbd5e0;border-radius:4px;font-size:13px;">\'+regionOptionsHtml+\'</select></td><td><button class="branch-delete-btn" onclick="editBranch(\\\'\'+b._id+\'\\\', \\\'\'+safeName+\'\\\')">Edit</button></td><td><button class="branch-delete-btn" onclick="deleteBranch(\\\'\'+b._id+\'\\\')">Delete</button></td></tr>\';' +
+'            rowsHtml += \'<tr><td>\'+escHtml(b.name)+\'</td><td>\'+escHtml(b.code || "—")+\'</td><td><select onchange="moveBranchRegion(\\\'\'+b._id+\'\\\', this.value)" style="padding:6px;border:1px solid #cbd5e0;border-radius:4px;font-size:13px;">\'+regionOptionsHtml+\'</select></td><td><button class="branch-delete-btn" onclick="editBranch(\\\'\'+b._id+\'\\\', \\\'\'+safeName+\'\\\')">Edit</button></td><td><button class="branch-delete-btn" onclick="deleteBranch(\\\'\'+b._id+\'\\\')">Delete</button></td></tr>\';' +
 '        });' +
 '        groupsHtml +=' +
-'            \'<h3 style="margin: 20px 0 8px; font-size: 14px; font-weight: 700; color: #4a5568; text-transform: uppercase; letter-spacing: 0.5px;">\' + region + \'</h3>\' +' +
+'            \'<h3 style="margin: 20px 0 8px; font-size: 14px; font-weight: 700; color: #4a5568; text-transform: uppercase; letter-spacing: 0.5px;">\' + escHtml(region) + \'</h3>\' +' +
 '            \'<table class="branch-table"><thead><tr><th>Branch Name</th><th>Code</th><th>Region</th><th>Edit</th><th>Delete</th></tr></thead><tbody>\' + rowsHtml + \'</tbody></table>\';' +
 '    });' +
 '    container.innerHTML = groupsHtml;' +
@@ -1699,7 +1824,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                cachedRegionsForStaff = await responses[3].json();' +
 '                const regionSelectEl = document.getElementById("newStaffRegion");' +
 '                if (regionSelectEl && !regionSelectEl.dataset.loaded) {' +
-'                    cachedRegionsForStaff.forEach(r => { regionSelectEl.innerHTML += \'<option value="\'+r.name+\'">\'+r.name+\'</option>\'; });' +
+'                    cachedRegionsForStaff.forEach(r => { regionSelectEl.innerHTML += \'<option value="\'+escHtml(r.name)+\'">\'+escHtml(r.name)+\'</option>\'; });' +
 '                    regionSelectEl.dataset.loaded = "1";' +
 '                }' +
 '            }' +
@@ -1733,35 +1858,35 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                        regionGroups[region].push(b);' +
 '                    });' +
 '                    Object.keys(regionGroups).sort().forEach(region => {' +
-'                        checkboxesHtml += \'<div style="font-size:11px;font-weight:700;color:#718096;text-transform:uppercase;margin:6px 0 3px;">\' + region + \'</div>\';' +
+'                        checkboxesHtml += \'<div style="font-size:11px;font-weight:700;color:#718096;text-transform:uppercase;margin:6px 0 3px;">\' + escHtml(region) + \'</div>\';' +
 '                        regionGroups[region].forEach(b => {' +
 '                            const checked = assigned.includes(b.name) ? "checked" : "";' +
-'                            checkboxesHtml += \'<label style="display:inline-flex;align-items:center;gap:4px;margin-right:12px;font-weight:normal;font-size:13px;"><input type="checkbox" value="\'+b.name+\'" \'+checked+\' onchange="updateStaffBranches(\\\'\'+s.id+\'\\\')" class="branch-check-\'+s.id+\'"> \'+b.name+\'</label>\';' +
+'                            checkboxesHtml += \'<label style="display:inline-flex;align-items:center;gap:4px;margin-right:12px;font-weight:normal;font-size:13px;"><input type="checkbox" value="\'+escHtml(b.name)+\'" \'+checked+\' onchange="updateStaffBranches(\\\'\'+escHtml(s.id)+\'\\\')" class="branch-check-\'+escHtml(s.id)+\'"> \'+escHtml(b.name)+\'</label>\';' +
 '                        });' +
 '                    });' +
 '                }' +
 '                let idCell, nameCell, emailCell, editCell, deleteCell;' +
 '                if (editingStaffIds.has(s.id)) {' +
-'                    idCell = isSuperAdmin ? \'<input type="text" id="editStaffId-\'+s.id+\'" value="\'+s.id+\'" style="width:100%;padding:6px;border:1px solid #cbd5e0;border-radius:4px;">\' : s.id;' +
-'                    nameCell = \'<input type="text" id="editName-\'+s.id+\'" value="\'+s.name+\'" style="width:100%;padding:6px;border:1px solid #cbd5e0;border-radius:4px;">\';' +
-'                    emailCell = \'<input type="email" id="editEmail-\'+s.id+\'" value="\'+s.email+\'" style="width:100%;padding:6px;border:1px solid #cbd5e0;border-radius:4px;margin-bottom:4px;"><input type="text" id="editPassword-\'+s.id+\'" placeholder="New password (optional)" style="width:100%;padding:6px;border:1px solid #cbd5e0;border-radius:4px;">\';' +
-'                    editCell = \'<button type="button" class="resolve-btn" onclick="saveStaffEdit(\\\'\'+s.id+\'\\\')">Save</button>\';' +
-'                    deleteCell = \'<button type="button" class="branch-delete-btn" onclick="toggleEditStaff(\\\'\'+s.id+\'\\\')">Cancel</button>\';' +
+'                    idCell = isSuperAdmin ? \'<input type="text" id="editStaffId-\'+escHtml(s.id)+\'" value="\'+escHtml(s.id)+\'" style="width:100%;padding:6px;border:1px solid #cbd5e0;border-radius:4px;">\' : escHtml(s.id);' +
+'                    nameCell = \'<input type="text" id="editName-\'+escHtml(s.id)+\'" value="\'+escHtml(s.name)+\'" style="width:100%;padding:6px;border:1px solid #cbd5e0;border-radius:4px;">\';' +
+'                    emailCell = \'<input type="email" id="editEmail-\'+escHtml(s.id)+\'" value="\'+escHtml(s.email)+\'" style="width:100%;padding:6px;border:1px solid #cbd5e0;border-radius:4px;margin-bottom:4px;"><input type="text" id="editPassword-\'+escHtml(s.id)+\'" placeholder="New password (optional)" style="width:100%;padding:6px;border:1px solid #cbd5e0;border-radius:4px;">\';' +
+'                    editCell = \'<button type="button" class="resolve-btn" onclick="saveStaffEdit(\\\'\'+escHtml(s.id)+\'\\\')">Save</button>\';' +
+'                    deleteCell = \'<button type="button" class="branch-delete-btn" onclick="toggleEditStaff(\\\'\'+escHtml(s.id)+\'\\\')">Cancel</button>\';' +
 '                } else {' +
-'                    idCell = s.id;' +
-'                    nameCell = s.name;' +
-'                    emailCell = s.email;' +
-'                    editCell = \'<button type="button" class="branch-delete-btn" onclick="toggleEditStaff(\\\'\'+s.id+\'\\\')">Edit</button>\';' +
-'                    deleteCell = \'<button type="button" class="branch-delete-btn" onclick="deleteStaff(\\\'\'+s.id+\'\\\')">Delete</button>\';' +
+'                    idCell = escHtml(s.id);' +
+'                    nameCell = escHtml(s.name);' +
+'                    emailCell = escHtml(s.email);' +
+'                    editCell = \'<button type="button" class="branch-delete-btn" onclick="toggleEditStaff(\\\'\'+escHtml(s.id)+\'\\\')">Edit</button>\';' +
+'                    deleteCell = \'<button type="button" class="branch-delete-btn" onclick="deleteStaff(\\\'\'+escHtml(s.id)+\'\\\')">Delete</button>\';' +
 '                }' +
 '                let regionCell = "";' +
 '                if (isSuperAdmin) {' +
 '                    if (editingStaffIds.has(s.id)) {' +
 '                        let regionOptionsHtml = \'<option value="">Unassigned</option>\';' +
-'                        cachedRegionsForStaff.forEach(r => { regionOptionsHtml += \'<option value="\'+r.name+\'"\'+(r.name === s.region ? \' selected\' : \'\')+\'>\'+r.name+\'</option>\'; });' +
-'                        regionCell = \'<td><select id="editStaffRegion-\'+s.id+\'" style="padding:6px;border:1px solid #cbd5e0;border-radius:4px;">\'+regionOptionsHtml+\'</select></td>\';' +
+'                        cachedRegionsForStaff.forEach(r => { regionOptionsHtml += \'<option value="\'+escHtml(r.name)+\'"\'+(r.name === s.region ? \' selected\' : \'\')+\'>\'+escHtml(r.name)+\'</option>\'; });' +
+'                        regionCell = \'<td><select id="editStaffRegion-\'+escHtml(s.id)+\'" style="padding:6px;border:1px solid #cbd5e0;border-radius:4px;">\'+regionOptionsHtml+\'</select></td>\';' +
 '                    } else {' +
-'                        regionCell = \'<td>\'+(s.region || "Unassigned")+\'</td>\';' +
+'                        regionCell = \'<td>\'+escHtml(s.region || "Unassigned")+\'</td>\';' +
 '                    }' +
 '                }' +
 '                rowsHtml += \'<tr><td>\'+idCell+\'</td><td>\'+nameCell+\'</td><td>\'+emailCell+\'</td>\'+regionCell+\'<td>\'+checkboxesHtml+\'</td><td>\'+editCell+\'</td><td>\'+deleteCell+\'</td></tr>\';' +
@@ -1841,7 +1966,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            const regions = await regionsRes.json();' +
 '            const regionSelectEl = document.getElementById("newAdminRegion");' +
 '            if (regionSelectEl && !regionSelectEl.dataset.loaded) {' +
-'                regions.forEach(r => { regionSelectEl.innerHTML += \'<option value="\'+r.name+\'">\'+r.name+\'</option>\'; });' +
+'                regions.forEach(r => { regionSelectEl.innerHTML += \'<option value="\'+escHtml(r.name)+\'">\'+escHtml(r.name)+\'</option>\'; });' +
 '                regionSelectEl.dataset.loaded = "1";' +
 '            }' +
 '            const tbody = document.getElementById("regionAdminsTableBody");' +
@@ -1853,19 +1978,19 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            admins.forEach(a => {' +
 '                let nameCell, regionCell, editCell;' +
 '                if (editingAdminIds.has(a.id)) {' +
-'                    nameCell = \'<input type="text" id="editAdminName-\'+a.id+\'" value="\'+a.name+\'" style="width:100%;padding:6px;border:1px solid #cbd5e0;border-radius:4px;">\';' +
+'                    nameCell = \'<input type="text" id="editAdminName-\'+a.id+\'" value="\'+escHtml(a.name)+\'" style="width:100%;padding:6px;border:1px solid #cbd5e0;border-radius:4px;">\';' +
 '                    let regionOptionsHtml = "";' +
-'                    regions.forEach(r => { regionOptionsHtml += \'<option value="\'+r.name+\'"\'+(r.name === a.region ? \' selected\' : \'\')+\'>\'+r.name+\'</option>\'; });' +
+'                    regions.forEach(r => { regionOptionsHtml += \'<option value="\'+escHtml(r.name)+\'"\'+(r.name === a.region ? \' selected\' : \'\')+\'>\'+escHtml(r.name)+\'</option>\'; });' +
 '                    regionCell = \'<select id="editAdminRegion-\'+a.id+\'" style="padding:6px;border:1px solid #cbd5e0;border-radius:4px;">\'+regionOptionsHtml+\'</select>\';' +
 '                    editCell = \'<input type="text" id="editAdminPassword-\'+a.id+\'" placeholder="New password (optional)" style="width:100%;padding:6px;border:1px solid #cbd5e0;border-radius:4px;margin-bottom:4px;"><button type="button" class="resolve-btn" onclick="saveRegionAdminEdit(\\\'\'+a.id+\'\\\')">Save</button> <button type="button" class="branch-delete-btn" onclick="toggleEditRegionAdmin(\\\'\'+a.id+\'\\\')">Cancel</button>\';' +
 '                } else {' +
-'                    nameCell = a.name;' +
-'                    regionCell = a.region;' +
+'                    nameCell = escHtml(a.name);' +
+'                    regionCell = escHtml(a.region);' +
 '                    editCell = \'<button type="button" class="branch-delete-btn" onclick="toggleEditRegionAdmin(\\\'\'+a.id+\'\\\')">Edit</button>\';' +
 '                }' +
 '                const statusBadge = a.enabled ? \'<span class="badge status-resolved">Enabled</span>\' : \'<span class="badge p-High">Disabled</span>\';' +
 '                const toggleBtn = \'<button type="button" class="branch-delete-btn" onclick="toggleRegionAdminEnabled(\\\'\'+a.id+\'\\\', \'+(!a.enabled)+\')">\'+ (a.enabled ? "Disable" : "Enable") +\'</button>\';' +
-'                rowsHtml += \'<tr><td>\'+nameCell+\'</td><td>\'+a.username+\'</td><td>\'+regionCell+\'</td><td>\'+statusBadge+\' \'+toggleBtn+\'</td><td>\'+editCell+\'</td><td><button type="button" class="branch-delete-btn" onclick="deleteRegionAdmin(\\\'\'+a.id+\'\\\')">Delete</button></td></tr>\';' +
+'                rowsHtml += \'<tr><td>\'+nameCell+\'</td><td>\'+escHtml(a.username)+\'</td><td>\'+regionCell+\'</td><td>\'+statusBadge+\' \'+toggleBtn+\'</td><td>\'+editCell+\'</td><td><button type="button" class="branch-delete-btn" onclick="deleteRegionAdmin(\\\'\'+a.id+\'\\\')">Delete</button></td></tr>\';' +
 '            });' +
 '            tbody.innerHTML = rowsHtml;' +
 '        }' +
@@ -1955,7 +2080,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            const response = await fetch("/audit-log");' +
 '            if (!response.ok) {' +
 '                const err = await response.json().catch(() => ({}));' +
-'                tbody.innerHTML = \'<tr><td colspan="4" style="text-align: center; color: #c53030; padding: 30px; font-weight: 600;">\'+(err.error || "You are not authorized to access this page.")+\'</td></tr>\';' +
+'                tbody.innerHTML = \'<tr><td colspan="4" style="text-align: center; color: #c53030; padding: 30px; font-weight: 600;">\'+escHtml(err.error || "You are not authorized to access this page.")+\'</td></tr>\';' +
 '                return;' +
 '            }' +
 '            const entries = await response.json();' +
@@ -1965,7 +2090,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            }' +
 '            let auditRowsHtml = "";' +
 '            entries.forEach(e => {' +
-'                auditRowsHtml += \'<tr><td>\'+new Date(e.createdAt).toLocaleString()+\'</td><td>\'+e.actor+\'</td><td>\'+e.action+\'</td><td>\'+(e.details || "")+\'</td></tr>\';' +
+'                auditRowsHtml += \'<tr><td>\'+new Date(e.createdAt).toLocaleString()+\'</td><td>\'+escHtml(e.actor)+\'</td><td>\'+escHtml(e.action)+\'</td><td>\'+escHtml(e.details || "")+\'</td></tr>\';' +
 '            });' +
 '            tbody.innerHTML = auditRowsHtml;' +
 '        }' +
@@ -2029,16 +2154,16 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                messages.forEach(m => {' +
 '                    const isUnread = isAdmin ? !m.adminRead : !m.staffRead;' +
 '                    const statusBadge = m.status === "Replied" ? \'<span class="badge status-resolved">Replied</span>\' : \'<span class="badge status-open">Open</span>\';' +
-'                    const senderLine = isAdmin ? \'<div class="inbox-meta">From: <strong>\'+m.sender+\'</strong>\'+(m.senderStaffId ? \' (\'+m.senderStaffId+\')\' : "")+\' \u2014 \'+new Date(m.createdAt).toLocaleString()+\'</div>\' : \'<div class="inbox-meta">\'+new Date(m.createdAt).toLocaleString()+\'</div>\';' +
+'                    const senderLine = isAdmin ? \'<div class="inbox-meta">From: <strong>\'+escHtml(m.sender)+\'</strong>\'+(m.senderStaffId ? \' (\'+escHtml(m.senderStaffId)+\')\' : "")+\' \u2014 \'+new Date(m.createdAt).toLocaleString()+\'</div>\' : \'<div class="inbox-meta">\'+new Date(m.createdAt).toLocaleString()+\'</div>\';' +
 '                    const markReadBtn = isUnread ? \'<button class="branch-delete-btn" onclick="markInboxRead(\\\'\'+m._id+\'\\\')">Mark as read</button>\' : "";' +
 '                    const deleteBtn = isUnread ? \'<button class="branch-delete-btn" style="color:#e53e3e;border-color:#e5e1de;margin-left:6px" onclick="deleteInboxMessage(\\\'\'+m._id+\'\\\')">Delete</button>\' : "";' +
 '                    let replySection = "";' +
 '                    if (m.status === "Replied") {' +
-'                        replySection = \'<div class="inbox-reply-shown"><strong>Reply from \'+m.repliedBy+\':</strong> \'+m.reply+\'<div class="inbox-meta">\'+new Date(m.repliedAt).toLocaleString()+\'</div></div>\';' +
+'                        replySection = \'<div class="inbox-reply-shown"><strong>Reply from \'+escHtml(m.repliedBy)+\':</strong> \'+escHtml(m.reply)+\'<div class="inbox-meta">\'+new Date(m.repliedAt).toLocaleString()+\'</div></div>\';' +
 '                    } else if (isAdmin) {' +
 '                        replySection = \'<div class="inbox-reply-box"><textarea id="inboxReplyInput-\'+m._id+\'" rows="2" placeholder="Write a reply..."></textarea><button class="branch-add-btn" style="margin-top:8px;" onclick="replyInboxMessage(\\\'\'+m._id+\'\\\')">Send Reply</button></div>\';' +
 '                    }' +
-'                    inboxCardsHtml += \'<div class="inbox-card \'+(isUnread ? "inbox-unread" : "")+\'"><div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;"><div><div class="inbox-subject">\'+m.subject+\'</div>\'+senderLine+\'</div><div style="display:flex;align-items:center;gap:8px;">\'+statusBadge+\' \'+deleteBtn+markReadBtn+\'</div></div><div class="inbox-body">\'+m.body+\'</div>\'+replySection+\'</div>\';' +
+'                    inboxCardsHtml += \'<div class="inbox-card \'+(isUnread ? "inbox-unread" : "")+\'"><div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;"><div><div class="inbox-subject">\'+escHtml(m.subject)+\'</div>\'+senderLine+\'</div><div style="display:flex;align-items:center;gap:8px;">\'+statusBadge+\' \'+deleteBtn+markReadBtn+\'</div></div><div class="inbox-body">\'+escHtml(m.body)+\'</div>\'+replySection+\'</div>\';' +
 '                });' +
 '                listDiv.innerHTML = inboxCardsHtml;' +
 '                updateInboxBadge(messages);' +
@@ -2284,6 +2409,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '        document.getElementById("reportMonth").value = new Date().toISOString().slice(0, 7);' +
 '        loadNotifications();' +
 '        setInterval(loadNotifications, 30000);' +
+'        setInterval(tickSlaClocks, 1000);' +
 '        pollInboxBadge();' +
 '        setInterval(pollInboxBadge, 30000);' +
 '        loadStaffFilterOptions();' +

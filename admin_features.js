@@ -1,3 +1,9 @@
+// Escapes user-supplied text for safe innerHTML rendering.
+function escHtml(v) {
+    if (v === null || v === undefined) return "";
+    return String(v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
 // admin_features.js - External features for admin panel
 
 // Service worker registration
@@ -22,7 +28,7 @@ async function loadNewTicketForm() {
         const staffSelect = document.getElementById('newTktStaff');
         if (staffSelect) {
             staffSelect.innerHTML = '<option value="" selected>None (auto-assign via round-robin)</option>';
-            staffList.forEach(s => { staffSelect.innerHTML += '<option value="' + s.name + '">' + s.name + '</option>'; });
+            staffList.forEach(s => { staffSelect.innerHTML += '<option value="' + escHtml(s.name) + '">' + escHtml(s.name) + '</option>'; });
         }
         const branchRes = await fetch('/public-branches');
         newTktBranchesCache = await branchRes.json();
@@ -30,7 +36,7 @@ async function loadNewTicketForm() {
         if (regionSelect && newTktBranchesCache.length > 0) {
             const regions = [...new Set(newTktBranchesCache.map(b => b.region || 'Unassigned'))].sort();
             regionSelect.innerHTML = '<option value="" disabled selected>Choose region</option>';
-            regions.forEach(r => { regionSelect.innerHTML += '<option value="' + r + '">' + r + '</option>'; });
+            regions.forEach(r => { regionSelect.innerHTML += '<option value="' + escHtml(r) + '">' + escHtml(r) + '</option>'; });
         }
     } catch(e) { console.error('Error loading new ticket form:', e); }
 }
@@ -44,7 +50,7 @@ function updateNewTktBranchOptions() {
         return;
     }
     branchSelect.innerHTML = '<option value="" disabled selected>Choose branch</option>';
-    filtered.forEach(b => { branchSelect.innerHTML += '<option value="' + b.name + '">' + b.name + '</option>'; });
+    filtered.forEach(b => { branchSelect.innerHTML += '<option value="' + escHtml(b.name) + '">' + escHtml(b.name) + '</option>'; });
 }
 
 async function submitNewTicket() {
