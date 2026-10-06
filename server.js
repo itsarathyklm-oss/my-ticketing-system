@@ -36,17 +36,23 @@ app.use((req, res, next) => {
 });
 app.disable("x-powered-by");
 
-// Do not serve server internals as static files. express.static already skips
-// dotfiles (.env, .git, .freebuff), but these non-dot files sit in the project root
-// and would otherwise be downloadable by anyone (source disclosure).
-const BLOCKED_STATIC_FILES = new Set(["/server.js", "/db.js", "/package.json", "/package-lock.json", "/start-preview.js", "/tickets.json"]);
+// Serve only the handful of static files the app actually uses (allowlist, not
+// blocklist). express.static(__dirname) used to expose the whole project root:
+// /node_modules/..., /schema.sql and /uploads/... were all publicly downloadable,
+// leaking exact dependency versions (CVE reconnaissance) and the DB schema.
+// Anything not on this list falls through to the routes and 404s as usual.
+const SERVABLE_STATIC_FILES = new Set([
+    "/logo.png", "/background.png", "/icon-512.png", "/manifest.json",
+    "/loading.gif", "/notification.mp3", "/admin_features.js", "/checklist.js", "/service-worker.js"
+]);
 app.use((req, res, next) => {
-    if (BLOCKED_STATIC_FILES.has(req.path) || req.path.startsWith("/.env") || req.path.startsWith("/.git") || req.path.startsWith("/.freebuff")) {
-        return res.status(404).send("Not Found");
+    if ((req.method === "GET" || req.method === "HEAD") && SERVABLE_STATIC_FILES.has(req.path)) {
+        return res.sendFile(path.join(__dirname, req.path), (err) => {
+            if (err && !res.headersSent) res.status(404).send("Not Found");
+        });
     }
     next();
 });
-app.use(express.static(__dirname));
 
 // 1. CONNECT TO MYSQL
 sequelize.authenticate()
@@ -249,25 +255,45 @@ app.use(session({
     }
 }));
 
-// Basic brute-force protection on login: max 8 attempts per IP per 15 minutes
-const loginAttempts = new Map();
-const LOGIN_WINDOW_MS = 15 * 60 * 1000;
-const LOGIN_MAX_ATTEMPTS = 8;
-function loginRateLimiter(req, res, next) {
-    const ip = req.ip;
-    const now = Date.now();
-    const entry = loginAttempts.get(ip);
-    if (!entry || now - entry.firstAttempt > LOGIN_WINDOW_MS) {
-        loginAttempts.set(ip, { count: 1, firstAttempt: now });
-        return next();
-    }
-    if (entry.count >= LOGIN_MAX_ATTEMPTS) {
-        return res.status(429).json({ error: 'Too many login attempts. Please wait a few minutes and try again.' });
-    }
-    entry.count++;
-    next();
+// Basic brute-force/flood protection: fixed window per IP. Each limiter gets its
+// own Map; expired entries are pruned every minute so the maps cannot grow without
+// bound. Login keeps its original limit: 8 attempts per IP per 15 minutes.
+const rateLimitStores = [];
+function makeRateLimiter(windowMs, max, message) {
+    const attempts = new Map();
+    rateLimitStores.push({ attempts, windowMs });
+    return function rateLimiter(req, res, next) {
+        const ip = req.ip;
+        const now = Date.now();
+        const entry = attempts.get(ip);
+        if (!entry || now - entry.firstAttempt > windowMs) {
+            attempts.set(ip, { count: 1, firstAttempt: now });
+            return next();
+        }
+        if (entry.count >= max) {
+            return res.status(429).json({ error: message });
+        }
+        entry.count++;
+        next();
+    };
 }
+setInterval(() => {
+    const now = Date.now();
+    for (const store of rateLimitStores) {
+        for (const [ip, entry] of store.attempts) {
+            if (now - entry.firstAttempt > store.windowMs) store.attempts.delete(ip);
+        }
+    }
+}, 60 * 1000).unref();
 
+const loginRateLimiter = makeRateLimiter(15 * 60 * 1000, 8,
+    'Too many login attempts. Please wait a few minutes and try again.');
+// Unauthenticated endpoints: the public ticket form (spam/flood) and ticket
+// lookup (guessing 10-digit mobiles to enumerate other people's tickets).
+const publicTicketRateLimiter = makeRateLimiter(15 * 60 * 1000, 20,
+    'Too many tickets submitted. Please wait a few minutes and try again.');
+const lookupRateLimiter = makeRateLimiter(15 * 60 * 1000, 30,
+    'Too many lookups. Please wait a few minutes and try again.');
 function checkUserLogin(req, res, next) {
     if (req.session && (req.session.isAdmin || req.session.isStaff)) {
         next();
@@ -344,6 +370,9 @@ button[type="submit"]:active { transform: translateY(0); }
 .tab-btn.active { background: #fdfcfb; color: #e53e3e; box-shadow: inset 0 -2px 0 #e53e3e; }
 .check-status-btn { margin-top: 12px; padding: 11px; width: 100%; background: #1e2229; color: #fff; border: none; border-radius: 8px; cursor: pointer; font-family: 'Barlow Condensed', sans-serif; font-weight: 700; font-size: 13px; letter-spacing: 1px; text-transform: uppercase; transition: background .2s; }
 .check-status-btn:hover { background: #2d323e; }
+.check-status-btn:disabled { opacity: .7; cursor: not-allowed; }
+.status-loading { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 18px 0; color: #8a8f98; font-size: 13px; font-weight: 500; }
+.spinner-dark { width: 15px; height: 15px; border: 2px solid #e2e8f0; border-top-color: #e53e3e; border-radius: 50%; animation: spin .7s linear infinite; }
 .badge { padding: 4px 10px; border-radius: 50px; font-size: 11px; font-weight: 700; text-transform: uppercase; display: inline-block; }
 .status-open { background-color: #ebf8ff; color: #2b6cb0; }
 .status-resolved { background-color: #c6f6d5; color: #22543d; }
@@ -352,6 +381,11 @@ button[type="submit"]:active { transform: translateY(0); }
 .status-result-number { font-family: 'Barlow Condensed', sans-serif; font-weight: 700; font-size: 15px; color: #1e2229; letter-spacing: .5px; }
 .status-result-title { font-size: 13px; color: #1e2229; font-weight: 600; margin-top: 5px; }
 .status-result-meta { font-size: 11px; color: #8a8f98; margin-top: 3px; }
+.status-pager { display: flex; justify-content: center; align-items: center; gap: 6px; margin-top: 14px; flex-wrap: wrap; }
+.status-pager-btn { min-width: 34px; padding: 7px 11px; border: 1px solid #d7dbe0; border-radius: 8px; background: #ffffff; color: #1e2229; font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit; }
+.status-pager-btn:hover:not(:disabled) { background: #f1f0ee; }
+.status-pager-btn.current { background: #1e2229; border-color: #1e2229; color: #ffffff; }
+.status-pager-btn:disabled { opacity: 0.4; cursor: default; }
 .toast { position: fixed; top: 16px; left: 50%; transform: translateX(-50%) translateY(-16px); background: #22543d; color: #fff; padding: 12px 22px; border-radius: 9px; font-size: 13px; font-weight: 600; box-shadow: 0 8px 24px rgba(0,0,0,0.3); z-index: 2000; opacity: 0; transition: opacity .25s, transform .25s; pointer-events: none; max-width: 90vw; text-align: center; }
 .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 .toast.error { background: #9b2c2c; }
@@ -480,9 +514,32 @@ button[type="submit"]:active { transform: translateY(0); }
     async function checkTicketStatus() {
         const mobile = document.getElementById('statusMobile').value.trim();
         if (!mobile) { alert('Please enter your mobile number.'); return; }
-        const res = await fetch('/tickets/lookup?mobile=' + encodeURIComponent(mobile));
-        const tickets = await res.json();
-        renderStatusResults(tickets);
+        const btn = document.querySelector('.check-status-btn');
+        const container = document.getElementById('statusResults');
+        const prevHTML = container.innerHTML;
+        const btnDefaultHTML = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner"></span>Checking...';
+        container.innerHTML = '<div class="status-loading"><span class="spinner-dark"></span>Refreshing tickets...</div>';
+        try {
+            const res = await fetch('/tickets/lookup?mobile=' + encodeURIComponent(mobile));
+            if (!res.ok) {
+                let msg = 'Could not refresh ticket status. Please try again.';
+                try { const errData = await res.json(); if (errData && errData.error) msg = errData.error; } catch (parseErr) {}
+                showToast(msg, true);
+                container.innerHTML = prevHTML;
+                return;
+            }
+            const tickets = await res.json();
+            renderStatusResults(tickets);
+            showToast('Ticket statuses refreshed successfully!');
+        } catch (err) {
+            showToast('Could not refresh ticket status. Please check your connection and try again.', true);
+            container.innerHTML = prevHTML;
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = btnDefaultHTML;
+        }
     }
 
     function escHtml(v) {
@@ -490,14 +547,31 @@ button[type="submit"]:active { transform: translateY(0); }
         return String(v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
     }
 
+    const STATUS_PAGE_SIZE = 5;
+    let statusResultsList = [];
+    let statusResultsPage = 1;
+
     function renderStatusResults(tickets) {
         const container = document.getElementById('statusResults');
         if (tickets.length === 0) {
+            statusResultsList = [];
+            statusResultsPage = 1;
             container.innerHTML = '<p style="text-align:center;color:#8a8f98;padding:16px 0;font-size:13px;">No tickets found for that mobile number.</p>';
             return;
         }
+        statusResultsList = tickets.filter(t => t.status !== 'Resolved').concat(tickets.filter(t => t.status === 'Resolved'));
+        statusResultsPage = 1;
+        drawStatusPage();
+    }
+
+    function drawStatusPage() {
+        const container = document.getElementById('statusResults');
+        const pages = Math.max(1, Math.ceil(statusResultsList.length / STATUS_PAGE_SIZE));
+        if (statusResultsPage > pages) statusResultsPage = pages;
+        if (statusResultsPage < 1) statusResultsPage = 1;
+        const start = (statusResultsPage - 1) * STATUS_PAGE_SIZE;
         let html = '';
-        tickets.forEach(t => {
+        statusResultsList.slice(start, start + STATUS_PAGE_SIZE).forEach(t => {
             const statusClass = t.status === 'Resolved' ? 'status-resolved' : 'status-open';
             const resolvedLine = (t.status === 'Resolved' && t.resolvedAt)
                 ? '<div class="status-result-meta">Resolved by ' + escHtml(t.assignedTo || 'staff') + ' on ' + new Date(t.resolvedAt).toLocaleString() + '</div>'
@@ -511,7 +585,24 @@ button[type="submit"]:active { transform: translateY(0); }
                 resolvedLine +
                 '</div>';
         });
+        if (pages > 1) {
+            html += '<div class="status-pager">';
+            html += '<button type="button" class="status-pager-btn"' + (statusResultsPage > 1 ? '' : ' disabled') + ' onclick="goStatusPage(' + (statusResultsPage - 1) + ')">&larr; Prev</button>';
+            for (let p = 1; p <= pages; p++) {
+                html += '<button type="button" class="status-pager-btn' + (p === statusResultsPage ? ' current' : '') + '" onclick="goStatusPage(' + p + ')">' + p + '</button>';
+            }
+            html += '<button type="button" class="status-pager-btn"' + (statusResultsPage < pages ? '' : ' disabled') + ' onclick="goStatusPage(' + (statusResultsPage + 1) + ')">Next &rarr;</button>';
+            html += '</div>';
+        }
         container.innerHTML = html;
+    }
+
+    function goStatusPage(p) {
+        const pages = Math.max(1, Math.ceil(statusResultsList.length / STATUS_PAGE_SIZE));
+        statusResultsPage = Math.min(Math.max(1, p), pages);
+        drawStatusPage();
+        const container = document.getElementById('statusResults');
+        if (container && container.scrollIntoView) container.scrollIntoView({ block: "nearest", behavior: "smooth" });
     }
         if ("serviceWorker" in navigator) { navigator.serviceWorker.register("/service-worker.js"); }
     </script></body></html>`);
@@ -715,7 +806,7 @@ app.post('/change-password', checkUserLogin, async (req, res) => {
         await logAudit(req.session.username, 'Change Password', `${req.session.username} changed their own password`);
         res.json({ success: true });
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        console.error('Request failed:', err.message); res.status(500).json({ error: 'Something went wrong. Please try again.' });
     }
 });
 
@@ -809,6 +900,9 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '        .metric-card.resolved { border-top-color: #38a169; }' +
 '        .metric-card.assigned { border-top-color: #e53e3e; }' +
 '        .metric-card.escalated { border-top-color: #d97706; }' +
+'        #ticketList { position: relative; }' +
+'        .stat-loading { position: absolute; top: 0; right: 0; bottom: 0; left: 0; display: flex; align-items: flex-start; justify-content: center; padding-top: 72px; background: rgba(255, 255, 255, 0.78); border-radius: 10px; z-index: 30; }' +
+'        .stat-loading img { width: 130px; height: auto; display: block; }' +
 '        .metric-label { font-size: 11px; font-weight: 600; color: #718096; text-transform: uppercase; letter-spacing: 0.5px; }' +
 '        .metric-value { font-size: 20px; font-weight: 700; color: #2d3748; margin-top: 1px; }' +
 '        .ticket-card { background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 24px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); position: relative; border-top: 4px solid #3182ce; }' +
@@ -827,6 +921,8 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '        .sla-breach { background-color: #fed7d7; color: #9b2c2c; animation: slaPulse 1.6s ease-in-out infinite; }' +
 '        .sla-met { background-color: #c6f6d5; color: #22543d; }' +
 '        .sla-missed { background-color: #fed7d7; color: #9b2c2c; }' +
+'        .sla-clock.paused { background-color: #edf2f7; color: #718096; opacity: 0.85; animation: none; }' +
+'        .sla-stale { opacity: 0.9; }' +
 '        @keyframes slaPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.62; } }' +
 '        .p-Medium { background-color: #feebc8; color: #c05621; }' +
 '        .p-High { background-color: #fed7d7; color: #9b2c2c; }' +
@@ -963,14 +1059,14 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '        <section class="content-body">' +
 '            <div id="viewTickets" class="dashboard-view active">' +
 '                <div class="metrics-grid">' +
-'                    <div class="metric-card" onclick="filterByStatus(\'Open\')"><div class="metric-icon-badge metric-icon-blue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg></div><div class="metric-label">Open Issues</div><div class="metric-value" id="statOpen">0</div><div class="metric-subtitle">Needs attention</div></div>' +
-'                    <div class="metric-card resolved" onclick="filterByStatus(\'Resolved\')"><div class="metric-icon-badge metric-icon-green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg></div><div class="metric-label">Resolved Issues</div><div class="metric-value" id="statResolved">0</div><div class="metric-subtitle">Completed successfully</div></div>' +
-'                    <div class="metric-card escalated" onclick="filterByStatus(\'Escalated\')"><div class="metric-icon-badge metric-icon-amber"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg></div><div class="metric-label">Escalated Tickets</div><div class="metric-value" id="statEscalated">0</div><div class="metric-subtitle">Needs admin action</div></div>' +
-'                    <div class="metric-card assigned" onclick="filterByStatus(\'all\')"><div class="metric-icon-badge metric-icon-red"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v2z"></path><line x1="13" y1="5" x2="13" y2="19"></line></svg></div><div class="metric-label">Total Tickets</div><div class="metric-value" id="statMine">0</div><div class="metric-subtitle">All requests in scope</div></div>' +
+'                    <div class="metric-card" onclick="statCardClick(\'Open\')"><div class="metric-icon-badge metric-icon-blue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg></div><div class="metric-label">Open Issues</div><div class="metric-value" id="statOpen">0</div><div class="metric-subtitle">Needs attention</div></div>' +
+'                    <div class="metric-card resolved" onclick="statCardClick(\'Resolved\')"><div class="metric-icon-badge metric-icon-green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg></div><div class="metric-label">Resolved Issues</div><div class="metric-value" id="statResolved">0</div><div class="metric-subtitle">Completed successfully</div></div>' +
+'                    <div class="metric-card escalated" onclick="statCardClick(\'Escalated\')"><div class="metric-icon-badge metric-icon-amber"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg></div><div class="metric-label">Escalated Tickets</div><div class="metric-value" id="statEscalated">0</div><div class="metric-subtitle">Needs admin action</div></div>' +
+'                    <div class="metric-card assigned" onclick="statCardClick(\'all\')"><div class="metric-icon-badge metric-icon-red"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v2z"></path><line x1="13" y1="5" x2="13" y2="19"></line></svg></div><div class="metric-label">Total Tickets</div><div class="metric-value" id="statMine">0</div><div class="metric-subtitle">All requests in scope</div></div>' +
 '                </div>' +
 '                <div style="margin-bottom: 12px; display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap;">' +
 '                    <button type="button" id="toggleFilterBtn" class="branch-add-btn" onclick="toggleFilterPanel()" style="display:inline-flex; align-items:center; gap:8px; padding: 9px 18px;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>Filters</button>' +
-'                    <div id="slaSummary" onclick="toggleSlaFilter()" title="Click to show breached tickets" style="cursor:pointer; display:flex; align-items:center; gap:8px; background:#ffffff; border:1px solid #e2e8f0; border-radius:8px; padding:9px 14px; font-size:12.5px; font-weight:600; color:#4a5568; box-shadow:0 1px 3px rgba(0,0,0,0.06); white-space:nowrap;"><span style="color:#2d3748; letter-spacing:0.5px;">SLA</span><span id="slaBreached" style="color:#c53030;">0 breached</span><span style="color:#cbd5e0;">&middot;</span><span id="slaRisk" style="color:#dd6b20;">0 at risk</span><span style="color:#cbd5e0;">&middot;</span><span id="slaOnTrack" style="color:#2f855a;">0 on track</span></div>' +
+'                    <div id="slaSummary" onclick="toggleSlaFilter()" title="Click to show breached tickets" style="cursor:pointer; display:flex; align-items:center; gap:8px; background:#ffffff; border:1px solid #e2e8f0; border-radius:8px; padding:9px 14px; font-size:12.5px; font-weight:600; color:#4a5568; box-shadow:0 1px 3px rgba(0,0,0,0.06); white-space:nowrap;"><span style="color:#2d3748; letter-spacing:0.5px;">SLA</span><span id="slaBreached" style="color:#c53030;">0 breached</span><span style="color:#cbd5e0;">&middot;</span><span id="slaRisk" style="color:#dd6b20;">0 at risk</span><span style="color:#cbd5e0;">&middot;</span><span id="slaOnTrack" style="color:#2f855a;">0 on track</span><span style="color:#cbd5e0;">&middot;</span><span id="slaStale" style="color:#718096;">0 in last 24h</span></div>' +
 '                </div>' +
 '                <div class="branch-panel-card" id="ticketFilterPanel" style="display:none; margin-bottom: 20px; align-items: flex-end; gap: 14px; flex-wrap: wrap;">' +
 '                    <div style="flex-grow: 1; min-width: 220px;"><label style="display:block;font-size:12px;font-weight:600;color:#4a5568;margin-bottom:4px;">Search</label><input type="text" id="filterSearchText" placeholder="Ticket #, Submitted By, Branch, Mobile..." style="width:100%; padding: 8px 10px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 14px;" onkeydown="if(event.key===\'Enter\') applyTicketFilters();"></div>' +
@@ -1275,6 +1371,10 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            clearTimeout(adminToastTimer);' +
 '            adminToastTimer = setTimeout(() => { toast.classList.remove("show"); }, 4000);' +
 '        }' +
+'        function refreshPageWithToast(view, message) {' +
+'            try { sessionStorage.setItem("sarathyPageRefresh", JSON.stringify({ view: view, message: message })); } catch (e) {}' +
+'            window.location.reload();' +
+'        }' +
 '        function toggleFilterPanel() {' +
 '            const panel = document.getElementById("ticketFilterPanel");' +
 '            const btn = document.getElementById("toggleFilterBtn");' +
@@ -1362,10 +1462,43 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '        let currentStatusFilter = "default-view";' +
 '        let currentPage = 1;' +
 '        const PAGE_SIZE = 10;' +
+'        var statLoadingEpoch = 0;' +
+'        function showStatLoading() {' +
+'            var holder = document.getElementById("ticketList");' +
+'            if (!holder) return null;' +
+'            var old = holder.querySelector(".stat-loading");' +
+'            if (old && old.parentNode) old.parentNode.removeChild(old);' +
+'            var o = document.createElement("div");' +
+'            o.className = "stat-loading";' +
+'            var img = document.createElement("img");' +
+'            img.src = "/loading.gif";' +
+'            img.alt = "Loading";' +
+'            o.appendChild(img);' +
+'            holder.appendChild(o);' +
+'            return o;' +
+'        }' +
+'        function removeStatLoading() {' +
+'            var holder = document.getElementById("ticketList");' +
+'            if (!holder) return;' +
+'            var o = holder.querySelector(".stat-loading");' +
+'            if (o && o.parentNode) o.parentNode.removeChild(o);' +
+'        }' +
+'        function statCardClick(status) {' +
+'            var epoch = ++statLoadingEpoch;' +
+'            var overlay = showStatLoading();' +
+'            var start = Date.now();' +
+'            Promise.resolve(filterByStatus(status)).catch(function () {}).finally(function () {' +
+'                if (epoch !== statLoadingEpoch) return;' +
+'                var remain = 2700 - (Date.now() - start);' +
+'                if (remain <= 0) { removeStatLoading(); return; }' +
+'                if (!document.querySelector("#ticketList .stat-loading")) overlay = showStatLoading();' +
+'                if (overlay) setTimeout(function () { if (epoch === statLoadingEpoch) removeStatLoading(); }, remain);' +
+'            });' +
+'        }' +
 '        function filterByStatus(status) {' +
 '            currentStatusFilter = status;' +
 '            currentPage = 1;' +
-'            loadTickets();' +
+'            return loadTickets();' +
 '        }' +
 '        async function applyTicketFilters() {' +
 '            const btn = document.getElementById("searchTicketsBtn");' +
@@ -1462,7 +1595,57 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '        }' +
 '        const SLA_TARGETS = { High: 14400000, Medium: 28800000, Low: 86400000 };' +
 '        function slaTargetMs(p) { return SLA_TARGETS[p] || SLA_TARGETS.Medium; }' +
-'        function slaDeadline(t) { return new Date(t.createdAt).getTime() + slaTargetMs(t.priority); }' +
+'        var IST_OFFSET = 5.5 * 60 * 60 * 1000;' +
+'        var IST_DAY = 24 * 60 * 60 * 1000;' +
+'        function isWorkday(ts) { return new Date(ts + IST_OFFSET).getUTCDay() !== 0; }' +
+'        function istDayStart(ts) {' +
+'            var ist = ts + IST_OFFSET;' +
+'            return ist - (ist % IST_DAY) - IST_OFFSET;' +
+'        }' +
+'        function workWindow(ts) {' +
+'            var dayStart = istDayStart(ts);' +
+'            return { start: dayStart + 9 * 60 * 60 * 1000, end: dayStart + 18 * 60 * 60 * 1000 };' +
+'        }' +
+'        function nextIstMidnight(ts) { return istDayStart(ts) + IST_DAY; }' +
+'        function nextWorkdayStart(ts) {' +
+'            var t = nextIstMidnight(ts);' +
+'            while (!isWorkday(t)) { t = nextIstMidnight(t); }' +
+'            return t + 9 * 60 * 60 * 1000;' +
+'        }' +
+'        function normalizeWorkStart(ts) {' +
+'            if (!isWorkday(ts)) return nextWorkdayStart(ts);' +
+'            var w = workWindow(ts);' +
+'            if (ts < w.start) return w.start;' +
+'            if (ts >= w.end) return nextWorkdayStart(ts);' +
+'            return ts;' +
+'        }' +
+'        function addWorkingMs(start, ms) {' +
+'            var cursor = normalizeWorkStart(start);' +
+'            var remaining = ms;' +
+'            while (remaining > 0) {' +
+'                var w = workWindow(cursor);' +
+'                var avail = w.end - cursor;' +
+'                if (remaining <= avail) return cursor + remaining;' +
+'                remaining -= avail;' +
+'                cursor = nextWorkdayStart(w.end);' +
+'            }' +
+'            return cursor;' +
+'        }' +
+'        function workingMsBetween(a, b) {' +
+'            if (b < a) return -workingMsBetween(b, a);' +
+'            var total = 0;' +
+'            var cursor = a;' +
+'            while (cursor < b) {' +
+'                if (!isWorkday(cursor)) { cursor = nextIstMidnight(cursor); continue; }' +
+'                var w = workWindow(cursor);' +
+'                var s = Math.max(cursor, w.start);' +
+'                var e = Math.min(b, w.end);' +
+'                if (e > s) total += e - s;' +
+'                cursor = nextIstMidnight(w.end);' +
+'            }' +
+'            return total;' +
+'        }' +
+'        function slaDeadline(t) { return addWorkingMs(new Date(t.createdAt).getTime(), slaTargetMs(t.priority)); }' +
 '        function fmtSlaClock(ms) {' +
 '            ms = Math.max(0, Math.floor(ms / 1000) * 1000);' +
 '            var s = Math.floor(ms / 1000);' +
@@ -1482,16 +1665,23 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '        }' +
 '        function slaInfo(t) {' +
 '            var target = slaTargetMs(t.priority);' +
-'            var deadline = new Date(t.createdAt).getTime() + target;' +
+'            var deadline = slaDeadline(t);' +
 '            if (t.status === "Resolved") {' +
 '                var done = t.resolvedAt ? new Date(t.resolvedAt).getTime() : Date.now();' +
-'                if (done <= deadline) return { kind: "met", text: "SLA Met in " + fmtDur(done - new Date(t.createdAt).getTime()) };' +
-'                return { kind: "missed", text: "SLA Missed by " + fmtDur(done - deadline) };' +
+'                var elapsed = workingMsBetween(new Date(t.createdAt).getTime(), done);' +
+'                if (done <= deadline) return { kind: "met", text: "SLA Met in " + fmtDur(elapsed) };' +
+'                return { kind: "missed", text: "SLA Missed by " + fmtDur(elapsed - target) };' +
 '            }' +
-'            var remaining = deadline - Date.now();' +
+'            var remaining = workingMsBetween(Date.now(), deadline);' +
 '            if (remaining < 0) return { kind: "breached", deadline: deadline, target: target };' +
 '            if (remaining < target * 0.25) return { kind: "risk", deadline: deadline, target: target };' +
 '            return { kind: "ok", deadline: deadline, target: target };' +
+'        }' +
+'        function slaRisk(info) {' +
+'            if (!info.deadline) return 0;' +
+'            var remaining = workingMsBetween(Date.now(), info.deadline);' +
+'            if (remaining < 0) return 0;' +
+'            return remaining < info.target * 0.25;' +
 '        }' +
 '        function slaBadgeHtml(t) {' +
 '            var info = slaInfo(t);' +
@@ -1499,18 +1689,23 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                return `<span class="badge ${info.kind === "met" ? "sla-met" : "sla-missed"}">${info.text}</span>`;' +
 '            }' +
 '            var cls = info.kind === "breached" ? "sla-breach" : (info.kind === "risk" ? "sla-risk" : "sla-ok");' +
-'            var label = info.kind === "breached" ? "BREACHED +" + fmtSlaClock(Date.now() - info.deadline) : "SLA " + fmtSlaClock(info.deadline - Date.now());' +
+'            var remain = info.deadline ? workingMsBetween(Date.now(), info.deadline) : 0;' +
+'            var label = info.kind === "breached" ? "BREACHED +" + fmtSlaClock(-remain) : "SLA " + fmtSlaClock(remain);' +
 '            return `<span class="sla-clock badge ${cls}" data-deadline="${info.deadline}" data-target="${info.target}">${label}</span>`;' +
 '        }' +
 '        function updateSlaSummary(list) {' +
-'            var breached = 0, risk = 0, onTrack = 0;' +
+'            var breached = 0, risk = 0, onTrack = 0, staleCount = 0;' +
 '            list.forEach(function (t) {' +
 '                if (t.status === "Resolved") return;' +
-'                var kind = slaInfo(t).kind;' +
-'                if (kind === "breached") breached++;' +
+'                var info = slaInfo(t);' +
+'                var kind = info.kind;' +
+'                if (kind === "risk" && !slaRisk(info)) kind = "ok";' +
+'                if (kind === "breached") { breached++; if ((Date.now() - info.deadline) <= 86400000) staleCount++; }' +
 '                else if (kind === "risk") risk++;' +
 '                else onTrack++;' +
 '            });' +
+'            var stale = document.getElementById("slaStale");' +
+'            if (stale) stale.textContent = staleCount + " in last 24h";' +
 '            var set = function (id, txt) { var el = document.getElementById(id); if (el) el.textContent = txt; };' +
 '            set("slaBreached", breached + " breached");' +
 '            set("slaRisk", risk + " at risk");' +
@@ -1522,7 +1717,23 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            document.querySelectorAll(".sla-clock[data-deadline]").forEach(function (el) {' +
 '                var deadline = Number(el.getAttribute("data-deadline"));' +
 '                var target = Number(el.getAttribute("data-target")) || 28800000;' +
-'                var diff = deadline - now;' +
+'                var offHours = !isWorkday(now) || now < workWindow(now).start || now >= workWindow(now).end;' +
+'                if (offHours) {' +
+'                    if (el.getAttribute("data-paused") !== "1") {' +
+'                        el.setAttribute("data-paused", "1");' +
+'                        el.setAttribute("data-saved-class", el.className);' +
+'                        el.className = "sla-clock badge paused";' +
+'                        el.textContent = "PAUSED - OFF HOURS";' +
+'                    }' +
+'                    return;' +
+'                }' +
+'                if (el.getAttribute("data-paused") === "1") {' +
+'                    el.removeAttribute("data-paused");' +
+'                    var saved = el.getAttribute("data-saved-class");' +
+'                    if (saved) el.className = saved;' +
+'                    el.removeAttribute("data-saved-class");' +
+'                }' +
+'                var diff = workingMsBetween(now, deadline);' +
 '                var cls, txt;' +
 '                if (diff >= 0) {' +
 '                    cls = "sla-clock badge " + (diff < target * 0.25 ? "sla-risk" : "sla-ok");' +
@@ -1671,9 +1882,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '        });' +
 '        if (response.ok) {' +
 '            input.value = "";' +
-'            showAdminToast("Region added successfully.");' +
-'            loadRegionsList();' +
-'            loadBranchesList();' +
+'            refreshPageWithToast("regions", "Region added successfully.");' +
 '        } else {' +
 '            const err = await response.json();' +
 '            showAdminToast(err.error || "Could not add region.", true);' +
@@ -1693,7 +1902,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            headers: { "Content-Type": "application/json" },' +
 '            body: JSON.stringify({ name: newName.trim() })' +
 '        });' +
-'        if (response.ok) { showAdminToast("Region updated successfully."); loadRegionsList(); loadBranchesList(); }' +
+'        if (response.ok) { refreshPageWithToast("regions", "Region updated successfully."); }' +
 '        else { const err = await response.json(); showAdminToast(err.error || "Could not update region.", true); }' +
 '    }, "Save");' +
 '}' +
@@ -1762,8 +1971,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            input.value = "";' +
 '            if (codeInput) codeInput.value = "";' +
 '            if (regionSelect) regionSelect.value = "";' +
-'            showAdminToast("Branch added successfully.");' +
-'            loadBranchesList();' +
+'            refreshPageWithToast("branches", "Branch added successfully.");' +
 '        } else {' +
 '            const err = await response.json();' +
 '            showAdminToast(err.error || "Could not add branch.", true);' +
@@ -1788,7 +1996,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                headers: { "Content-Type": "application/json" },' +
 '                body: JSON.stringify({ name: newName.trim(), code })' +
 '            });' +
-'            if (response.ok) { showAdminToast("Branch updated successfully."); loadBranchesList(); }' +
+'            if (response.ok) { refreshPageWithToast("branches", "Branch updated successfully."); }' +
 '            else { const err = await response.json(); showAdminToast(err.error || "Could not update branch.", true); }' +
 '        }, "Save");' +
 '    }, "Save");' +
@@ -1942,9 +2150,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            });' +
 '            if (response.ok) {' +
 '                editingStaffIds.delete(staffId);' +
-'                showAdminToast("Staff member updated.");' +
-'                await loadStaffList();' +
-'                setMainScroll(scrollPos);' +
+'                refreshPageWithToast("staff", "Staff member updated.");' +
 '            } else {' +
 '                const err = await response.json().catch(() => ({}));' +
 '                showAdminToast(err.error || "Could not update staff member.", true);' +
@@ -2013,7 +2219,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                headers: { "Content-Type": "application/json" },' +
 '                body: JSON.stringify(body)' +
 '            });' +
-'            if (response.ok) { editingAdminIds.delete(id); showAdminToast("Region admin updated."); await loadRegionAdminsList(); }' +
+'            if (response.ok) { editingAdminIds.delete(id); refreshPageWithToast("admins", "Region admin updated."); }' +
 '            else { const err = await response.json(); showAdminToast(err.error || "Could not update region admin.", true); }' +
 '            setMainScroll(scrollPos);' +
 '        }' +
@@ -2058,8 +2264,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                    document.getElementById("newAdminUsername").value = "";' +
 '                    document.getElementById("newAdminPassword").value = "";' +
 '                    document.getElementById("newAdminRegion").value = "";' +
-'                    showAdminToast("Region admin added successfully.");' +
-'                    loadRegionAdminsList();' +
+'                    refreshPageWithToast("admins", "Region admin added successfully.");' +
 '                } else {' +
 '                    const err = await response.json();' +
 '                    showAdminToast(err.error || "Could not add region admin.", true);' +
@@ -2218,8 +2423,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                    document.getElementById("newStaffPassword").value = "";' +
 '                    document.getElementById("newStaffEmail").value = "";' +
 '                    if (regionEl) regionEl.value = "";' +
-'                    showAdminToast("Staff member added successfully (" + result.staffId + ").");' +
-'                    loadStaffList();' +
+'                    refreshPageWithToast("staff", "Staff member added successfully (" + result.staffId + ").");' +
 '                } else {' +
 '                    const err = await response.json();' +
 '                    showAdminToast(err.error || "Could not add staff member.", true);' +
@@ -2414,7 +2618,15 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '        setInterval(pollInboxBadge, 30000);' +
 '        loadStaffFilterOptions();' +
 '        loadRegionFilterOptions();' +
-'        loadTickets();' +
+'        let pendingRefresh = null;' +
+'        try { pendingRefresh = JSON.parse(sessionStorage.getItem("sarathyPageRefresh") || "null"); sessionStorage.removeItem("sarathyPageRefresh"); } catch (e) { pendingRefresh = null; }' +
+'        const validRefreshViews = ["regions", "admins", "branches", "staff"];' +
+'        if (pendingRefresh && pendingRefresh.view && validRefreshViews.indexOf(pendingRefresh.view) !== -1) {' +
+'            switchView(pendingRefresh.view);' +
+'            if (pendingRefresh.message) { setTimeout(function() { showAdminToast(pendingRefresh.message); }, 350); }' +
+'        } else {' +
+'            loadTickets();' +
+'        }' +
 
 '    </script>' +
 '    <script>(function(){var s=document.createElement("script");s.src="/admin_features.js";document.head.appendChild(s);})()</script>' +
@@ -2575,7 +2787,7 @@ app.get('/tickets/report', checkUserLogin, async (req, res) => {
         await workbook.xlsx.write(res);
         res.end();
     } catch (err) {
-        res.status(500).send('Could not generate report: ' + err.message);
+        console.error('Report generation failed:', err.message); res.status(500).send('Could not generate report. Please try again or contact IT.');
     }
 });
 
@@ -2617,7 +2829,7 @@ app.get('/tickets/:id/checklist', checkUserLogin, async (req, res) => {
         if (!(await canUseChecklist(req, ticket))) return res.status(403).json({ error: 'You do not have access to this checklist.' });
         const st = await getChecklistState(ticket.id);
         res.json({ items: CHECKLIST_ITEMS, saved: st.saved, done: st.done, total: st.total, complete: st.complete, canEdit: true, isAdmin: !!req.session.isAdmin, status: ticket.status });
-    } catch (err) { res.status(500).json({ error: err.message }); }
+    } catch (err) { console.error('Request failed:', err.message); res.status(500).json({ error: 'Something went wrong. Please try again.' }); }
 });
 
 app.post('/tickets/:id/checklist', checkUserLogin, async (req, res) => {
@@ -2642,7 +2854,7 @@ app.post('/tickets/:id/checklist', checkUserLogin, async (req, res) => {
         if (!found[1]) { row.state = newState; row.answer = answer; row.updatedBy = req.session.username; await row.save(); }
         const st = await getChecklistState(ticket.id);
         res.json({ success: true, done: st.done, total: st.total, complete: st.complete });
-    } catch (err) { res.status(500).json({ error: err.message }); }
+    } catch (err) { console.error('Request failed:', err.message); res.status(500).json({ error: 'Something went wrong. Please try again.' }); }
 });
 
 app.post('/tickets/:id/resolve', checkUserLogin, async (req, res) => {
@@ -2671,7 +2883,7 @@ app.post('/tickets/:id/resolve', checkUserLogin, async (req, res) => {
         await ticket.save();
         res.json({ success: true });
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        console.error('Request failed:', err.message); res.status(500).json({ error: 'Something went wrong. Please try again.' });
     }
 });
 
@@ -2736,7 +2948,7 @@ app.post('/tickets/:id/escalate', checkUserLogin, async (req, res) => {
 
         res.json({ success: true });
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        console.error('Request failed:', err.message); res.status(500).json({ error: 'Something went wrong. Please try again.' });
     }
 });
 
@@ -2787,7 +2999,7 @@ app.post('/tickets/:id/reallocate', checkAdminLogin, async (req, res) => {
         await logAudit(req.session.username, 'Reallocate Escalated Ticket', `Reallocated ticket #${ticket.id} to ${staff.name}`);
         res.json({ success: true, assignedTo: staff.name });
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        console.error('Request failed:', err.message); res.status(500).json({ error: 'Something went wrong. Please try again.' });
     }
 });
 
@@ -2797,7 +3009,7 @@ app.post('/tickets/:id/comment', checkUserLogin, (req, res, next) => {
             if (err.code === 'LIMIT_FILE_SIZE') {
                 return res.status(400).json({ error: 'Attachment is too large. Maximum allowed size is 5MB.' });
             }
-            return res.status(400).json({ error: err.message || 'Invalid file upload.' });
+            return res.status(400).json({ error: 'Invalid file upload. Only PDF, JPG, PNG, WEBP, and GIF files are allowed.' });
         }
         next();
     });
@@ -2812,7 +3024,7 @@ app.post('/tickets/:id/comment', checkUserLogin, (req, res, next) => {
         await TicketComment.create({ ticketId: req.params.id, author, text, attachment });
         res.json({ success: true });
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        console.error('Request failed:', err.message); res.status(500).json({ error: 'Something went wrong. Please try again.' });
     }
 });
 
@@ -2845,7 +3057,7 @@ app.post('/tickets/regions', checkSuperAdminLogin, async (req, res) => {
         await logAudit(req.session.username, 'Add Region', `Added region "${newRegion.name}"`);
         res.status(201).json({ success: true });
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        console.error('Request failed:', err.message); res.status(500).json({ error: 'Something went wrong. Please try again.' });
     }
 });
 
@@ -2866,7 +3078,7 @@ app.put('/tickets/regions/:id', checkSuperAdminLogin, async (req, res) => {
         await logAudit(req.session.username, 'Edit Region', `Renamed region "${oldName}" to "${name}"`);
         res.json({ success: true });
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        console.error('Request failed:', err.message); res.status(500).json({ error: 'Something went wrong. Please try again.' });
     }
 });
 
@@ -2886,12 +3098,12 @@ app.delete('/tickets/regions/:id', checkSuperAdminLogin, async (req, res) => {
         await logAudit(req.session.username, 'Delete Region', `Removed region "${region.name}"`);
         res.json({ success: true });
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        console.error('Request failed:', err.message); res.status(500).json({ error: 'Something went wrong. Please try again.' });
     }
 });
 
 // Public lookup so ticket submitters can check status without logging in
-app.get('/tickets/lookup', async (req, res) => {
+app.get('/tickets/lookup', lookupRateLimiter, async (req, res) => {
     try {
         const mobile = req.query.mobile;
         if (!mobile) return res.status(400).json({ error: 'Mobile number required' });
@@ -2902,7 +3114,7 @@ app.get('/tickets/lookup', async (req, res) => {
         });
         res.json(tickets.map(serializeTicket));
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        console.error('Request failed:', err.message); res.status(500).json({ error: 'Something went wrong. Please try again.' });
     }
 });
 
@@ -2925,7 +3137,7 @@ app.post('/tickets/branches', checkAdminLogin, async (req, res) => {
         await logAudit(req.session.username, 'Add Branch', 'code=' + (code || 'none') + ' ' + `Added branch "${newBranch.name}" under region "${region}"`);
         res.status(201).json({ success: true });
     } catch(err) {
-        res.status(500).json({ error: err.message });
+        console.error('Request failed:', err.message); res.status(500).json({ error: 'Something went wrong. Please try again.' });
     }
 });
 
@@ -2994,7 +3206,7 @@ app.put('/tickets/branches/:id', checkAdminLogin, async (req, res) => {
         }
         res.json({ success: true });
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        console.error('Request failed:', err.message); res.status(500).json({ error: 'Something went wrong. Please try again.' });
     }
 });
 
@@ -3033,7 +3245,7 @@ app.post('/tickets/staff', checkAdminLogin, async (req, res) => {
         await logAudit(req.session.username, 'Add Staff', `Added staff ${name} (${staffId})${region ? ' — region: ' + region : ''}`);
         res.status(201).json({ success: true, staffId });
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        console.error('Request failed:', err.message); res.status(500).json({ error: 'Something went wrong. Please try again.' });
     }
 });
 
@@ -3078,7 +3290,7 @@ app.put('/tickets/staff/:staffId', checkAdminLogin, async (req, res) => {
         await logAudit(req.session.username, 'Edit Staff', `Updated staff ${req.params.staffId}${newStaffId ? ' (ID changed to ' + newStaffId + ')' : ''}${password ? ' (password reset)' : ''}`);
         res.json({ success: true, staffId: newStaffId || req.params.staffId });
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        console.error('Request failed:', err.message); res.status(500).json({ error: 'Something went wrong. Please try again.' });
     }
 });
 
@@ -3095,7 +3307,7 @@ app.delete('/tickets/staff/:staffId', checkAdminLogin, async (req, res) => {
         await logAudit(req.session.username, 'Delete Staff', `Removed staff ${req.params.staffId}`);
         res.json({ success: true });
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        console.error('Request failed:', err.message); res.status(500).json({ error: 'Something went wrong. Please try again.' });
     }
 });
 
@@ -3117,7 +3329,7 @@ app.get('/tickets/staff-branches', checkAdminLogin, async (req, res) => {
         }
         res.json(map);
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        console.error('Request failed:', err.message); res.status(500).json({ error: 'Something went wrong. Please try again.' });
     }
 });
 
@@ -3144,7 +3356,7 @@ app.post('/tickets/staff-branches', checkAdminLogin, async (req, res) => {
         await logAudit(req.session.username, 'Update Branch Assignment', `Set branches for staff ${staffId}: ${branches && branches.length ? branches.join(', ') : 'none'}`);
         res.json({ success: true });
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        console.error('Request failed:', err.message); res.status(500).json({ error: 'Something went wrong. Please try again.' });
     }
 });
 
@@ -3154,7 +3366,7 @@ app.get('/region-admins', checkSuperAdminLogin, async (req, res) => {
         const admins = await RegionAdmin.findAll({ order: [['region', 'ASC'], ['name', 'ASC']] });
         res.json(admins.map(a => ({ id: a.id, name: a.name, username: a.username, region: a.region, enabled: a.enabled })));
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        console.error('Request failed:', err.message); res.status(500).json({ error: 'Something went wrong. Please try again.' });
     }
 });
 
@@ -3176,7 +3388,7 @@ app.post('/region-admins', checkSuperAdminLogin, async (req, res) => {
         await logAudit(req.session.username, 'Add Region Admin', `Added region admin ${name} (${username}) for region "${region}"`);
         res.status(201).json({ success: true });
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        console.error('Request failed:', err.message); res.status(500).json({ error: 'Something went wrong. Please try again.' });
     }
 });
 
@@ -3192,7 +3404,7 @@ app.put('/region-admins/:id', checkSuperAdminLogin, async (req, res) => {
         await logAudit(req.session.username, 'Edit Region Admin', `Updated region admin ${admin.username}${req.body.password ? ' (password reset)' : ''}`);
         res.json({ success: true });
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        console.error('Request failed:', err.message); res.status(500).json({ error: 'Something went wrong. Please try again.' });
     }
 });
 
@@ -3205,7 +3417,7 @@ app.delete('/region-admins/:id', checkSuperAdminLogin, async (req, res) => {
         }
         res.json({ success: true });
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        console.error('Request failed:', err.message); res.status(500).json({ error: 'Something went wrong. Please try again.' });
     }
 });
 
@@ -3216,7 +3428,7 @@ app.get('/inbox', checkUserLogin, async (req, res) => {
         const messages = await InboxMessage.findAll({ where, order: [['createdAt', 'DESC']] });
         res.json(messages.map(withId));
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        console.error('Request failed:', err.message); res.status(500).json({ error: 'Something went wrong. Please try again.' });
     }
 });
 
@@ -3242,7 +3454,7 @@ app.post('/inbox', checkUserLogin, async (req, res) => {
         });
         res.status(201).json({ success: true, id: message.id });
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        console.error('Request failed:', err.message); res.status(500).json({ error: 'Something went wrong. Please try again.' });
     }
 });
 
@@ -3261,7 +3473,7 @@ app.post('/inbox/:id/reply', checkAdminLogin, async (req, res) => {
         await message.save();
         res.json({ success: true });
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        console.error('Request failed:', err.message); res.status(500).json({ error: 'Something went wrong. Please try again.' });
     }
 });
 
@@ -3279,7 +3491,7 @@ app.post('/inbox/:id/read', checkUserLogin, async (req, res) => {
         await message.save();
         res.json({ success: true });
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        console.error('Request failed:', err.message); res.status(500).json({ error: 'Something went wrong. Please try again.' });
     }
 });
 
@@ -3287,15 +3499,15 @@ app.delete('/inbox/:id', checkAdminLogin, async (req, res) => {
     try {
         await InboxMessage.destroy({ where: { id: req.params.id } });
         res.json({ success: true });
-    } catch(err) { res.status(500).json({ error: err.message }); }
+    } catch(err) { console.error('Request failed:', err.message); res.status(500).json({ error: 'Something went wrong. Please try again.' }); }
 });
-app.post('/tickets', (req, res, next) => {
+app.post('/tickets', publicTicketRateLimiter, (req, res, next) => {
     upload.single('screenshot')(req, res, (err) => {
         if (err) {
             if (err.code === 'LIMIT_FILE_SIZE') {
                 return res.status(400).json({ error: 'File is too large. Maximum allowed size is 5MB.' });
             }
-            return res.status(400).json({ error: err.message || 'Invalid file upload.' });
+            return res.status(400).json({ error: 'Invalid file upload. Only PDF, JPG, PNG, WEBP, and GIF files are allowed.' });
         }
         next();
     });
@@ -3389,7 +3601,7 @@ app.post('/tickets', (req, res, next) => {
 
         res.status(201).json(serializeTicket(newTicket));
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        console.error('Request failed:', err.message); res.status(500).json({ error: 'Something went wrong. Please try again.' });
     }
 });
 
