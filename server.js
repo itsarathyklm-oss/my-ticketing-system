@@ -271,7 +271,11 @@ function makeRateLimiter(windowMs, max, message) {
             return next();
         }
         if (entry.count >= max) {
-            return res.status(429).json({ error: message });
+            // Tell the client exactly how long the fixed window has left, so the UI can
+            // show a live countdown instead of a vague "wait a few minutes".
+            const retryAfter = Math.max(1, Math.ceil((entry.firstAttempt + windowMs - now) / 1000));
+            res.setHeader('Retry-After', String(retryAfter));
+            return res.status(429).json({ error: message, retryAfter });
         }
         entry.count++;
         next();
@@ -286,17 +290,43 @@ setInterval(() => {
     }
 }, 60 * 1000).unref();
 
-const loginRateLimiter = makeRateLimiter(15 * 60 * 1000, 8,
+const loginRateLimiter = makeRateLimiter(2 * 60 * 1000, 8,
     'Too many login attempts. Please wait a few minutes and try again.');
 // Unauthenticated endpoints: the public ticket form (spam/flood) and ticket
 // lookup (guessing 10-digit mobiles to enumerate other people's tickets).
-const publicTicketRateLimiter = makeRateLimiter(15 * 60 * 1000, 20,
+const publicTicketRateLimiter = makeRateLimiter(2 * 60 * 1000, 20,
     'Too many tickets submitted. Please wait a few minutes and try again.');
-const lookupRateLimiter = makeRateLimiter(15 * 60 * 1000, 30,
+const lookupRateLimiter = makeRateLimiter(2 * 60 * 1000, 30,
     'Too many lookups. Please wait a few minutes and try again.');
+// --- Region Admin live-session check -------------------------------------
+// Disabling or deleting a Region Admin must end an already-logged-in session at once;
+// without this their cookie stays valid for its full 4h inactivity window. Re-reads the
+// account row on each guarded request for Region Admin sessions only (the env-var
+// Super Admin and staff sessions are untouched, so they cost no extra query).
+async function regionAdminSessionStillValid(req) {
+    if (!req.session || !req.session.isAdmin || req.session.isSuperAdmin) return true;
+    try {
+        let row = null;
+        if (req.session.regionAdminId) {
+            row = await RegionAdmin.findByPk(req.session.regionAdminId);
+        } else if (req.session.username) {
+            row = await RegionAdmin.findOne({ where: { name: req.session.username } });
+        }
+        return !!(row && row.enabled);
+    } catch (err) {
+        // Fail open on a DB hiccup: the routes themselves need the DB anyway, and a
+        // transient error should not lock every admin out of the app.
+        console.error('Region admin session check failed:', err.message);
+        return true;
+    }
+}
+
 function checkUserLogin(req, res, next) {
     if (req.session && (req.session.isAdmin || req.session.isStaff)) {
-        next();
+        regionAdminSessionStillValid(req).then(valid => {
+            if (valid) return next();
+            req.session.destroy(() => res.redirect('/login'));
+        });
     } else {
         res.redirect('/login');
     }
@@ -304,7 +334,10 @@ function checkUserLogin(req, res, next) {
 
 function checkAdminLogin(req, res, next) {
     if (req.session && req.session.isAdmin) {
-        next();
+        regionAdminSessionStillValid(req).then(valid => {
+            if (valid) return next();
+            req.session.destroy(() => res.status(403).json({ error: 'Access Denied' }));
+        });
     } else {
         res.status(403).json({ error: 'Access Denied' });
     }
@@ -401,6 +434,26 @@ button[type="submit"]:active { transform: translateY(0); }
         toastTimer = setTimeout(() => { toast.classList.remove('show'); }, 4500);
     }
 
+    // Shared countdown for rate-limited (429) responses: keeps the error toast visible
+    // and ticks down the exact remaining window the server reported in retryAfter.
+    function fmtCd(s) { const m = Math.floor(s / 60), r = s % 60; return m + ':' + String(r).padStart(2, '0'); }
+    let toastCooldownTimer = null;
+    function startToastCooldown(seconds, baseMsg) {
+        clearInterval(toastCooldownTimer);
+        let left = Math.max(0, Math.round(seconds));
+        const paint = () => showToast(baseMsg + ' (' + fmtCd(left) + ' left)', true);
+        paint();
+        toastCooldownTimer = setInterval(() => {
+            left -= 1;
+            if (left <= 0) {
+                clearInterval(toastCooldownTimer);
+                showToast(baseMsg, true); // window over — toast fades out on its normal timer
+                return;
+            }
+            paint();
+        }, 1000);
+    }
+
     async function loadFormBranches() {
         try {
             const res = await fetch('/public-branches');
@@ -483,11 +536,14 @@ button[type="submit"]:active { transform: translateY(0); }
                 loadFormBranches();
             } else {
                 let errorMsg = 'Could not submit the ticket. Please try again.';
+                let retryAfter = 0;
                 try {
                     const errData = await response.json();
                     if (errData && errData.error) errorMsg = errData.error;
+                    if (errData && errData.retryAfter) retryAfter = errData.retryAfter;
                 } catch (parseErr) {}
-                showToast(errorMsg, true);
+                if (retryAfter) startToastCooldown(retryAfter, errorMsg);
+                else showToast(errorMsg, true);
             }
         } catch (err) {
             showToast('Something went wrong submitting the ticket. Please check your connection and try again.', true);
@@ -525,8 +581,10 @@ button[type="submit"]:active { transform: translateY(0); }
             const res = await fetch('/tickets/lookup?mobile=' + encodeURIComponent(mobile));
             if (!res.ok) {
                 let msg = 'Could not refresh ticket status. Please try again.';
-                try { const errData = await res.json(); if (errData && errData.error) msg = errData.error; } catch (parseErr) {}
-                showToast(msg, true);
+                let retryAfter = 0;
+                try { const errData = await res.json(); if (errData && errData.error) msg = errData.error; if (errData && errData.retryAfter) retryAfter = errData.retryAfter; } catch (parseErr) {}
+                if (retryAfter) startToastCooldown(retryAfter, msg);
+                else showToast(msg, true);
                 container.innerHTML = prevHTML;
                 return;
             }
@@ -684,8 +742,39 @@ button[type="submit"]:disabled { opacity: .7; cursor: not-allowed; transform: no
     passwordInput.addEventListener('keydown', checkCapsLock);
     passwordInput.addEventListener('keyup', checkCapsLock);
 
+    // Rate-limit countdown: the server reports the remaining window in retryAfter (429).
+    // The Login button stays disabled until it hits zero, then the error clears itself.
+    let loginCooldownTimer = null;
+    let loginCooldownActive = false;
+    function fmtCd(s) { const m = Math.floor(s / 60), r = s % 60; return m + ':' + String(r).padStart(2, '0'); }
+    function startLoginCooldown(seconds, baseMsg) {
+        clearInterval(loginCooldownTimer);
+        let left = Math.max(0, Math.round(seconds));
+        loginCooldownActive = true;
+        loginBtn.disabled = true;
+        const paint = () => {
+            loginError.textContent = baseMsg + ' (' + fmtCd(left) + ' left)';
+            loginError.style.display = 'block';
+        };
+        paint();
+        loginCooldownTimer = setInterval(() => {
+            left -= 1;
+            if (left <= 0) {
+                clearInterval(loginCooldownTimer);
+                loginCooldownActive = false;
+                loginError.style.display = 'none';
+                loginError.textContent = '';
+                loginBtn.disabled = false;
+                loginBtn.innerHTML = loginBtnDefaultHTML;
+                return;
+            }
+            paint();
+        }, 1000);
+    }
+
     loginForm.addEventListener('submit', async (e) => {
         e.preventDefault();
+        if (loginCooldownActive) return; // countdown still running — server would 429 anyway
         loginError.style.display = 'none';
         loginBtn.disabled = true;
         loginBtn.innerHTML = '<span class="spinner"></span>Logging in...';
@@ -701,6 +790,10 @@ button[type="submit"]:disabled { opacity: .7; cursor: not-allowed; transform: no
             const data = await response.json();
             if (response.ok && data.success) {
                 window.location.href = (data.redirect || '/admin') + '?t=' + Date.now();
+                return;
+            }
+            if (data.retryAfter) {
+                startLoginCooldown(data.retryAfter, data.error || 'Too many login attempts.');
                 return;
             }
             loginError.textContent = data.error || 'Invalid username or password.';
@@ -754,6 +847,8 @@ app.post('/login', loginRateLimiter, async (req, res) => {
         req.session.isStaff = false;
         req.session.region = regionAdmin.region;
         req.session.username = regionAdmin.name;
+        // Stable id for the live-session check — a rename can't orphan it like a name lookup would.
+        req.session.regionAdminId = regionAdmin.id;
         return res.json({ success: true, redirect: '/admin' });
     }
     if (regionAdmin && !regionAdmin.enabled) {
@@ -2932,19 +3027,19 @@ app.post('/tickets/:id/escalate', checkUserLogin, async (req, res) => {
             message: `Ticket #${fmtTicketNumber(ticket)} - ${ticket.title} was escalated to you by ${req.session.username}. Reason: ${reason}`
         });
         await logAudit(req.session.username, 'Escalate Ticket', `Escalated ticket #${ticket.id} to ${recipientName}. Reason: ${reason}`);
-        // Super admin notification
-        try {
-            const superAdmins = await RegionAdmin.findAll({ where: { isSuperAdmin: true } });
-            for (const sa of superAdmins) {
-                await Notification.create({
-                    recipient: sa.username,
-                    ticketId: ticket.id,
-                    ticketNumber: ticket.id,
-                    title: ticket.title,
-                    message: 'Ticket #' + fmtTicketNumber(ticket) + ' was escalated by ' + req.session.username + ' to ' + recipientName
-                });
-            }
-        } catch(nErr) { console.error('Super admin notification error:', nErr); }
+        // Notify the Super Admin (their bell queries recipient = session username, 'Admin').
+        // The super admin is the env-var account, NOT a region_admins row, so it cannot be
+        // looked up in that table (the old query used a nonexistent isSuperAdmin column).
+        // Skip when the escalation already landed on them as assignee — no duplicate entry.
+        if (recipientName !== 'Admin') {
+            await Notification.create({
+                recipient: 'Admin',
+                ticketId: ticket.id,
+                ticketNumber: ticket.id,
+                title: ticket.title,
+                message: `Ticket #${fmtTicketNumber(ticket)} was escalated by ${req.session.username} to ${recipientName}`
+            });
+        }
 
         res.json({ success: true });
     } catch (err) {
@@ -3514,7 +3609,8 @@ app.post('/tickets', publicTicketRateLimiter, (req, res, next) => {
 }, async (req, res) => {
     try {
         const branchName = req.body.branch || 'N/A';
-        const allStaff = await Staff.findAll();
+        // Sorted by staff id so the rotation order (1,2,3,1,2,3...) is stable across restarts.
+        const allStaff = await Staff.findAll({ order: [['staffId', 'ASC']] });
 
         let assignedStaff = null;
         const requestedStaffName = req.body.assignedTo;
@@ -3524,29 +3620,49 @@ app.post('/tickets', publicTicketRateLimiter, (req, res, next) => {
             assignedStaff = allStaff.find(s => s.name === requestedStaffName.trim());
         }
 
+        // The branch row hosts both the display-number counter and the assignment cursor.
+        const sourceBranch = await Branch.findOne({ where: { name: branchName }, order: [['id', 'ASC']] });
+
         // Fall back to round-robin if no specific staff was selected or staff not found
         if (!assignedStaff) {
-            const coveringAssignments = await StaffBranchAssignment.findAll({ where: { branchName } });
-            let eligibleStaff = coveringAssignments
+            // Strict branch-only rotation: only staff actually assigned to this branch are
+            // eligible. An uncovered branch no longer falls back to the whole staff table.
+            const coveringAssignments = await StaffBranchAssignment.findAll({
+                where: { branchName },
+                order: [['staffId', 'ASC']]
+            });
+            const eligibleStaff = coveringAssignments
                 .map(a => allStaff.find(s => s.staffId === a.staffId))
                 .filter(Boolean);
 
-            // Nobody assigned to this branch yet -> fall back to round-robin across everyone
-            if (eligibleStaff.length === 0) {
-                eligibleStaff = allStaff;
+            if (eligibleStaff.length > 0) {
+                let seq;
+                if (sourceBranch) {
+                    // Atomic per-branch cursor — the same LAST_INSERT_ID trick as ticket_seq,
+                    // so two concurrent submissions can never pick the same person or skip one.
+                    seq = await sequelize.transaction(async (tx) => {
+                        await sequelize.query(
+                            'UPDATE branches SET assign_seq = LAST_INSERT_ID(assign_seq + 1) WHERE id = :id',
+                            { replacements: { id: sourceBranch.id }, transaction: tx }
+                        );
+                        const [[row]] = await sequelize.query('SELECT LAST_INSERT_ID() AS seq', { transaction: tx });
+                        return Number(row.seq);
+                    });
+                } else {
+                    // Branch name has no row in `branches` (e.g. 'N/A') — nothing to host a
+                    // cursor, so approximate with the ticket count like the old code did.
+                    seq = (await Ticket.count({ where: { branch: branchName } })) + 1;
+                }
+                assignedStaff = eligibleStaff[(seq - 1) % eligibleStaff.length];
             }
-
-            // Round-robin among eligible staff, based on tickets already logged for this branch
-            const branchTicketCount = await Ticket.count({ where: { branch: branchName } });
-            const staffIndex = branchTicketCount % eligibleStaff.length;
-            assignedStaff = eligibleStaff[staffIndex];
+            // No eligible staff: assignedStaff stays null — the ticket is left Unassigned
+            // and the region's admin is notified instead of any staff member (below).
         }
 
         // Ticket number allocation: a ticket submitted through a branch that has a
         // code is stamped CODE/0001 (independent per-branch counter, allocated
         // atomically); everything else keeps the legacy id-based number (0001).
         let displayNumber = null;
-        const sourceBranch = await Branch.findOne({ where: { name: branchName }, order: [['id', 'ASC']] });
         if (sourceBranch && sourceBranch.code) {
             const seq = await sequelize.transaction(async (tx) => {
                 // LAST_INSERT_ID() is per-connection, so both statements must share
@@ -3571,33 +3687,55 @@ app.post('/tickets', publicTicketRateLimiter, (req, res, next) => {
             priority: req.body.priority,
             description: req.body.description,
             screenshot: req.file ? req.file.path : null,
-            assignedTo: assignedStaff.name,
+            assignedTo: assignedStaff ? assignedStaff.name : 'Unassigned',
             displayNumber
         });
         const ticketNumber = newTicket.id;
 
-        await Notification.create({
-            recipient: assignedStaff.name,
-            ticketId: newTicket.id,
-            ticketNumber,
-            title: newTicket.title,
-            message: `Ticket #${fmtTicketNumber(newTicket)} - ${newTicket.title} has been assigned to you.`
-        });
+        if (assignedStaff) {
+            await Notification.create({
+                recipient: assignedStaff.name,
+                ticketId: newTicket.id,
+                ticketNumber,
+                title: newTicket.title,
+                message: `Ticket #${fmtTicketNumber(newTicket)} - ${newTicket.title} has been assigned to you.`
+            });
 
-        const mailOptions = {
-            from: process.env.EMAIL_USER,
-            to: assignedStaff.email,
-            subject: `[Ticket #${fmtTicketNumber(newTicket)}] - ${newTicket.title}`,
-            text: `Hello ${assignedStaff.name},\n\nTicket Assigned:\nTicket #: ${fmtTicketNumber(newTicket)}\nTitle: ${newTicket.title}\nSubmitted By: ${newTicket.submittedBy}\nBranch: ${newTicket.branch}\nMobile: ${newTicket.mobile}`
-        };
+            const mailOptions = {
+                from: process.env.EMAIL_USER,
+                to: assignedStaff.email,
+                subject: `[Ticket #${fmtTicketNumber(newTicket)}] - ${newTicket.title}`,
+                text: `Hello ${assignedStaff.name},\n\nTicket Assigned:\nTicket #: ${fmtTicketNumber(newTicket)}\nTitle: ${newTicket.title}\nSubmitted By: ${newTicket.submittedBy}\nBranch: ${newTicket.branch}\nMobile: ${newTicket.mobile}`
+            };
 
-        transporter.sendMail(mailOptions, (err, info) => {
-            if (err) {
-                console.error(`Assignment email FAILED for ticket #${fmtTicketNumber(newTicket)} (to ${assignedStaff.email}):`, err.message);
-            } else {
-                console.log(`Assignment email sent for ticket #${fmtTicketNumber(newTicket)} (to ${assignedStaff.email}):`, info.response);
+            transporter.sendMail(mailOptions, (err, info) => {
+                if (err) {
+                    console.error(`Assignment email FAILED for ticket #${fmtTicketNumber(newTicket)} (to ${assignedStaff.email}):`, err.message);
+                } else {
+                    console.log(`Assignment email sent for ticket #${fmtTicketNumber(newTicket)} (to ${assignedStaff.email}):`, info.response);
+                }
+            });
+        } else {
+            // Uncovered branch: no staff to notify or email. Tell the region's admin to
+            // allocate staff instead — falling back to the Super Admin ('Admin') when the
+            // branch has no region or that region has no enabled admin.
+            let recipient = 'Admin';
+            if (sourceBranch && sourceBranch.region) {
+                try {
+                    const coveringAdmin = await RegionAdmin.findOne({ where: { region: sourceBranch.region, enabled: true } });
+                    if (coveringAdmin) recipient = coveringAdmin.name;
+                } catch (lookupErr) {
+                    console.error('Region admin lookup for uncovered branch failed:', lookupErr.message);
+                }
             }
-        });
+            await Notification.create({
+                recipient,
+                ticketId: newTicket.id,
+                ticketNumber,
+                title: newTicket.title,
+                message: `Ticket #${fmtTicketNumber(newTicket)} branch ${branchName} has no assigned staff - please allocate.`
+            });
+        }
 
         res.status(201).json(serializeTicket(newTicket));
     } catch (err) {

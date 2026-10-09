@@ -63,7 +63,10 @@ const Branch = sequelize.define('Branch', {
     // (e.g. SAC70 -> #SAC70/0001). NULL = branch keeps legacy #0001 numbering.
     code: { type: DataTypes.STRING(12), allowNull: true, unique: true },
     // Per-branch ticket counter - bumped atomically when a ticket is created.
-    ticketSeq: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0, field: 'ticket_seq' }
+    ticketSeq: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0, field: 'ticket_seq' },
+    // Per-branch assignment cursor - bumped atomically on every auto-assigned ticket so
+    // branch staff rotate strictly 1,2,3,1,2,3 without races (unlike counting tickets).
+    assignSeq: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0, field: 'assign_seq' }
 }, { tableName: 'branches', timestamps: false });
 
 // --- Staff ---
@@ -202,6 +205,7 @@ async function ensureBranchCodeColumns() {
     const wanted = [
         { table: 'branches', column: 'code', ddl: 'ADD COLUMN code VARCHAR(12) NULL UNIQUE AFTER region' },
         { table: 'branches', column: 'ticket_seq', ddl: 'ADD COLUMN ticket_seq INT NOT NULL DEFAULT 0 AFTER code' },
+        { table: 'branches', column: 'assign_seq', ddl: 'ADD COLUMN assign_seq INT NOT NULL DEFAULT 0 AFTER ticket_seq' },
         { table: 'tickets', column: 'display_number', ddl: 'ADD COLUMN display_number VARCHAR(40) NULL UNIQUE AFTER resolved_by' }
     ];
     for (const w of wanted) {
