@@ -43,7 +43,7 @@ app.disable("x-powered-by");
 // Anything not on this list falls through to the routes and 404s as usual.
 const SERVABLE_STATIC_FILES = new Set([
     "/logo.png", "/background.png", "/icon-512.png", "/manifest.json",
-    "/loading.gif", "/notification.mp3", "/admin_features.js", "/checklist.js", "/service-worker.js"
+    "/loading.gif", "/intro-video.mp4", "/notification.mp3", "/admin_features.js", "/checklist.js", "/service-worker.js"
 ]);
 app.use((req, res, next) => {
     if ((req.method === "GET" || req.method === "HEAD") && SERVABLE_STATIC_FILES.has(req.path)) {
@@ -53,6 +53,60 @@ app.use((req, res, next) => {
     }
     next();
 });
+
+// --- Intro splash (company logo video shown before the page is used) ---------
+// Purely cosmetic: an overlay painted on top of the already-rendered page that
+// plays /intro-video.mp4 (muted, so playback is allowed everywhere) and fades
+// out when the video ends. It never touches a route, form or session.
+// Flicker-free start: the video stays invisible (opacity 0) over a white box
+// until its first frame is decoded, then shows frame 0 static for one paint
+// and only afterwards starts playing — so the first thing ever painted is
+// frame 0 on white, never a black/blank box or an already-running animation.
+// Safety nets guarantee the user can never be trapped behind it: video
+// 'ended', a duration+2s timer set once metadata loads, an instant removal on
+// error, and a 12s absolute fallback if metadata never arrives.
+// Once per session: a sessionStorage flag makes refreshes in the same tab skip
+// the splash; a new tab or app relaunch shows it again. Tapping anywhere on the
+// overlay skips it instantly (no fade).
+const INTRO_SPLASH_HTML = `
+<div id="sarathyIntroOverlay" style="position:fixed;top:0;left:0;right:0;bottom:0;background:#ffffff;z-index:2147483647;display:flex;align-items:center;justify-content:center;transition:opacity 0.5s ease;">
+<video id="sarathyIntroVideo" src="/intro-video.mp4" muted playsinline preload="auto" style="width:25%;height:25%;object-fit:contain;background:#ffffff;opacity:0;"></video>
+</div>
+<script>
+(function(){
+var o=document.getElementById('sarathyIntroOverlay');
+var v=document.getElementById('sarathyIntroVideo');
+if(!o)return;
+var KEY='sarathyIntroSeen';
+try{if(sessionStorage.getItem(KEY)){if(o.parentNode)o.parentNode.removeChild(o);return;}}catch(e){}
+try{sessionStorage.setItem(KEY,'1');}catch(e){}
+var done=false;
+function dismiss(){if(done)return;done=true;o.style.opacity='0';setTimeout(function(){if(o&&o.parentNode)o.parentNode.removeChild(o);},500);}
+function skip(){if(done)return;done=true;if(v){try{v.pause();}catch(e){}}if(o&&o.parentNode)o.parentNode.removeChild(o);}
+o.addEventListener('click',skip);
+o.addEventListener('touchstart',skip,{passive:true});
+var meta=false;
+if(v){
+var shown=false;
+function kick(){var p=v.play();if(p&&p.catch)p.catch(function(){});}
+function start(){
+if(shown)return;shown=true;
+try{v.currentTime=0;}catch(e){}
+v.style.opacity='1';
+if(window.requestAnimationFrame){requestAnimationFrame(function(){requestAnimationFrame(kick);});}else{kick();}
+setTimeout(kick,600);
+}
+v.addEventListener('loadeddata',start);
+v.addEventListener('canplay',start);
+if(v.readyState>=2)start();
+v.addEventListener('ended',dismiss);
+v.addEventListener('error',dismiss);
+v.addEventListener('loadedmetadata',function(){meta=true;setTimeout(dismiss,((v.duration||0)+2)*1000);});
+v.muted=true;
+}
+setTimeout(function(){if(!meta)dismiss();},12000);
+})();
+</script>`;
 
 // 1. CONNECT TO MYSQL
 sequelize.authenticate()
@@ -321,8 +375,23 @@ async function regionAdminSessionStillValid(req) {
     }
 }
 
+// --- Staff presence (active-staff widget) ----------------------------------
+// In-memory last-seen timestamps keyed by the staff login name (the identity a
+// session carries). Touched on each authenticated staff request below and at
+// login; entries idle for over 24h are pruned so the map stays bounded. Cleared
+// on staff delete so a removed person cannot linger as "online". Not persisted:
+// a server restart simply shows everyone offline until their next request.
+const staffLastSeen = new Map();
+const STAFF_ONLINE_WINDOW_MS = 5 * 60 * 1000; // "online" = seen within 5 minutes
+setInterval(() => {
+    const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+    for (const [name, ts] of staffLastSeen) { if (ts < cutoff) staffLastSeen.delete(name); }
+}, 60 * 1000).unref();
+
 function checkUserLogin(req, res, next) {
     if (req.session && (req.session.isAdmin || req.session.isStaff)) {
+        // Activity heartbeat for the active-staff widget (staff sessions only).
+        if (req.session.isStaff && req.session.username) staffLastSeen.set(req.session.username, Date.now());
         regionAdminSessionStillValid(req).then(valid => {
             if (valid) return next();
             req.session.destroy(() => res.redirect('/login'));
@@ -423,7 +492,7 @@ button[type="submit"]:active { transform: translateY(0); }
 .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 .toast.error { background: #9b2c2c; }
 .page-footer { position: fixed; bottom: 8px; left: 0; width: 100%; text-align: center; font-size: 11px; color: rgba(255,255,255,0.55); letter-spacing: .3px; }
-</style></head><body><div id="formToast" class="toast"></div><div class="ticket-card"><div class="ticket-ribbon"><img src="/logo.png" alt="Company Logo" onerror="this.style.display='none'"><span class="ticket-ribbon-text">Sarathy IT Helpdesk</span></div><div class="tab-switch"><button type="button" class="tab-btn active" id="tabSubmitBtn" onclick="showTab('submit')">Submit Ticket</button><button type="button" class="tab-btn" id="tabStatusBtn" onclick="showTab('status')">Check Status</button></div><div class="ticket-body"><div id="submitPane"><h2 class="form-title">Submit a New Ticket</h2><div class="form-subtitle">We'll route it to the right person and keep you posted.</div><div class="ticket-perforation"></div><form id="ticketForm" enctype="multipart/form-data" class="form-grid"><div class="form-field"><label>Your Name</label><input type="text" id="submitterName" required></div><div class="form-field"><label>Designation</label><input type="text" id="submitterDesignation"></div><div class="form-field"><label>Mobile Number</label><input type="tel" id="mobile" placeholder="10-digit mobile number" pattern="[0-9]{10}" maxlength="10" inputmode="numeric" oninput="this.value=this.value.replace(/[^0-9]/g,'').slice(0,10)" required></div><div class="form-field full-width"><label>Issue Title</label><input type="text" id="title" required></div><div class="form-field"><label>Region</label><select id="region" required onchange="updateBranchOptions()"><option value="" disabled selected>Loading...</option></select></div><div class="form-field"><label>Branch Location</label><select id="branch" required><option value="" disabled selected>Select region first</option></select></div><div class="form-field"><label>Priority Level</label><select id="priority"><option value="Low">Low</option><option value="Medium" selected>Medium</option><option value="High">High</option></select></div><div class="form-field"><label>Category</label><select id="category" required><option value="" disabled selected>Select Category</option><option value="Hardware">Hardware</option><option value="Software">Software</option><option value="Network">Network</option><option value="Printer">Printer</option><option value="Other">Other</option></select></div><div class="form-field full-width"><label>Description</label><textarea id="description" required></textarea></div><div class="form-field full-width"><label>Upload Screenshot (Optional, PDF/JPG/PNG/WEBP/GIF, max 5MB)</label><input type="file" id="screenshot" accept="image/jpeg,image/png,image/webp,image/gif,application/pdf,.jpg,.jpeg,.png,.webp,.gif,.pdf"></div><button type="submit" id="submitTicketBtn">Submit Ticket</button></form></div><div id="statusPane" style="display:none;"><h2 class="form-title">Check Ticket Status</h2><div class="form-subtitle">Enter the mobile number you used when submitting.</div><label>Mobile Number</label><input type="tel" id="statusMobile" placeholder="Enter your 10-digit mobile number" pattern="[0-9]{10}" maxlength="10" inputmode="numeric" oninput="this.value=this.value.replace(/[^0-9]/g,'').slice(0,10)"><button type="button" class="check-status-btn" onclick="checkTicketStatus()">Check Status</button><div id="statusResults"></div></div></div></div><div class="page-footer">&copy; 2026 Sarathy Pvt Ltd</div><script>
+</style></head><body>${INTRO_SPLASH_HTML}<div id="formToast" class="toast"></div><div class="ticket-card"><div class="ticket-ribbon"><img src="/logo.png" alt="Company Logo" onerror="this.style.display='none'"><span class="ticket-ribbon-text">Sarathy IT Helpdesk</span></div><div class="tab-switch"><button type="button" class="tab-btn active" id="tabSubmitBtn" onclick="showTab('submit')">Submit Ticket</button><button type="button" class="tab-btn" id="tabStatusBtn" onclick="showTab('status')">Check Status</button></div><div class="ticket-body"><div id="submitPane"><h2 class="form-title">Submit a New Ticket</h2><div class="form-subtitle">We'll route it to the right person and keep you posted.</div><div class="ticket-perforation"></div><form id="ticketForm" enctype="multipart/form-data" class="form-grid"><div class="form-field"><label>Your Name</label><input type="text" id="submitterName" required></div><div class="form-field"><label>Designation</label><input type="text" id="submitterDesignation"></div><div class="form-field"><label>Mobile Number</label><input type="tel" id="mobile" placeholder="10-digit mobile number" pattern="[0-9]{10}" maxlength="10" inputmode="numeric" oninput="this.value=this.value.replace(/[^0-9]/g,'').slice(0,10)" required></div><div class="form-field full-width"><label>Issue Title</label><input type="text" id="title" required></div><div class="form-field"><label>Region</label><select id="region" required onchange="updateBranchOptions()"><option value="" disabled selected>Loading...</option></select></div><div class="form-field"><label>Branch Location</label><select id="branch" required><option value="" disabled selected>Select region first</option></select></div><div class="form-field"><label>Priority Level</label><select id="priority"><option value="Low">Low</option><option value="Medium" selected>Medium</option><option value="High">High</option></select></div><div class="form-field"><label>Category</label><select id="category" required><option value="" disabled selected>Select Category</option><option value="Hardware">Hardware</option><option value="Software">Software</option><option value="Network">Network</option><option value="Printer">Printer</option><option value="Other">Other</option></select></div><div class="form-field full-width"><label>Description</label><textarea id="description" required></textarea></div><div class="form-field full-width"><label>Upload Screenshot (Optional, PDF/JPG/PNG/WEBP/GIF, max 5MB)</label><input type="file" id="screenshot" accept="image/jpeg,image/png,image/webp,image/gif,application/pdf,.jpg,.jpeg,.png,.webp,.gif,.pdf"></div><button type="submit" id="submitTicketBtn">Submit Ticket</button></form></div><div id="statusPane" style="display:none;"><h2 class="form-title">Check Ticket Status</h2><div class="form-subtitle">Enter the mobile number you used when submitting.</div><label>Mobile Number</label><input type="tel" id="statusMobile" placeholder="Enter your 10-digit mobile number" pattern="[0-9]{10}" maxlength="10" inputmode="numeric" oninput="this.value=this.value.replace(/[^0-9]/g,'').slice(0,10)"><button type="button" class="check-status-btn" onclick="checkTicketStatus()">Check Status</button><div id="statusResults"></div></div></div></div><div class="page-footer">&copy; 2026 Sarathy Pvt Ltd</div><script>
     let allBranchesCache = [];
     let toastTimer = null;
     function showToast(message, isError) {
@@ -662,7 +731,7 @@ button[type="submit"]:active { transform: translateY(0); }
         const container = document.getElementById('statusResults');
         if (container && container.scrollIntoView) container.scrollIntoView({ block: "nearest", behavior: "smooth" });
     }
-        if ("serviceWorker" in navigator) { navigator.serviceWorker.register("/service-worker.js"); }
+        if ("serviceWorker" in navigator) { navigator.serviceWorker.register("/service-worker.js");    }
     </script></body></html>`);
 });
 
@@ -712,7 +781,18 @@ button[type="submit"]:disabled { opacity: .7; cursor: not-allowed; transform: no
 @keyframes spin { to { transform: rotate(360deg); } }
 .page-footer { position: fixed; bottom: 8px; left: 0; width: 100%; text-align: center; font-size: 11px; color: rgba(255,255,255,0.55); letter-spacing: .3px; }
 @media (max-width: 400px) { .login-ribbon { padding: 20px 22px 16px; } .login-body { padding: 22px 22px 26px; } }
-</style></head><body><div class="login-card"><div class="badge-hole"></div><div class="login-ribbon"><img src="/logo.png" alt="Company Logo" onerror="this.style.display='none'"><span class="login-ribbon-text">IT DEPARTMENT SARATHY</span><span class="login-ribbon-sub">Staff &amp; Admin Access</span></div><div class="login-body"><form id="loginForm"><label>Username / Staff Name</label><input type="text" id="username" required><label>Password</label><div class="password-wrapper"><input type="password" id="password" required><button type="button" class="toggle-password" id="togglePassword" aria-label="Show password"><svg id="eyeIcon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button></div><div class="caps-warning" id="capsWarning">Caps Lock is on</div><div class="login-error" id="loginError"></div><button type="submit" id="loginBtn" class="login-submit-btn"><span style="display:flex;align-items:center;justify-content:center;gap:8px;"><svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg> LOGIN</span></button></form></div></div><div class="page-footer">&copy; 2026 Sarathy Pvt Ltd</div><script>
+.admin-toast { position: fixed; top: 20px; right: 20px; background: #fff; color: #1a202c; padding: 16px 20px; border-radius: 12px; font-size: 13px; box-shadow: 0 16px 40px rgba(0,0,0,0.16); z-index: 4000; opacity: 0; transform: translateX(24px); transition: opacity .25s, transform .25s; pointer-events: none; max-width: 340px; text-align: left; border-left: 4px solid #38a169; display: flex; align-items: flex-start; gap: 12px; overflow: hidden; }
+.admin-toast.show { opacity: 1; transform: translateX(0); }
+.admin-toast.error { border-left-color: #e53e3e; }
+.admin-toast-icon { width: 32px; height: 32px; border-radius: 8px; background: #f0fff4; color: #38a169; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.admin-toast.error .admin-toast-icon { background: #fff5f5; color: #e53e3e; }
+.admin-toast-icon svg { width: 18px; height: 18px; }
+.admin-toast-title { font-weight: 700; font-size: 13px; color: #1a202c; margin-bottom: 2px; }
+.admin-toast-message { font-size: 12px; color: #718096; line-height: 1.4; }
+.admin-toast-progress { position: absolute; bottom: 0; left: 0; height: 3px; background: #38a169; animation: toastshrink 4s linear forwards; }
+.admin-toast.error .admin-toast-progress { background: #e53e3e; }
+@keyframes toastshrink { from { width: 100%; } to { width: 0%; } }
+</style></head><body>${INTRO_SPLASH_HTML}<div class="login-card"><div class="badge-hole"></div><div class="login-ribbon"><img src="/logo.png" alt="Company Logo" onerror="this.style.display='none'"><span class="login-ribbon-text">IT DEPARTMENT SARATHY</span><span class="login-ribbon-sub">Staff &amp; Admin Access</span></div><div class="login-body"><form id="loginForm"><label>Username / Staff Name</label><input type="text" id="username" required><label>Password</label><div class="password-wrapper"><input type="password" id="password" required><button type="button" class="toggle-password" id="togglePassword" aria-label="Show password"><svg id="eyeIcon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button></div><div class="caps-warning" id="capsWarning">Caps Lock is on</div><div class="login-error" id="loginError"></div><button type="submit" id="loginBtn" class="login-submit-btn"><span style="display:flex;align-items:center;justify-content:center;gap:8px;"><svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg> LOGIN</span></button></form></div></div><div class="page-footer">&copy; 2026 Sarathy Pvt Ltd</div><div id="adminToast" class="admin-toast"></div><script>
     const loginForm = document.getElementById('loginForm');
     const loginBtn = document.getElementById('loginBtn');
     const loginError = document.getElementById('loginError');
@@ -789,6 +869,7 @@ button[type="submit"]:disabled { opacity: .7; cursor: not-allowed; transform: no
             });
             const data = await response.json();
             if (response.ok && data.success) {
+                try { sessionStorage.setItem("authToast", "login"); } catch (e) {}
                 window.location.href = (data.redirect || '/admin') + '?t=' + Date.now();
                 return;
             }
@@ -807,6 +888,7 @@ button[type="submit"]:disabled { opacity: .7; cursor: not-allowed; transform: no
             loginBtn.innerHTML = loginBtnDefaultHTML;
         }
     });
+    try { var authToast = sessionStorage.getItem("authToast"); sessionStorage.removeItem("authToast"); if (authToast === "logout") { var atEl = document.getElementById("adminToast"); atEl.innerHTML = '<div class="admin-toast-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg></div><div class="admin-toast-text"><div class="admin-toast-title">Success</div><div class="admin-toast-message">Logged out successfully.</div></div><div class="admin-toast-progress"></div>'; atEl.className = "admin-toast show"; setTimeout(function() { atEl.classList.remove("show"); }, 4000); } } catch (e) {}
     </script></body></html>`);
 });
 
@@ -868,6 +950,7 @@ app.post('/login', loginRateLimiter, async (req, res) => {
         req.session.isStaff = true;
         req.session.region = null;
         req.session.username = staffUser.name;
+        staffLastSeen.set(staffUser.name, Date.now()); // active-staff widget: login counts as online
         return res.json({ success: true, redirect: '/admin' });
     }
     res.status(401).json({ error: 'Invalid username or password.' });
@@ -975,7 +1058,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '        .notification-menu::-webkit-scrollbar-thumb { background: #cbd5e0; border-radius: 10px; }' +
 '        .notification-menu.show { display: block; }' +
 '        .notification-head { padding: 12px 14px; font-size: 14px; font-weight: 700; border-bottom: 1px solid #edf2f7; }' +
-'        .notification-item { padding: 12px 14px; border-bottom: 1px solid #edf2f7; font-size: 12px; color: #4a5568; }' +
+'        .notification-item { padding: 12px 14px; border-bottom: 1px solid #edf2f7; font-size: 12px; color: #4a5568; cursor: pointer; }' +
 '        .notification-item.unread { background: #ebf8ff; }' +
 '        .notification-item strong { display: block; color: #2d3748; margin-bottom: 3px; }' +
 '        .notification-empty { padding: 20px; text-align: center; color: #718096; font-size: 13px; }' +
@@ -1000,9 +1083,15 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '        .stat-loading img { width: 130px; height: auto; display: block; }' +
 '        .metric-label { font-size: 11px; font-weight: 600; color: #718096; text-transform: uppercase; letter-spacing: 0.5px; }' +
 '        .metric-value { font-size: 20px; font-weight: 700; color: #2d3748; margin-top: 1px; }' +
+'        .metric-value + .widget-load-gif { height: 20px; width: auto; vertical-align: middle; }' +
+'        .sla-load-gif { display: inline-flex; align-items: center; margin-left: 4px; }' +
+'        .sla-load-gif img { height: 14px; width: auto; vertical-align: middle; }' +
 '        .ticket-card { background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 24px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); position: relative; border-top: 4px solid #3182ce; }' +
+'        .ticket-card.notification-focus { animation: notificationFocusFlash 2.6s ease-out 1; }' +
+'        @keyframes notificationFocusFlash { 0%, 70% { box-shadow: 0 0 0 3px rgba(49, 130, 206, 0.8); } 100% { box-shadow: 0 0 0 0 rgba(49, 130, 206, 0); } }' +
 '        .ticket-card.ticket-resolved { border-top-color: #38a169; }' +
 '        .ticket-card.ticket-escalated { border-top-color: #dd6b20; background: #fffaf0; }' +
+'        .admin-action-warning { margin: 10px 0 0; padding: 9px 12px; background: #fff7ed; border: 1px solid #f59e0b; border-left: 4px solid #dc2626; border-radius: 6px; color: #92400e; font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 8px; }' +
 '        .ticket-card.ticket-high-priority { background: #fff5f5; border: 2px solid #e53e3e; border-top: 4px solid #e53e3e; }' +
 '        .ticket-card.ticket-high-priority .ticket-title { color: #c53030; }' +
 '        .ticket-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; }' +
@@ -1101,9 +1190,41 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '        .page-btn.active { background: #0056b3; border-color: #0056b3; color: #fff; }' +
 '        .page-btn:disabled { opacity: .5; cursor: not-allowed; }' +
 '        .page-ellipsis { padding: 0 4px; color: #a0aec0; font-size: 13px; }' +
+// --- Active-staff widget (toolbar pill + popover) ---
+'        .staff-pill-wrap { position: relative; margin-left: auto; }' +
+'        .staff-pill { display: inline-flex; align-items: center; gap: 8px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 9px 14px; font-size: 12.5px; font-weight: 600; color: #4a5568; cursor: pointer; box-shadow: 0 1px 3px rgba(0,0,0,0.06); white-space: nowrap; }' +
+'        .staff-pill:hover { border-color: #cbd5e0; }' +
+'        .staff-pill-dot { width: 8px; height: 8px; border-radius: 50%; background: #cbd5e0; flex-shrink: 0; }' +
+'        .staff-pill-dot.live { background: #38a169; box-shadow: 0 0 0 3px rgba(56,161,105,0.15); }' +
+'        .staff-pill-caret { font-size: 9px; color: #a0aec0; }' +
+'        .staff-popover { display: none; position: absolute; top: calc(100% + 8px); left: 50%; transform: translateX(-50%); width: 340px; max-width: 80vw; background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; box-shadow: 0 14px 34px rgba(0,0,0,0.16); z-index: 3000; overflow: hidden; text-align: left; }' +
+'        .staff-popover.open { display: block; }' +
+'        .staff-pop-head { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; font-size: 11px; font-weight: 700; letter-spacing: 0.5px; color: #718096; border-bottom: 1px solid #edf2f7; background: #f8fafc; }' +
+'        .staff-pop-refresh { background: none; border: none; color: #3182ce; font-size: 11px; font-weight: 600; cursor: pointer; padding: 0; }' +
+'        .staff-pop-refresh:disabled { cursor: default; opacity: 0.75; }' +
+'        .staff-pop-refresh .admin-spinner { border-color: rgba(49,130,206,0.25); border-top-color: #3182ce; width: 11px; height: 11px; }' +
+'        .staff-pop-body { max-height: 300px; overflow-y: auto; scrollbar-width: thin; transition: opacity 0.15s ease; }' +
+'        .staff-pop-body.loading { opacity: 0.5; }' +
+'        .staff-pop-row { display: flex; align-items: center; gap: 10px; padding: 9px 14px; border-bottom: 1px solid #f1f5f9; font-size: 12.5px; }' +
+'        .staff-pop-row:last-child { border-bottom: none; }' +
+'        .staff-pop-name { font-weight: 600; color: #2d3748; flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }' +
+'        .staff-pop-meta { color: #a0aec0; font-size: 11px; flex-shrink: 0; }' +
+'        .staff-pop-badge { background: #ebf8ff; color: #2b6cb0; border-radius: 10px; padding: 1px 7px; font-size: 10.5px; font-weight: 700; flex-shrink: 0; }' +
+'        .staff-pop-badge.zero { background: #f1f5f9; color: #94a3b8; }' +
+'        .staff-pop-empty { padding: 18px 14px; text-align: center; color: #a0aec0; font-size: 12px; }' +
+'        .staff-pop-foot { padding: 8px 14px; border-top: 1px solid #edf2f7; background: #f8fafc; display: flex; align-items: center; justify-content: space-between; font-size: 11px; color: #718096; }' +
+'        .staff-pop-foot a { color: #3182ce; font-weight: 600; cursor: pointer; text-decoration: none; }' +
+// --- Status count widget (monthly resolved / escalated totals in toolbar) ---
+'        .status-pill-wrap { position: relative; margin-left: auto; display: none; }' +
+'        .status-pill { display: inline-flex; align-items: center; gap: 8px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 9px 14px; font-size: 12.5px; font-weight: 600; color: #4a5568; box-shadow: 0 1px 3px rgba(0,0,0,0.06); white-space: nowrap; }' +
+'        .status-pill-badge { width: 18px; height: 18px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; color: #fff; background: #38a169; flex-shrink: 0; }' +
+'        .status-pill-wrap.escalated .status-pill-badge { background: #dd6b20; }' +
+'        .status-pill-count { background: #f1f5f9; color: #2d3748; border-radius: 10px; padding: 1px 8px; font-size: 12px; font-weight: 700; }' +
+'        #ticketToolbarRow.has-status-pill .staff-pill-wrap { margin-left: 0; }' +
+'        @media (max-width: 1100px) { .staff-pill-label { display: none; } .status-pill-label { display: none; } }' +
 '    </style>' +
 '</head>' +
-'<body>' +
+'<body>' + INTRO_SPLASH_HTML +
 '    <div class="confirm-overlay" id="confirmOverlay">' +
 '        <div class="confirm-box">' +
 '            <p id="confirmMessage"></p>' +
@@ -1120,7 +1241,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '    <aside class="sidebar" id="sidebar">' +
 '        <div class="sidebar-brand" style="cursor:pointer;" onclick="window.location.href=\'/admin\'" title="Refresh dashboard">' +
 '                <img src="/logo.png" alt="Logo" class="sidebar-logo" onerror="this.style.display=\'none\'">' +
-'                <span class="sidebar-title">IT DEPARTMENT SARATHY</span>' +
+'                <span class="sidebar-title">IT DEPARTMENT</span>' +
 '            </div>' +
 '            <div class="sidebar-scroll">' +
 '            <div class="menu-category">Navigation</div>' +
@@ -1159,8 +1280,12 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                    <div class="metric-card escalated" onclick="statCardClick(\'Escalated\')"><div class="metric-icon-badge metric-icon-amber"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg></div><div class="metric-label">Escalated Tickets</div><div class="metric-value" id="statEscalated">0</div><div class="metric-subtitle">Needs admin action</div></div>' +
 '                    <div class="metric-card assigned" onclick="statCardClick(\'all\')"><div class="metric-icon-badge metric-icon-red"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v2z"></path><line x1="13" y1="5" x2="13" y2="19"></line></svg></div><div class="metric-label">Total Tickets</div><div class="metric-value" id="statMine">0</div><div class="metric-subtitle">All requests in scope</div></div>' +
 '                </div>' +
-'                <div style="margin-bottom: 12px; display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap;">' +
+'                <div id="ticketToolbarRow" style="margin-bottom: 12px; display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap;">' +
 '                    <button type="button" id="toggleFilterBtn" class="branch-add-btn" onclick="toggleFilterPanel()" style="display:inline-flex; align-items:center; gap:8px; padding: 9px 18px;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>Filters</button>' +
+// Status count widget: shows only on the Resolved/Escalated dashboard views (set by JS).
+'                    <div class="status-pill-wrap" id="statusPillWrap"><span class="status-pill"><span class="status-pill-badge" id="statusPillIcon">&#10003;</span><span class="status-pill-label" id="statusPillLabel">Resolved total</span><span class="status-pill-count" id="statusPillCount">0</span></span></div>' +
+// Active-staff widget: pill sits in the gap between Filters and the SLA strip; admins only.
+(isAdminUser ? '                    <div class="staff-pill-wrap" id="staffPillWrap"><button type="button" class="staff-pill" id="staffPill" onclick="toggleStaffPopover(event)" title="Active staff"><span class="staff-pill-dot" id="staffPillDot"></span><span class="staff-pill-label">Staff activity</span><span id="staffPillCount">&mdash;</span><span class="staff-pill-caret">&#9662;</span></button><div class="staff-popover" id="staffPopover"><div class="staff-pop-head"><span>ACTIVE STAFF</span><button type="button" class="staff-pop-refresh" onclick="loadStaffPresence(true)">Refresh</button></div><div class="staff-pop-body" id="staffPopBody"><div class="staff-pop-empty">Loading&hellip;</div></div><div class="staff-pop-foot"><span id="staffPopSummary"></span><a onclick="switchView(\'staff\'); closeStaffPopover()">View all staff &rarr;</a></div></div></div>' : '') +
 '                    <div id="slaSummary" onclick="toggleSlaFilter()" title="Click to show breached tickets" style="cursor:pointer; display:flex; align-items:center; gap:8px; background:#ffffff; border:1px solid #e2e8f0; border-radius:8px; padding:9px 14px; font-size:12.5px; font-weight:600; color:#4a5568; box-shadow:0 1px 3px rgba(0,0,0,0.06); white-space:nowrap;"><span style="color:#2d3748; letter-spacing:0.5px;">SLA</span><span id="slaBreached" style="color:#c53030;">0 breached</span><span style="color:#cbd5e0;">&middot;</span><span id="slaRisk" style="color:#dd6b20;">0 at risk</span><span style="color:#cbd5e0;">&middot;</span><span id="slaOnTrack" style="color:#2f855a;">0 on track</span><span style="color:#cbd5e0;">&middot;</span><span id="slaStale" style="color:#718096;">0 in last 24h</span></div>' +
 '                </div>' +
 '                <div class="branch-panel-card" id="ticketFilterPanel" style="display:none; margin-bottom: 20px; align-items: flex-end; gap: 14px; flex-wrap: wrap;">' +
@@ -1331,6 +1456,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '        const isSuperAdmin = ' + dynamicIsSuperAdmin + ';' +
 '        document.getElementById("displayUserLabel").innerText = currentUser;' +
 '        let knownNotificationIds = new Set();' +
+'        let lastNotifications = [];' +
 '        let notificationsInitialized = false;' +
 '        const notifAudio = new Audio("/notification.mp3");' +
 '        notifAudio.preload = "auto";' +
@@ -1367,6 +1493,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                const response = await fetch("/notifications");' +
 '                if (!response.ok) return;' +
 '                const notifications = await response.json();' +
+'                lastNotifications = notifications;' +
 '                const unread = notifications.filter(n => !n.read);' +
 '                const count = document.getElementById("notificationCount");' +
 '                count.innerText = unread.length > 99 ? "99+" : unread.length;' +
@@ -1379,6 +1506,74 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                notificationsInitialized = true;' +
 '            } catch (err) { console.warn("Could not load notifications."); }' +
 '        }' +
+'        document.getElementById("notificationList").addEventListener("click", function (e) {' +
+'            if (e.target.closest("button")) return;' +
+'            const item = e.target.closest(".notification-item");' +
+'            if (!item) return;' +
+'            const items = e.currentTarget.querySelectorAll(".notification-item");' +
+'            const idx = [].indexOf.call(items, item);' +
+'            if (idx >= 0) openNotificationTicket(idx);' +
+'        });' +
+'        function focusTicketCard(ticketKey) {' +
+'            var tries = 0;' +
+'            var timer = setInterval(function () {' +
+'                var cards = document.querySelectorAll("#ticketList .ticket-card");' +
+'                var card = null;' +
+'                for (var i = 0; i < cards.length; i++) { if (cards[i].getAttribute("data-ticket-id") === ticketKey) { card = cards[i]; break; } }' +
+'                if (card) {' +
+'                    clearInterval(timer);' +
+'                    card.scrollIntoView({ behavior: "smooth", block: "center" });' +
+'                    card.classList.remove("notification-focus");' +
+'                    void card.offsetWidth;' +
+'                    card.classList.add("notification-focus");' +
+'                    setTimeout(function () { card.classList.remove("notification-focus"); }, 3000);' +
+'                } else if (++tries >= 10) { clearInterval(timer); }' +
+'            }, 300);' +
+'        }' +
+'        async function openNotificationTicket(index) {' +
+'            var n = lastNotifications[index];' +
+'            var menu = document.getElementById("notificationMenu");' +
+'            if (menu) menu.classList.remove("show");' +
+'            if (!n || !n.ticketId) { showAdminToast("This notification has no linked ticket.", true); return; }' +
+'            var targetId = String(n.ticketId);' +
+'            var epoch = ++statLoadingEpoch;' +
+'            var start = Date.now();' +
+'            var overlay = showStatLoading();' +
+'            var failed = false;' +
+'            var work = (async function () {' +
+'                const res = await fetch("/tickets", { cache: "no-store" });' +
+'                if (!res.ok) throw new Error("Could not load tickets (" + res.status + ").");' +
+'                const all = await res.json();' +
+'                let list = all.filter(t => t.status === "Open");' +
+'                let status = "default-view";' +
+'                let idx = list.findIndex(t => String(t._id) === targetId);' +
+'                if (idx < 0) { list = sortOpenFirstThenResolvedByRecency(all); status = "all"; idx = list.findIndex(t => String(t._id) === targetId); }' +
+'                if (idx < 0) throw new Error("This ticket is not available in your view.");' +
+'                ["filterFromDate", "filterToDate", "filterCategory", "filterStaff", "filterRegion", "filterSearchText"].forEach(function (fid) { var el = document.getElementById(fid); if (el) el.value = ""; });' +
+'                currentStatusFilter = status;' +
+'                currentPage = Math.floor(idx / PAGE_SIZE) + 1;' +
+'                if (!n.read) markNotificationRead(n._id).catch(function () {});' +
+'                switchView("tickets");' +
+'            })();' +
+'            Promise.resolve(work).catch(function (err) {' +
+'                if (epoch !== statLoadingEpoch) return;' +
+'                failed = true;' +
+'                removeStatLoading();' +
+'                showAdminToast(err && err.message ? err.message : "Could not open the ticket.", true);' +
+'            }).finally(function () {' +
+'                if (failed || epoch !== statLoadingEpoch) return;' +
+'                var remain = 2700 - (Date.now() - start);' +
+'                if (remain <= 0) { removeStatLoading(); focusTicketCard(targetId); return; }' +
+'                var keep = setInterval(function () {' +
+'                    if (epoch !== statLoadingEpoch) { clearInterval(keep); return; }' +
+'                    if (!document.querySelector("#ticketList .stat-loading")) showStatLoading();' +
+'                }, 40);' +
+'                setTimeout(function () {' +
+'                    clearInterval(keep);' +
+'                    if (epoch === statLoadingEpoch) { removeStatLoading(); focusTicketCard(targetId); }' +
+'                }, remain);' +
+'            });' +
+'        }' +
 '        let inactivityTimer = null;' +
 '        function resetInactivityTimer() {' +
 '            clearTimeout(inactivityTimer);' +
@@ -1386,6 +1581,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '        }' +
 '        function handleLogoutClick() {' +
 '            document.getElementById("logoutBtn").innerHTML = \'<span class="admin-spinner"></span>Logging out...\';' +
+'            try { sessionStorage.setItem("authToast", "logout"); } catch (e) {}' +
 '        }' +
 '        ["mousemove", "keydown", "click", "scroll", "touchstart"].forEach(evt => {' +
 '            document.addEventListener(evt, resetInactivityTimer);' +
@@ -1842,8 +2038,47 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            });' +
 '        }' +
 '        function toggleSlaFilter() { filterByStatus(currentStatusFilter === "SLA" ? "default-view" : "SLA"); }' +
+'        var widgetsLoadEpochCounter = 0;' +
+'        function showWidgetsLoading() {' +
+'            ["statOpen", "statResolved", "statEscalated", "statMine"].forEach(function (id) {' +
+'                var el = document.getElementById(id);' +
+'                if (!el) return;' +
+'                el.style.visibility = "hidden";' +
+'                var nx = el.nextElementSibling;' +
+'                if (!nx || !nx.classList || !nx.classList.contains("widget-load-gif")) {' +
+'                    var img = document.createElement("img");' +
+'                    img.src = "/loading.gif";' +
+'                    img.alt = "Loading";' +
+'                    img.className = "widget-load-gif";' +
+'                    el.parentNode.insertBefore(img, el.nextSibling);' +
+'                }' +
+'            });' +
+'            var sla = document.getElementById("slaSummary");' +
+'            if (sla && !sla.querySelector(".sla-load-gif")) {' +
+'                var holder = document.createElement("span");' +
+'                holder.className = "sla-load-gif";' +
+'                var sImg = document.createElement("img");' +
+'                sImg.src = "/loading.gif";' +
+'                sImg.alt = "Loading";' +
+'                holder.appendChild(sImg);' +
+'                sla.appendChild(holder);' +
+'            }' +
+'        }' +
+'        function hideWidgetsLoading() {' +
+'            ["statOpen", "statResolved", "statEscalated", "statMine"].forEach(function (id) {' +
+'                var el = document.getElementById(id);' +
+'                if (el) el.style.visibility = "";' +
+'            });' +
+'            var gifs = document.querySelectorAll(".metric-value + .widget-load-gif");' +
+'            for (var gi = 0; gi < gifs.length; gi++) { if (gifs[gi].parentNode) gifs[gi].parentNode.removeChild(gifs[gi]); }' +
+'            var h = document.querySelector("#slaSummary .sla-load-gif");' +
+'            if (h && h.parentNode) h.parentNode.removeChild(h);' +
+'        }' +
 '        async function loadTickets() {' +
 '            try {' +
+'                var widgetsLoadStart = Date.now();' +
+'                var myWidgetsEpoch = ++widgetsLoadEpochCounter;' +
+'                showWidgetsLoading();' +
 '            const controller = new AbortController();' +
 '            const timeout = setTimeout(() => controller.abort(), 15000);' +
 '            const response = await fetch("/tickets", { signal: controller.signal, cache: "no-store" });' +
@@ -1881,11 +2116,16 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            if (fromVal) { const fromDate = new Date(fromVal + "T00:00:00"); tickets = tickets.filter(t => t.createdAt && new Date(t.createdAt) >= fromDate); }' +
 '            if (toVal) { const toDate = new Date(toVal + "T23:59:59"); tickets = tickets.filter(t => t.createdAt && new Date(t.createdAt) <= toDate); }' +
 '            document.getElementById("statOpen").innerText = tickets.filter(t => t.status === "Open").length;' +
-'            document.getElementById("statResolved").innerText = tickets.filter(t => t.status === "Resolved").length;' +
+'            document.getElementById("statResolved").innerText = tickets.filter(t => t.status === "Resolved" && t.resolvedAt && istMonthKey(new Date(t.resolvedAt).getTime()) === istMonthKey(Date.now())).length;' +
 '            document.getElementById("statEscalated").innerText = tickets.filter(t => t.escalated && t.status !== "Resolved").length;' +
 '            document.getElementById("statMine").innerText = tickets.length;' +
+// Widget counts come from the pre-status-filter set (matches each card exactly).
+'            updateStatusCountWidget(currentStatusFilter, tickets);' +
 '            window.__slaTickets = tickets;' +
 '            updateSlaSummary(tickets);' +
+'            var widgetsRemain = 1000 - (Date.now() - widgetsLoadStart);' +
+'            if (widgetsRemain <= 0) { if (myWidgetsEpoch === widgetsLoadEpochCounter) hideWidgetsLoading(); }' +
+'            else setTimeout(function () { if (myWidgetsEpoch === widgetsLoadEpochCounter) hideWidgetsLoading(); }, widgetsRemain);' +
 '            if (currentStatusFilter === "default-view") { tickets = tickets.filter(t => t.status === "Open"); }' +
 '            else if (currentStatusFilter === "Escalated") { tickets = tickets.filter(t => t.escalated); tickets = sortOpenFirstThenResolvedByRecency(tickets); }' +
 '            else if (currentStatusFilter === "Resolved") { tickets = tickets.filter(t => t.status === "Resolved"); tickets.sort((a, b) => new Date(b.resolvedAt || 0) - new Date(a.resolvedAt || 0)); }' +
@@ -1924,12 +2164,15 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                        commentListHtml += \'<div class="comment-item"><strong>\'+escHtml(c.author)+\':</strong> \'+escHtml(c.text)+(c.attachment ? \' <a href="\'+escHtml(c.attachment)+\'" target="_blank">\uD83D\uDCCE Attachment</a>\' : "")+\'</div>\';' +
 '                    });' +
 '                }' +
-'                ticketCardsHtml += \'<div class="ticket-card \'+cardStateClass+\'"><div class="ticket-header"><div><h3 class="ticket-title">#\'+(ticket.displayNumber || String(ticket.ticketNumber).padStart(4,"0"))+\' \'+escHtml(ticket.title)+\'</h3><div style="margin-top: 8px;"><span class="badge p-\'+escHtml(ticket.priority)+\'">\'+escHtml(ticket.priority)+\'</span><span class="badge status-\'+ticket.status.toLowerCase()+\'">\'+ticket.status+\'</span><span class="badge badge-category">\'+escHtml(ticket.category || "Other")+\'</span>\'+escalatedBadge+slaBadgeHtml(ticket)+\'</div></div>\'+actionsHtml+\'</div><p class="ticket-desc">\'+escHtml(ticket.description)+\'</p>\'+imageHtml+\'<div class="assignment-info"><div class="assignment-row"><span class="assignment-label">Submitted By</span><span class="assignment-value">\'+escHtml(ticket.submittedBy || "Unknown")+(ticket.designation ? " ("+escHtml(ticket.designation)+")" : "")+\'</span></div><div class="assignment-row"><span class="assignment-label">Branch</span><span class="assignment-value">\'+escHtml(ticket.branch)+\'</span></div><div class="assignment-row"><span class="assignment-label">Mobile</span><span class="assignment-value">\'+escHtml(ticket.mobile)+\'</span></div><div class="assignment-row"><span class="assignment-label">Assigned</span><span class="assignment-value">\'+escHtml(ticket.assignedTo)+\'</span></div><div class="assignment-row"><span class="assignment-label">Submitted</span><span class="assignment-value">\'+(ticket.createdAt ? new Date(ticket.createdAt).toLocaleString() : "N/A")+\'</span></div>\'+escalationLine+resolvedLine+\'</div><div class="comments-section"><h4 class="comments-header">Internal Work Notes</h4><div>\'+(commentListHtml || "No updates.")+\'</div><div class="comment-form"><input type="text" id="input-\'+ticket._id+\'" placeholder="Write operational update..."><label class="comment-attach-btn" title="Attach a file (optional)">📎<input type="file" id="attachment-\'+ticket._id+\'" style="display:none;" accept="image/jpeg,image/png,image/webp,image/gif,application/pdf,.jpg,.jpeg,.png,.webp,.gif,.pdf" onchange="updateAttachmentLabel(\\\'\'+ticket._id+\'\\\')"></label><span id="attachmentName-\'+ticket._id+\'" class="attachment-name-tag"></span><button onclick="addComment(\\\'\'+ticket._id+\'\\\')">Post</button></div></div></div>\';' +
+'                ticketCardsHtml += \'<div class="ticket-card \'+cardStateClass+\'" data-ticket-id="\'+ticket._id+\'"><div class="ticket-header"><div><h3 class="ticket-title">#\'+(ticket.displayNumber || String(ticket.ticketNumber).padStart(4,"0"))+\' \'+escHtml(ticket.title)+\'</h3><div style="margin-top: 8px;"><span class="badge p-\'+escHtml(ticket.priority)+\'">\'+escHtml(ticket.priority)+\'</span><span class="badge status-\'+ticket.status.toLowerCase()+\'">\'+ticket.status+\'</span><span class="badge badge-category">\'+escHtml(ticket.category || "Other")+\'</span>\'+escalatedBadge+slaBadgeHtml(ticket)+\'</div></div>\'+actionsHtml+\'</div><p class="ticket-desc">\'+escHtml(ticket.description)+\'</p>\'+imageHtml+(ticket.needsAdminAction?\'<div class="admin-action-warning">&#9888; <span>Needs admin action required: not yet allocated to any staff</span></div>\':\'\')+\'<div class="assignment-info"><div class="assignment-row"><span class="assignment-label">Submitted By</span><span class="assignment-value">\'+escHtml(ticket.submittedBy || "Unknown")+(ticket.designation ? " ("+escHtml(ticket.designation)+")" : "")+\'</span></div><div class="assignment-row"><span class="assignment-label">Branch</span><span class="assignment-value">\'+escHtml(ticket.branch)+\'</span></div><div class="assignment-row"><span class="assignment-label">Mobile</span><span class="assignment-value">\'+escHtml(ticket.mobile)+\'</span></div><div class="assignment-row"><span class="assignment-label">Assigned</span><span class="assignment-value">\'+escHtml(ticket.assignedTo)+\'</span></div><div class="assignment-row"><span class="assignment-label">Submitted</span><span class="assignment-value">\'+(ticket.createdAt ? new Date(ticket.createdAt).toLocaleString() : "N/A")+\'</span></div>\'+escalationLine+resolvedLine+\'</div><div class="comments-section"><h4 class="comments-header">Internal Work Notes</h4><div>\'+(commentListHtml || "No updates.")+\'</div><div class="comment-form"><input type="text" id="input-\'+ticket._id+\'" placeholder="Write operational update..."><label class="comment-attach-btn" title="Attach a file (optional)">📎<input type="file" id="attachment-\'+ticket._id+\'" style="display:none;" accept="image/jpeg,image/png,image/webp,image/gif,application/pdf,.jpg,.jpeg,.png,.webp,.gif,.pdf" onchange="updateAttachmentLabel(\\\'\'+ticket._id+\'\\\')"></label><span id="attachmentName-\'+ticket._id+\'" class="attachment-name-tag"></span><button onclick="addComment(\\\'\'+ticket._id+\'\\\')">Post</button></div></div></div>\';' +
 '            });' +
 '            listDiv.innerHTML = ticketCardsHtml;' +
 '            tickSlaClocks();' +
 '            renderPagination(totalFilteredCount);' +
 '            } catch (err) {' +
+'                var widgetsErrRemain = 1000 - (Date.now() - widgetsLoadStart);' +
+'                if (widgetsErrRemain <= 0) { if (myWidgetsEpoch === widgetsLoadEpochCounter) hideWidgetsLoading(); }' +
+'                else setTimeout(function () { if (myWidgetsEpoch === widgetsLoadEpochCounter) hideWidgetsLoading(); }, widgetsErrRemain);' +
 '                console.error("Could not load tickets:", err);' +
 '                const message = err.name === "AbortError" ? "Ticket loading timed out. Check that the MongoDB connection is available." : "Could not load tickets. Please refresh the page. If this continues, check the server connection.";' +
 '                document.getElementById("ticketList").innerHTML = \'<p style="text-align:center;color:#c53030;padding:40px 0;">\'+message+\'</p>\';' +
@@ -1964,7 +2207,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 'async function addNewRegion() {' +
 '    const input = document.getElementById("newRegionName");' +
 '    const name = input.value.trim();' +
-'    if (!name) return;' +
+'    if (!name) { showAdminToast("Please enter a region name.", true); return; }' +
 '    const btn = document.getElementById("addRegionBtn");' +
 '    const defaultHTML = btn.innerHTML;' +
 '    btn.disabled = true;' +
@@ -2484,6 +2727,118 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                if (response.ok) { const messages = await response.json(); updateInboxBadge(messages); }' +
 '            } catch (err) { /* ignore */ }' +
 '        }' +
+// --- Active-staff widget: roster + online dots + open-ticket counts ---
+'        async function loadStaffPresence(force) {' +
+'            const wrap = document.getElementById("staffPillWrap");' +
+'            if (!wrap) return; /* staff users never get the pill */' +
+'            const btn = document.querySelector(".staff-pop-refresh");' +
+'            const body = document.getElementById("staffPopBody");' +
+'            const popover = document.getElementById("staffPopover");' +
+'            const isOpen = !!(popover && popover.classList.contains("open"));' +
+'            if (btn && btn.disabled) return; /* one refresh at a time */' +
+'            const btnHTML = btn ? btn.innerHTML : "";' +
+'            let btnWidth = "";' +
+'            if (isOpen && btn) {' +
+'                btn.disabled = true;' +
+'                if (btn.offsetWidth) { btnWidth = btn.style.width; btn.style.width = btn.offsetWidth + "px"; }' +
+'                btn.innerHTML = `<span class="admin-spinner"></span>`;' +
+'            }' +
+'            if (isOpen && body) body.classList.add("loading");' +
+'            const started = Date.now();' +
+'            try {' +
+'                const response = await fetch("/tickets/staff-presence");' +
+'                if (response.ok) renderStaffPresence(await response.json());' +
+'            } catch (err) { /* keep last known rendering on transient errors */ }' +
+'            finally {' +
+'                /* a manual refresh always spins briefly so the click is felt */' +
+'                if (force) {' +
+'                    const remain = 500 - (Date.now() - started);' +
+'                    if (remain > 0) await new Promise(r => setTimeout(r, remain));' +
+'                }' +
+'                if (isOpen && btn) { btn.disabled = false; btn.style.width = btnWidth; btn.innerHTML = btnHTML; }' +
+'                if (isOpen && body) body.classList.remove("loading");' +
+'            }' +
+'        }' +
+'        function staffSeenAgo(ts) {' +
+'            const mins = Math.floor((Date.now() - ts) / 60000);' +
+'            if (mins < 1) return "just now";' +
+'            if (mins < 60) return mins + "m ago";' +
+'            const hrs = Math.floor(mins / 60);' +
+'            if (hrs < 24) return hrs + "h ago";' +
+'            return Math.floor(hrs / 24) + "d ago";' +
+'        }' +
+'        function renderStaffPresence(data) {' +
+'            const rows = (data.staff || []).slice().sort((a, b) => {' +
+'                if (!!b.online - !!a.online) return !!b.online - !!a.online;' +
+'                if ((b.openTickets || 0) - (a.openTickets || 0)) return (b.openTickets || 0) - (a.openTickets || 0);' +
+'                return String(a.name).localeCompare(String(b.name));' +
+'            });' +
+'            const onlineCount = rows.filter(r => r.online).length;' +
+'            const countEl = document.getElementById("staffPillCount");' +
+'            if (countEl) countEl.textContent = onlineCount + " / " + rows.length + " online";' +
+'            const dot = document.getElementById("staffPillDot");' +
+'            if (dot) dot.classList.toggle("live", onlineCount > 0);' +
+'            const summary = document.getElementById("staffPopSummary");' +
+'            if (summary) summary.textContent = onlineCount + " active \u00b7 " + (rows.length - onlineCount) + " offline";' +
+'            const body = document.getElementById("staffPopBody");' +
+'            if (!body) return;' +
+'            if (!rows.length) { body.innerHTML = `<div class="staff-pop-empty">No staff members found.</div>`; return; }' +
+'            body.innerHTML = rows.map(r => {' +
+'                const badge = `<span class="staff-pop-badge${(r.openTickets || 0) ? "" : " zero"}" title="Open tickets">${r.openTickets || 0}</span>`;' +
+'                const seen = r.online ? "" : `<span class="staff-pop-meta">${r.lastSeen ? "seen " + staffSeenAgo(r.lastSeen) : "idle"}</span>`;' +
+'                return `<div class="staff-pop-row"><span class="staff-pill-dot${r.online ? " live" : ""}"></span>` +' +
+'                    `<span class="staff-pop-name">${escHtml(r.name)}</span>` +' +
+'                    `<span class="staff-pop-meta">${escHtml(r.staffId || "")}${r.region ? " &middot; " + escHtml(r.region) : ""}</span>` +' +
+'                    badge + seen + `</div>`;' +
+'            }).join("");' +
+'        }' +
+'        function toggleStaffPopover(e) {' +
+'            if (e) e.stopPropagation();' +
+'            const pop = document.getElementById("staffPopover");' +
+'            if (!pop) return;' +
+'            const willOpen = !pop.classList.contains("open");' +
+'            pop.classList.toggle("open", willOpen);' +
+'            if (willOpen) loadStaffPresence();' +
+'        }' +
+'        function closeStaffPopover() {' +
+'            const pop = document.getElementById("staffPopover");' +
+'            if (pop) pop.classList.remove("open");' +
+'        }' +
+'        document.addEventListener("click", (e) => {' +
+'            const wrap = document.getElementById("staffPillWrap");' +
+'            if (wrap && !wrap.contains(e.target)) closeStaffPopover();' +
+'        });' +
+'        document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeStaffPopover(); });' +
+// --- Monthly-resolved helper + status count widget --------------------------
+// Month key in IST (same boundary math as the SLA helpers): the Resolved stat
+// card recomputes from the current date on every load, so it rolls over exactly
+// at 00:00 IST on day 1 with no stored counter and no cron job.
+'        function istMonthKey(ts) { var d = new Date(ts + IST_OFFSET); return d.getUTCMonth() + "/" + d.getUTCFullYear(); }' +
+'        function updateStatusCountWidget(statusFilter, list) {' +
+'            const wrap = document.getElementById("statusPillWrap");' +
+'            const row = document.getElementById("ticketToolbarRow");' +
+'            if (!wrap) return;' +
+'            let show = false, variant = "resolved", label = "Resolved total", count = 0;' +
+'            if (statusFilter === "Resolved") {' +
+'                show = true;' +
+'                count = list.filter(t => t.status === "Resolved").length;' +
+'            } else if (statusFilter === "Escalated") {' +
+'                show = true; variant = "escalated"; label = "Escalated total";' +
+'                count = list.filter(t => t.escalated).length;' +
+'            }' +
+'            wrap.style.display = show ? "inline-flex" : "none";' +
+'            wrap.classList.toggle("resolved", show && variant === "resolved");' +
+'            wrap.classList.toggle("escalated", show && variant === "escalated");' +
+'            if (show) {' +
+'                const labelEl = document.getElementById("statusPillLabel");' +
+'                const countEl = document.getElementById("statusPillCount");' +
+'                const iconEl = document.getElementById("statusPillIcon");' +
+'                if (labelEl) labelEl.textContent = label;' +
+'                if (countEl) countEl.textContent = String(count);' +
+'                if (iconEl) iconEl.innerHTML = variant === "escalated" ? "&#9888;" : "&#10003;";' +
+'            }' +
+'            if (row) row.classList.toggle("has-status-pill", show);' +
+'        }' +
 '        async function updateStaffBranches(staffId) {' +
 '            const checks = document.querySelectorAll(".branch-check-" + staffId);' +
 '            const branches = Array.from(checks).filter(c => c.checked).map(c => c.value);' +
@@ -2711,6 +3066,8 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '        setInterval(tickSlaClocks, 1000);' +
 '        pollInboxBadge();' +
 '        setInterval(pollInboxBadge, 30000);' +
+'        loadStaffPresence();' +
+'        setInterval(loadStaffPresence, 30000);' +
 '        loadStaffFilterOptions();' +
 '        loadRegionFilterOptions();' +
 '        let pendingRefresh = null;' +
@@ -2722,6 +3079,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '        } else {' +
 '            loadTickets();' +
 '        }' +
+'        try { var authToast = sessionStorage.getItem("authToast"); sessionStorage.removeItem("authToast"); if (authToast === "login") { setTimeout(function() { showAdminToast("Logged in successfully."); }, 350); } } catch (e) {}' +
 
 '    </script>' +
 '    <script>(function(){var s=document.createElement("script");s.src="/admin_features.js";document.head.appendChild(s);})()</script>' +
@@ -2748,7 +3106,15 @@ app.get('/tickets', checkUserLogin, async (req, res) => {
             order: [['id', 'DESC']],
             include: [{ model: TicketComment, as: 'comments', separate: true, order: [['createdAt', 'ASC']] }]
         });
-        res.json(tickets.map(serializeTicket));
+        // Escalated + unresolved + assignee is not an IT staff member = still sitting
+        // with an admin, i.e. it needs admin action. An admin's Reallocate is the only
+        // action that makes the assignee a staff name, which releases the warning.
+        const staffNames = new Set((await Staff.findAll({ attributes: ['name'] })).map(st => st.name));
+        res.json(tickets.map(t => {
+            const ser = serializeTicket(t);
+            ser.needsAdminAction = !!ser.escalated && ser.status !== 'Resolved' && !staffNames.has(ser.assignedTo);
+            return ser;
+        }));
     } catch (err) {
         console.error('Could not load tickets:', err.message);
         res.status(500).json({ error: 'Could not load tickets.' });
@@ -3311,6 +3677,40 @@ app.get('/tickets/staff-list', checkAdminLogin, async (req, res) => {
     res.json(staff.map(s => ({ id: s.staffId, name: s.name, email: s.email, region: s.region })));
 });
 
+// Active-staff widget data: the roster in the caller's scope (same region rule as
+// /tickets/staff-list) with an online flag from the in-memory last-seen map and a
+// count of currently open (non-resolved) tickets assigned to each person. Read-only.
+app.get('/tickets/staff-presence', checkAdminLogin, async (req, res) => {
+    try {
+        const where = req.session.isSuperAdmin ? {} : { region: req.session.region };
+        const staff = await Staff.findAll({ where, order: [['staffId', 'ASC']] });
+        const openTickets = await Ticket.findAll({
+            attributes: ['assignedTo'],
+            where: { status: { [Op.ne]: 'Resolved' } },
+            raw: true
+        });
+        const openByStaff = {};
+        openTickets.forEach(t => { openByStaff[t.assignedTo] = (openByStaff[t.assignedTo] || 0) + 1; });
+        const now = Date.now();
+        res.json({
+            onlineWindowMs: STAFF_ONLINE_WINDOW_MS,
+            staff: staff.map(s => {
+                const lastSeen = staffLastSeen.get(s.name) || null;
+                return {
+                    staffId: s.staffId,
+                    name: s.name,
+                    region: s.region,
+                    online: !!lastSeen && (now - lastSeen) <= STAFF_ONLINE_WINDOW_MS,
+                    lastSeen,
+                    openTickets: openByStaff[s.name] || 0
+                };
+            })
+        });
+    } catch (err) {
+        console.error('Request failed:', err.message); res.status(500).json({ error: 'Something went wrong. Please try again.' });
+    }
+});
+
 // Recent admin activity — staff/branch changes
 app.get('/audit-log', checkSuperAdminLogin, async (req, res) => {
     const entries = await AuditLog.findAll({ order: [['createdAt', 'DESC']], limit: 200 });
@@ -3399,6 +3799,7 @@ app.delete('/tickets/staff/:staffId', checkAdminLogin, async (req, res) => {
         }
         await Staff.destroy({ where: { staffId: req.params.staffId } });
         await StaffBranchAssignment.destroy({ where: { staffId: req.params.staffId } });
+        staffLastSeen.delete(existingStaff.name); // active-staff widget: remove presence on delete
         await logAudit(req.session.username, 'Delete Staff', `Removed staff ${req.params.staffId}`);
         res.json({ success: true });
     } catch (err) {
