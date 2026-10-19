@@ -1,0 +1,6 @@
+# Auto-detect text files and normalize line endings to LF in the repository,
+# while leaving the working-tree files untouched. This stops git's
+# autocrlf round-trip from reporting an entire file as changed when only a
+# few lines differ (e.g. server.js showing a ~8500-line diff for a ~330-line
+# change). Safe for all collaborators: it imposes no specific EOL on checkout.
+* text=auto

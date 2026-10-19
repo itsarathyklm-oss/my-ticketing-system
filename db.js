@@ -96,7 +96,9 @@ const RegionAdmin = sequelize.define('RegionAdmin', {
     name: { type: DataTypes.STRING(150), allowNull: false },
     username: { type: DataTypes.STRING(100), allowNull: false, unique: true },
     password: { type: DataTypes.STRING(255), allowNull: false },
-    region: { type: DataTypes.STRING(120), allowNull: false },
+    // Comma-separated region list (e.g. "KOLLAM, TRIVANDRUM") — a region admin can
+    // now be assigned multiple regions; widened on boot by ensureRegionAdminColumns().
+    region: { type: DataTypes.STRING(500), allowNull: false },
     enabled: { type: DataTypes.BOOLEAN, defaultValue: true }
 }, { tableName: 'region_admins', timestamps: false });
 
@@ -220,9 +222,25 @@ async function ensureBranchCodeColumns() {
     }
 }
 
+// Widen region_admins.region when it was created narrower (the model originally
+// declared 120 chars) so one row can hold several comma-separated region names.
+// Reads CHARACTER_MAXIMUM_LENGTH first and only issues the MODIFY when needed,
+// so it is idempotent and safe on every boot — same pattern as above.
+async function ensureRegionAdminColumns() {
+    const [[col]] = await sequelize.query(
+        'SELECT CHARACTER_MAXIMUM_LENGTH AS len FROM information_schema.COLUMNS ' +
+        'WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = :table AND COLUMN_NAME = :column',
+        { replacements: { table: 'region_admins', column: 'region' } }
+    );
+    if (col && Number(col.len) < 500) {
+        await sequelize.query('ALTER TABLE region_admins MODIFY COLUMN region VARCHAR(500) NOT NULL');
+    }
+}
+
 module.exports = {
     sequelize,
     ensureBranchCodeColumns,
+    ensureRegionAdminColumns,
     Region,
     Branch,
     Staff,

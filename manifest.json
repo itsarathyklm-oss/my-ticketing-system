@@ -1,6 +1,7 @@
 {
   "name": "Sarathy IT Helpdesk",
   "short_name": "Sarathy IT",
+  "id": "/",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#1e2229",
