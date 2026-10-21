@@ -1,0 +1,16 @@
+◇ injected env (13) from .env // tip: ⌘ enable debugging { debug: true }
+Server configuration active on port 3000
+Could not resolve an IPv4 address for smtp.gmail.com, using hostname instead: queryA ECONNREFUSED smtp.gmail.com
+Connected to MySQL and schema is in sync
+Mailer verified OK — ready to send assignment emails.
+◇ injected env (13) from .env // tip: ⌘ multiple files { path: ['.env.local', '.env'] }
+Server configuration active on port 3000
+Could not resolve an IPv4 address for smtp.gmail.com, using hostname instead: queryA ECONNREFUSED smtp.gmail.com
+Connected to MySQL and schema is in sync
+Purged 1 audit log entries older than 30 days.
+Mailer verified OK — ready to send assignment emails.
+◇ injected env (13) from .env // tip: ⌁ auth for agents [www.vestauth.com]
+Server configuration active on port 3000
+Could not resolve an IPv4 address for smtp.gmail.com, using hostname instead: queryA ECONNREFUSED smtp.gmail.com
+Connected to MySQL and schema is in sync
+Mailer verified OK — ready to send assignment emails.
