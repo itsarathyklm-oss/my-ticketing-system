@@ -93,7 +93,7 @@ o.addEventListener('touchstart',skip,{passive:true});
 var meta=false;
 if(v){
 var shown=false;
-function kick(){var p=v.play();if(p&&p.catch)p.catch(function(){});}
+function kick(){var p=v.play();if(p&&p.catch)p.catch(function(e){console.warn('Intro splash: play() was blocked -', (e&&e.message)||e);});}
 function start(){
 if(shown)return;shown=true;
 try{v.currentTime=0;}catch(e){}
@@ -106,8 +106,13 @@ v.addEventListener('canplay',start);
 if(v.readyState>=2)start();
 v.addEventListener('ended',dismiss);
 v.addEventListener('error',dismiss);
-v.addEventListener('loadedmetadata',function(){meta=true;setTimeout(dismiss,((v.duration||0)+2)*1000);});
+function onMeta(){meta=true;start();setTimeout(dismiss,((v.duration||0)+2)*1000);}
+v.addEventListener('loadedmetadata',onMeta);
+if(v.readyState>=1)onMeta();
 v.muted=true;
+// iOS does not fetch frames (or fire loadeddata/canplay) until playback is actually
+// requested, so waiting for those events deadlocks the splash on a white frame.
+kick();
 }
 setTimeout(function(){if(!meta)dismiss();},12000);
 })();
@@ -430,7 +435,7 @@ function checkSuperAdminLogin(req, res, next) {
 
 // User Ticket Submission Page
 app.get('/', (req, res) => {
-    res.send(`<!DOCTYPE html><html><head><title>Submit a Ticket | IT DEPARTMENT SARATHY</title><meta name="theme-color" content="#e53e3e"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="Sarathy IT"><link rel="manifest" href="/manifest.json"><link rel="icon" type="image/png" href="/logo.png"><link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"><style>
+    res.send(`<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Submit a Ticket | IT DEPARTMENT SARATHY</title><meta name="theme-color" content="#e53e3e"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="Sarathy IT"><link rel="manifest" href="/manifest.json"><link rel="icon" type="image/png" href="/logo.png"><link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"><style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body {
     font-family: 'Inter', 'Segoe UI', Arial, sans-serif;
@@ -961,6 +966,7 @@ app.post('/login', loginRateLimiter, async (req, res) => {
         req.session.isStaff = true;
         req.session.region = null;
         req.session.username = staffUser.name;
+        req.session.staffId = staffUser.staffId; // stable id used to look up this member's assigned branches
         staffLastSeen.set(staffUser.name, Date.now()); // active-staff widget: login counts as online
         return res.json({ success: true, redirect: '/admin' });
     }
@@ -1006,6 +1012,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
     const dynamicIsSuperAdmin = req.session.isSuperAdmin ? 'true' : 'false';
     const isAdminUser = !!req.session.isAdmin;
     const isSuperAdminUser = !!req.session.isSuperAdmin;
+    const isStaffUser = !!req.session.isStaff;
     // Branch form region field: multi-region admins choose which of their own regions
     // the new branch goes into; single-region admins have nothing to pick and keep the
     // fixed display. Super admin's dropdown continues to list every region.
@@ -1262,6 +1269,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            <div class="menu-category">Navigation</div>' +
 '            <ul class="sidebar-menu">' +
 '                <li class="menu-item active" id="tabTicketsLink" onclick="refreshTicketsDashboard()"><svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v2z"></path><line x1="13" y1="5" x2="13" y2="19"></line></svg>Tickets System</li>' +
+(isStaffUser ? '                <li class="menu-item" id="tabMyBranchesLink" data-view="mybranches" onclick="switchView(this.dataset.view)"><svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="7" rx="1"></rect><rect x="3" y="14" width="18" height="6" rx="1"></rect></svg>My Branches</li>' : '') +
 (isAdminUser ? '                <li class="menu-item" id="tabNewTicketLink" onclick="switchView(\'newticket\')"><svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>New Ticket</li>' : '') +
 (isSuperAdminUser ? '                <li class="menu-item" id="tabRegionsLink" onclick="switchView(\'regions\')"><svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>Manage Regions</li>' : '') +
 (isSuperAdminUser ? '                <li class="menu-item" id="tabAdminsLink" onclick="switchView(\'admins\')"><svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l3 6 6.5 1-5 4.5 1.5 6.5-6-3.5-6 3.5 1.5-6.5-5-4.5 6.5-1z"></path></svg>Manage Admins</li>' : '') +
@@ -1448,6 +1456,19 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                </div>' +
 '            </div>' +
 '                <div id="viewNewTicket" class="dashboard-view"></div>' +
+'            <div id="viewMyBranches" class="dashboard-view">' +
+'                <div class="branch-panel-card">' +
+'                    <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; margin-bottom:20px;">' +
+'                        <h2 style="margin-bottom:0;">My Assigned Branches</h2>' +
+'                        <span id="myBranchTotal" style="font-size:13px; color:#718096;"></span>' +
+'                    </div>' +
+'                    <table class="branch-table">' +
+'                        <thead><tr><th>#</th><th>Branch</th><th>Code</th><th>Region</th></tr></thead>' +
+'                        <tbody id="myBranchTableBody"></tbody>' +
+'                    </table>' +
+'                    <div id="myBranchEmpty" style="display:none; padding:24px 0; color:#718096; font-size:14px;">No branches are assigned to your account yet. Ask your administrator to allocate them.</div>' +
+'                </div>' +
+'            </div>' +
 '            <div id="viewInbox" class="dashboard-view">' +
 (isAdminUser ? '' :
 '                <div class="branch-panel-card" style="margin-bottom: 20px;">' +
@@ -1759,6 +1780,11 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                document.getElementById("tabNewTicketLink").classList.add("active");' +
 '                document.getElementById("panelViewTitle").innerText = "Create New Ticket";' +
 '                loadNewTicketForm();' +
+'            } else if (target === "mybranches") {' +
+'                document.getElementById("viewMyBranches").classList.add("active");' +
+'                document.getElementById("tabMyBranchesLink").classList.add("active");' +
+'                document.getElementById("panelViewTitle").innerText = "My Assigned Branches";' +
+'                loadMyBranches();' +
 '            } else if (target === "inbox") {' +
 '                document.getElementById("viewInbox").classList.add("active");' +
 '                document.getElementById("tabInboxLink").classList.add("active");' +
@@ -1767,6 +1793,22 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                loadInbox();' +
 '            }' +
 '        }' +
+'        function loadMyBranches() {' +
+'            var body = document.getElementById("myBranchTableBody");' +
+'            if (!body) return;' +
+'            fetch("/tickets/my-branches").then(function (r) { return r.json(); }).then(function (data) {' +
+'                var branches = (data && data.branches) || [];' +
+'                var count = (data && typeof data.count === "number") ? data.count : branches.length;' +
+'                var total = document.getElementById("myBranchTotal");' +
+'                if (total) total.textContent = count + (count === 1 ? " branch assigned" : " branches assigned");' +
+'                var empty = document.getElementById("myBranchEmpty");' +
+'                if (empty) empty.style.display = branches.length ? "none" : "block";' +
+'                body.innerHTML = branches.map(function (b, i) {' +
+'                    return "<tr><td>" + (i + 1) + "</td><td>" + escHtml(b.name) + "</td><td>" + escHtml(b.code || "-") + "</td><td>" + escHtml(b.region || "-") + "</td></tr>";' +
+'                }).join("");' +
+'            }).catch(function () { });' +
+'        }' +
+'        if (document.getElementById("tabMyBranchesLink")) loadMyBranches();' +
 '        let currentStatusFilter = "default-view";' +
 '        let currentPage = 1;' +
 '        const PAGE_SIZE = 10;' +
@@ -3967,6 +4009,30 @@ app.delete('/tickets/staff/:staffId', checkAdminLogin, async (req, res) => {
 });
 
 // Get branch coverage for all staff, as a { staffId: [branchNames] } map
+// Read-only: the signed-in staff member's own assigned branches (name, code, region).
+// Scoped to req.session.staffId only — never takes an id from the client, and it does
+// NOT relax /tickets/staff-branches, which stays admin-only.
+app.get('/tickets/my-branches', checkUserLogin, async (req, res) => {
+    try {
+        const staffId = req.session.staffId;
+        if (!staffId) return res.json({ count: 0, branches: [] });
+        const assignments = await StaffBranchAssignment.findAll({ where: { staffId }, order: [['branchName', 'ASC']] });
+        const names = assignments.map(a => a.branchName);
+        const branchRows = names.length ? await Branch.findAll({ where: { name: names } }) : [];
+        const byName = {};
+        branchRows.forEach(b => { byName[b.name] = b; });
+        res.json({
+            count: names.length,
+            branches: names.map(name => {
+                const b = byName[name];
+                return { name: name, code: (b && b.code) ? b.code : '', region: (b && b.region) ? b.region : '' };
+            })
+        });
+    } catch (err) {
+        console.error('Request failed:', err.message); res.status(500).json({ error: 'Something went wrong. Please try again.' });
+    }
+});
+
 app.get('/tickets/staff-branches', checkAdminLogin, async (req, res) => {
     try {
         const assignments = await StaffBranchAssignment.findAll();

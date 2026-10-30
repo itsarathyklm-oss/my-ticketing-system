@@ -5,3 +5,4 @@ tickets.json
 .freebuff/
 # runtime error logs written by logger.js
 logs/
+*.log
