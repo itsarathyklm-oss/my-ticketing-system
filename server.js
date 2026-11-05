@@ -16,7 +16,7 @@ const { CloudinaryStorage } = require('multer-storage-cloudinary');
 const nodemailer = require('nodemailer');
 const bcrypt = require('bcryptjs');
 const ExcelJS = require('exceljs');
-const { Op } = require('sequelize');
+const { Op, fn, col, literal } = require('sequelize');
 const {
     sequelize, Region, Branch, Staff, StaffBranchAssignment, RegionAdmin,
     Ticket, TicketComment, AuditLog, Notification, InboxMessage,
@@ -748,7 +748,7 @@ button[type="submit"]:active { transform: translateY(0); }
 
 // Login Page
 app.get('/login', (req, res) => {
-    res.send(`<!DOCTYPE html><html><head><title>Login | IT DEPARTMENT SARATHY</title><meta name="theme-color" content="#e53e3e"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="Sarathy IT"><link rel="manifest" href="/manifest-login.json"><link rel="icon" type="image/png" href="/logo.png"><link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"><style>
+    res.send(`<!DOCTYPE html><html><head><title>Login | IT DEPARTMENT SARATHY</title><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="theme-color" content="#e53e3e"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="Sarathy IT"><link rel="manifest" href="/manifest-login.json"><link rel="icon" type="image/png" href="/logo.png"><link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"><style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body {
     font-family: 'Inter', 'Segoe UI', Arial, sans-serif;
@@ -792,6 +792,8 @@ button[type="submit"]:disabled { opacity: .7; cursor: not-allowed; transform: no
 @keyframes spin { to { transform: rotate(360deg); } }
 .page-footer { position: fixed; bottom: 8px; left: 0; width: 100%; text-align: center; font-size: 11px; color: rgba(255,255,255,0.55); letter-spacing: .3px; }
 @media (max-width: 400px) { .login-ribbon { padding: 20px 22px 16px; } .login-body { padding: 22px 22px 26px; } }
+/* 16px keeps iOS Safari from zooming the page when a field is focused. */
+@media (max-width: 600px) { input { font-size: 16px; } }
 .admin-toast { position: fixed; top: 20px; right: 20px; background: #fff; color: #1a202c; padding: 16px 20px; border-radius: 12px; font-size: 13px; box-shadow: 0 16px 40px rgba(0,0,0,0.16); z-index: 4000; opacity: 0; transform: translateX(24px); transition: opacity .25s, transform .25s; pointer-events: none; max-width: 340px; text-align: left; border-left: 4px solid #38a169; display: flex; align-items: flex-start; gap: 12px; overflow: hidden; }
 .admin-toast.show { opacity: 1; transform: translateX(0); }
 .admin-toast.error { border-left-color: #e53e3e; }
@@ -1143,6 +1145,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '        .escalate-btn:hover { background-color: #c05621; }' +
 '        .badge-escalated { background-color: #fef3c7; color: #92400e; }' +
 '        .badge-category { background-color: #e6fffa; color: #234e52; }' +
+'        .badge-new { background-color: #2563eb; color: #ffffff; }' +
 '        .screenshot-preview { max-width: 100%; max-height: 180px; border-radius: 6px; border: 1px solid #e2e8f0; margin-top: 12px; display: block; object-fit: cover; }' +
 '        .assignment-info { margin-top: 16px; padding: 14px 16px; background: #f9fafb; border-radius: 8px; border: 1px solid #edf2f7; }' +
 '        .assignment-row { display: flex; gap: 10px; padding: 5px 0; font-size: 13.5px; }' +
@@ -1492,12 +1495,48 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '        const isAdmin = ' + dynamicIsAdmin + ';' +
 '        const isSuperAdmin = ' + dynamicIsSuperAdmin + ';' +
 '        document.getElementById("displayUserLabel").innerText = currentUser;' +
+'        /* "New" mark: tickets raised since this person last opened the dashboard. Kept in' +
+'           this browser per signed-in user, so no schema, endpoint or workflow changes.' +
+'           A first visit only starts the clock - it does not flag the whole backlog. */' +
+'        const newMarkKey = "sarathyTicketSeenAt::" + currentUser;' +
+'        let newMarkSince = 0;' +
+'        try { newMarkSince = Number(localStorage.getItem(newMarkKey)) || 0; } catch (err) { newMarkSince = 0; }' +
+'        if (!newMarkSince) { newMarkSince = Date.now(); }' +
+'        try { localStorage.setItem(newMarkKey, String(Date.now())); } catch (err) {}' +
+'        function isNewTicket(ticket) {' +
+'            if (!newMarkSince || !ticket.createdAt) return false;' +
+'            const createdMs = new Date(ticket.createdAt).getTime();' +
+'            return !isNaN(createdMs) && createdMs > newMarkSince;' +
+'        }' +
 '        let knownNotificationIds = new Set();' +
 '        let lastNotifications = [];' +
 '        let notificationsInitialized = false;' +
 '        const notifAudio = new Audio("/notification.mp3");' +
 '        notifAudio.preload = "auto";' +
 '        notifAudio.volume = 0.7;' +
+'        /* iOS Safari only allows audio that starts inside a user gesture, so the' +
+'           first tap/keypress quietly plays the clip (muted) to unlock it; the' +
+'           30s notification poll can then play it normally without a gesture.' +
+'           Block comment on purpose: this page script ships as one line, so a //' +
+'           comment would swallow every statement after it. */' +
+'        let notificationAudioUnlocked = false;' +
+'        function unlockNotificationAudio() {' +
+'            if (notificationAudioUnlocked) return;' +
+'            notificationAudioUnlocked = true;' +
+'            try {' +
+'                notifAudio.muted = true;' +
+'                const warmup = notifAudio.play();' +
+'                const finish = function () {' +
+'                    try { notifAudio.pause(); notifAudio.currentTime = 0; } catch (e) {}' +
+'                    notifAudio.muted = false;' +
+'                };' +
+'                if (warmup && typeof warmup.then === "function") warmup.then(finish).catch(function () { notifAudio.muted = false; });' +
+'                else finish();' +
+'            } catch (err) { notifAudio.muted = false; }' +
+'        }' +
+'        ["pointerdown", "touchstart", "keydown"].forEach(function (evt) {' +
+'            document.addEventListener(evt, unlockNotificationAudio, { once: true, capture: true });' +
+'        });' +
 '        function playNotificationSound() {' +
 '            try {' +
 '                if (notifAudio.readyState >= 1) notifAudio.currentTime = 0;' +
@@ -2145,6 +2184,10 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            if (response.status === 401) { window.location.href = "/login"; return; }' +
 '            if (!response.ok) { throw new Error("Ticket request failed (" + response.status + ")"); }' +
 '            let tickets = await response.json();' +
+'            /* What this render shows becomes the baseline the idle check compares against.' +
+'               Seeding it here (rather than on the first idle check) is what stops a ticket' +
+'               raised between page load and that first check from being swallowed for good. */' +
+'            queueSignatureSeen = queueSignatureFromTickets(tickets);' +
 '            const staffFilterEl = document.getElementById("filterStaff");' +
 '            const staffFilterValue = staffFilterEl ? staffFilterEl.value : "";' +
 '            if (staffFilterValue) { tickets = tickets.filter(t => t.assignedTo === staffFilterValue); }' +
@@ -2213,6 +2256,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                const waitingNote = (!isAdmin && !isResolved && !isMineOrAdmin) ? \'<span class="badge" style="background:#fef3c7;color:#92400e;">Waiting on Admin</span>\' : "";' +
 '                const actionsHtml = (reallocateBtn || actionBtn || escalateBtn || waitingNote) ? \'<div class="ticket-actions">\'+reallocateBtn+actionBtn+escalateBtn+waitingNote+\'</div>\' : "";' +
 '                const escalatedBadge = ticket.escalated ? \'<span class="badge badge-escalated">Escalated</span>\' : "";' +
+'                const newBadge = isNewTicket(ticket) ? \'<span class="badge badge-new">New</span>\' : "";' +
 '                const resolvedLine = (ticket.status === "Resolved" && ticket.resolvedAt) ? \'<div class="assignment-row"><span class="assignment-label">Resolved</span><span class="assignment-value">\'+new Date(ticket.resolvedAt).toLocaleString()+(ticket.resolvedBy ? \' by \'+escHtml(ticket.resolvedBy) : "")+\'</span></div>\' : "";' +
 '                const escalationLine = ticket.escalated ? \'<div class="assignment-row"><span class="assignment-label">Escalation</span><span class="assignment-value">\'+ticket.status+\' (\'+escHtml(ticket.escalatedBy || "Staff")+\' escalated\'+(ticket.escalatedAt ? " on "+new Date(ticket.escalatedAt).toLocaleString() : "")+\')</span></div>\'+(ticket.escalationReason ? \'<div class="assignment-row"><span class="assignment-label">Reason</span><span class="assignment-value">\'+escHtml(ticket.escalationReason)+\'</span></div>\' : "") : "";' +
 '                const cardStateClass = isResolved ? "ticket-resolved" : (ticket.priority === "High" ? "ticket-high-priority" : (ticket.escalated ? "ticket-escalated" : ""));' +
@@ -2223,9 +2267,11 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                        commentListHtml += \'<div class="comment-item"><strong>\'+escHtml(c.author)+\':</strong> \'+escHtml(c.text)+(c.attachment ? \' <a href="\'+escHtml(c.attachment)+\'" target="_blank">\uD83D\uDCCE Attachment</a>\' : "")+\'</div>\';' +
 '                    });' +
 '                }' +
-'                ticketCardsHtml += \'<div class="ticket-card \'+cardStateClass+\'" data-ticket-id="\'+ticket._id+\'"><div class="ticket-header"><div><h3 class="ticket-title">#\'+(ticket.displayNumber || String(ticket.ticketNumber).padStart(4,"0"))+\' \'+escHtml(ticket.title)+\'</h3><div style="margin-top: 8px;"><span class="badge p-\'+escHtml(ticket.priority)+\'">\'+escHtml(ticket.priority)+\'</span><span class="badge status-\'+ticket.status.toLowerCase()+\'">\'+ticket.status+\'</span><span class="badge badge-category">\'+escHtml(ticket.category || "Other")+\'</span>\'+escalatedBadge+slaBadgeHtml(ticket)+\'</div></div>\'+actionsHtml+\'</div><p class="ticket-desc">\'+escHtml(ticket.description)+\'</p>\'+imageHtml+(ticket.needsAdminAction?\'<div class="admin-action-warning">&#9888; <span>Needs admin action required: not yet allocated to any staff</span></div>\':\'\')+\'<div class="assignment-info"><div class="assignment-row"><span class="assignment-label">Submitted By</span><span class="assignment-value">\'+escHtml(ticket.submittedBy || "Unknown")+(ticket.designation ? " ("+escHtml(ticket.designation)+")" : "")+\'</span></div><div class="assignment-row"><span class="assignment-label">Branch</span><span class="assignment-value">\'+escHtml(ticket.branch)+\'</span></div><div class="assignment-row"><span class="assignment-label">Mobile</span><span class="assignment-value">\'+escHtml(ticket.mobile)+\'</span></div><div class="assignment-row"><span class="assignment-label">Assigned</span><span class="assignment-value">\'+escHtml(ticket.assignedTo)+\'</span></div><div class="assignment-row"><span class="assignment-label">Submitted</span><span class="assignment-value">\'+(ticket.createdAt ? new Date(ticket.createdAt).toLocaleString() : "N/A")+\'</span></div>\'+escalationLine+resolvedLine+\'</div><div class="comments-section"><h4 class="comments-header">Internal Work Notes</h4><div>\'+(commentListHtml || "No updates.")+\'</div><div class="comment-form"><input type="text" id="input-\'+ticket._id+\'" placeholder="Write operational update..."><label class="comment-attach-btn" title="Attach a file (optional)">📎<input type="file" id="attachment-\'+ticket._id+\'" style="display:none;" accept="image/jpeg,image/png,image/webp,image/gif,application/pdf,.jpg,.jpeg,.png,.webp,.gif,.pdf" onchange="updateAttachmentLabel(\\\'\'+ticket._id+\'\\\')"></label><span id="attachmentName-\'+ticket._id+\'" class="attachment-name-tag"></span><button onclick="addComment(\\\'\'+ticket._id+\'\\\')">Post</button></div></div></div>\';' +
+'                ticketCardsHtml += \'<div class="ticket-card \'+cardStateClass+\'" data-ticket-id="\'+ticket._id+\'"><div class="ticket-header"><div><h3 class="ticket-title">#\'+(ticket.displayNumber || String(ticket.ticketNumber).padStart(4,"0"))+\' \'+escHtml(ticket.title)+\'</h3><div style="margin-top: 8px;"><span class="badge p-\'+escHtml(ticket.priority)+\'">\'+escHtml(ticket.priority)+\'</span><span class="badge status-\'+ticket.status.toLowerCase()+\'">\'+ticket.status+\'</span><span class="badge badge-category">\'+escHtml(ticket.category || "Other")+\'</span>\'+escalatedBadge+slaBadgeHtml(ticket)+newBadge+\'</div></div>\'+actionsHtml+\'</div><p class="ticket-desc">\'+escHtml(ticket.description)+\'</p>\'+imageHtml+(ticket.needsAdminAction?\'<div class="admin-action-warning">&#9888; <span>Needs admin action required: not yet allocated to any staff</span></div>\':\'\')+\'<div class="assignment-info"><div class="assignment-row"><span class="assignment-label">Submitted By</span><span class="assignment-value">\'+escHtml(ticket.submittedBy || "Unknown")+(ticket.designation ? " ("+escHtml(ticket.designation)+")" : "")+\'</span></div><div class="assignment-row"><span class="assignment-label">Branch</span><span class="assignment-value">\'+escHtml(ticket.branch)+\'</span></div><div class="assignment-row"><span class="assignment-label">Mobile</span><span class="assignment-value">\'+escHtml(ticket.mobile)+\'</span></div><div class="assignment-row"><span class="assignment-label">Assigned</span><span class="assignment-value">\'+escHtml(ticket.assignedTo)+\'</span></div><div class="assignment-row"><span class="assignment-label">Submitted</span><span class="assignment-value">\'+(ticket.createdAt ? new Date(ticket.createdAt).toLocaleString() : "N/A")+\'</span></div>\'+escalationLine+resolvedLine+\'</div><div class="comments-section"><h4 class="comments-header">Internal Work Notes</h4><div>\'+(commentListHtml || "No updates.")+\'</div><div class="comment-form"><input type="text" id="input-\'+ticket._id+\'" placeholder="Write operational update..."><label class="comment-attach-btn" title="Attach a file (optional)">📎<input type="file" id="attachment-\'+ticket._id+\'" style="display:none;" accept="image/jpeg,image/png,image/webp,image/gif,application/pdf,.jpg,.jpeg,.png,.webp,.gif,.pdf" onchange="updateAttachmentLabel(\\\'\'+ticket._id+\'\\\')"></label><span id="attachmentName-\'+ticket._id+\'" class="attachment-name-tag"></span><button onclick="addComment(\\\'\'+ticket._id+\'\\\')">Post</button></div></div></div>\';' +
 '            });' +
 '            listDiv.innerHTML = ticketCardsHtml;' +
+'            /* The marks have now been shown, so the next visit counts them as seen. */' +
+'            try { localStorage.setItem(newMarkKey, String(Date.now())); } catch (err) {}' +
 '            tickSlaClocks();' +
 '            renderPagination(totalFilteredCount);' +
 '            } catch (err) {' +
@@ -3251,12 +3297,56 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '        }' +
 '        document.getElementById("reportMonth").value = new Date().toISOString().slice(0, 7);' +
 '        loadNotifications();' +
-'        setInterval(loadNotifications, 30000);' +
+'        setInterval(function () { loadNotifications(); checkQueueChanged(); }, 30000);' +
 '        setInterval(tickSlaClocks, 1000);' +
 '        pollInboxBadge();' +
 '        setInterval(pollInboxBadge, 30000);' +
 '        loadStaffPresence();' +
 '        setInterval(loadStaffPresence, 30000);' +
+'        /* Idle auto-refresh: a ticket raised while this dashboard just sits open used to' +
+'           stay invisible until someone clicked or reloaded. Ask a tiny endpoint whether' +
+'           the queue moved (count, newest id, resolutions, escalations) and reload the list' +
+'           only when it really did - no full page reload, filters and scroll stay.' +
+'           It has no alert of its own: it runs in the same tick as the notification poll' +
+'           below, so the bell stays the single source of sound and toast - one change, one' +
+'           announcement, never two.' +
+'           Block comment on purpose: this page script is served as one single line, so a' +
+'           // comment would swallow every statement after it. */' +
+'        let queueSignatureSeen = "";' +
+'        function queueSignatureOf(v) {' +
+'            return [Number(v.ticketCount) || 0, Number(v.latestId) || 0, queueTimeMs(v.latestResolvedAt), queueTimeMs(v.latestEscalatedAt), Number(v.resolvedCount) || 0, Number(v.escalatedCount) || 0].join("|");' +
+'        }' +
+'        function queueTimeMs(v) {' +
+'            if (!v) return 0;' +
+'            const t = new Date(v).getTime();' +
+'            return isNaN(t) ? 0 : t;' +
+'        }' +
+'        /* Same six numbers, computed from the list already on screen, so the page and the' +
+'           server agree on what "unchanged" means (dates normalised to epoch ms). */' +
+'        function queueSignatureFromTickets(list) {' +
+'            let latestId = 0, latestResolved = 0, latestEscalated = 0, resolved = 0, escalated = 0;' +
+'            list.forEach(function (t) {' +
+'                latestId = Math.max(latestId, Number(t.id) || 0);' +
+'                if (t.resolvedAt) latestResolved = Math.max(latestResolved, queueTimeMs(t.resolvedAt));' +
+'                if (t.escalatedAt) latestEscalated = Math.max(latestEscalated, queueTimeMs(t.escalatedAt));' +
+'                if (t.status === "Resolved") resolved++;' +
+'                if (t.escalated) escalated++;' +
+'            });' +
+'            return [list.length, latestId, latestResolved, latestEscalated, resolved, escalated].join("|");' +
+'        }' +
+'        async function checkQueueChanged() {' +
+'            if (document.hidden) return;' +
+'            try {' +
+'                const response = await fetch("/tickets/version", { cache: "no-store" });' +
+'                if (!response.ok) return;' +
+'                const signature = queueSignatureOf(await response.json());' +
+'                if (!queueSignatureSeen) { queueSignatureSeen = signature; return; }' +
+'                if (signature === queueSignatureSeen) return;' +
+'                queueSignatureSeen = signature;' +
+'                loadTickets();' +
+'            } catch (err) {}' +
+'        }' +
+'        document.addEventListener("visibilitychange", function () { if (!document.hidden) checkQueueChanged(); });' +
 '        loadStaffFilterOptions();' +
 '        loadRegionFilterOptions();' +
 '        let pendingRefresh = null;' +
@@ -3279,6 +3369,47 @@ app.get('/admin', checkUserLogin, (req, res) => {
 });
 
 // APIs
+// Did anything in this user's queue change? Same visibility rules as GET /tickets, but
+// a single aggregate query instead of the whole ticket payload, so an idle dashboard can
+// ask every few seconds cheaply and only re-render when the answer actually moved.
+app.get('/tickets/version', checkUserLogin, async (req, res) => {
+    try {
+        let where;
+        if (req.session.isSuperAdmin) {
+            where = {};
+        } else if (req.session.isAdmin) {
+            const regionBranchNames = await getBranchNamesForRegions(req.session.regions);
+            where = { branch: { [Op.in]: regionBranchNames } };
+        } else {
+            where = { [Op.or]: [{ assignedTo: req.session.username }, { escalatedBy: req.session.username }] };
+        }
+        const row = await Ticket.findOne({
+            where,
+            attributes: [
+                [fn('COUNT', col('id')), 'ticketCount'],
+                [fn('MAX', col('id')), 'latestId'],
+                [fn('MAX', col('resolved_at')), 'latestResolvedAt'],
+                [fn('MAX', col('escalated_at')), 'latestEscalatedAt'],
+                [fn('SUM', literal("CASE WHEN status = 'Resolved' THEN 1 ELSE 0 END")), 'resolvedCount'],
+                [fn('SUM', literal('CASE WHEN escalated = 1 THEN 1 ELSE 0 END')), 'escalatedCount']
+            ],
+            raw: true
+        }) || {};
+        const asTime = (value) => (value ? new Date(value).getTime() : 0);
+        res.json({
+            ticketCount: Number(row.ticketCount) || 0,
+            latestId: Number(row.latestId) || 0,
+            latestResolvedAt: asTime(row.latestResolvedAt),
+            latestEscalatedAt: asTime(row.latestEscalatedAt),
+            resolvedCount: Number(row.resolvedCount) || 0,
+            escalatedCount: Number(row.escalatedCount) || 0
+        });
+    } catch (err) {
+        console.error('Could not check for ticket changes:', err.message);
+        res.status(500).json({ error: 'Could not check for ticket changes.' });
+    }
+});
+
 app.get('/tickets', checkUserLogin, async (req, res) => {
     try {
         let where;
