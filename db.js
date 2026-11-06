@@ -117,8 +117,13 @@ const Ticket = sequelize.define('Ticket', {
     screenshot: { type: DataTypes.STRING(500) },
     status: { type: DataTypes.STRING(20), defaultValue: 'Open' },
     assignedTo: { type: DataTypes.STRING(150), defaultValue: 'Unassigned', field: 'assigned_to' },
+    // Which staff ROW owns this ticket. Ownership follows the record, never the name, so
+    // deleting a staff member and creating a new one with the same name cannot hand the
+    // old person's tickets to the new person. The historical assigned_to text is kept.
+    assignedStaffId: { type: DataTypes.INTEGER, field: 'assigned_staff_id' },
     escalated: { type: DataTypes.BOOLEAN, defaultValue: false },
     escalatedBy: { type: DataTypes.STRING(150), defaultValue: '', field: 'escalated_by' },
+    escalatedByStaffId: { type: DataTypes.INTEGER, field: 'escalated_by_staff_id' },
     escalatedAt: { type: DataTypes.DATE, field: 'escalated_at' },
     escalationReason: { type: DataTypes.STRING(500), defaultValue: '', field: 'escalation_reason' },
     createdAt: { type: DataTypes.DATE, defaultValue: DataTypes.NOW, field: 'created_at' },
@@ -156,6 +161,7 @@ const AuditLog = sequelize.define('AuditLog', {
 const Notification = sequelize.define('Notification', {
     id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
     recipient: { type: DataTypes.STRING(150), allowNull: false },
+    recipientStaffId: { type: DataTypes.INTEGER, field: 'recipient_staff_id' },
     ticketId: { type: DataTypes.INTEGER, allowNull: false, field: 'ticket_id' },
     ticketNumber: { type: DataTypes.INTEGER, allowNull: false, field: 'ticket_number' },
     title: { type: DataTypes.STRING(255), allowNull: false },
@@ -169,6 +175,9 @@ const InboxMessage = sequelize.define('InboxMessage', {
     id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
     sender: { type: DataTypes.STRING(150), allowNull: false },
     senderStaffId: { type: DataTypes.STRING(20), defaultValue: '', field: 'sender_staff_id' },
+    // The staff ROW that sent it (senderStaffId is an editable display id, a name can be
+    // reused after a delete) - this is what a staff member's own inbox is matched on.
+    senderRowId: { type: DataTypes.INTEGER, field: 'sender_row_id' },
     subject: { type: DataTypes.STRING(255), allowNull: false },
     body: { type: DataTypes.TEXT, allowNull: false },
     status: { type: DataTypes.STRING(20), defaultValue: 'Open' },
@@ -237,10 +246,55 @@ async function ensureRegionAdminColumns() {
     }
 }
 
+// Staff identity ---------------------------------------------------------------
+// Tickets, bell notifications and inbox messages belong to a staff ROW (staff.id), not
+// to the name typed at creation. Deleting "TEST" and later creating a new "TEST" must
+// not hand the old person's queue, bell or inbox to the new person, and renaming a staff
+// member must not lose their own. Columns are added here (plain sequelize.sync() never
+// ALTERs an existing table) and the backfill runs ONLY on the boot that adds each column:
+// it links today's rows to today's staff, and is never repeated - a name re-used later
+// would otherwise adopt rows that belong to a previous, deleted person.
+async function ensureStaffIdentityColumns() {
+    const wanted = [
+        {
+            table: 'tickets', column: 'assigned_staff_id',
+            ddl: 'ADD COLUMN assigned_staff_id INT NULL',
+            backfill: 'UPDATE tickets t JOIN staff s ON t.assigned_to = s.name SET t.assigned_staff_id = s.id WHERE t.assigned_staff_id IS NULL'
+        },
+        {
+            table: 'tickets', column: 'escalated_by_staff_id',
+            ddl: 'ADD COLUMN escalated_by_staff_id INT NULL',
+            backfill: 'UPDATE tickets t JOIN staff s ON t.escalated_by = s.name SET t.escalated_by_staff_id = s.id WHERE t.escalated_by_staff_id IS NULL'
+        },
+        {
+            table: 'notifications', column: 'recipient_staff_id',
+            ddl: 'ADD COLUMN recipient_staff_id INT NULL',
+            backfill: 'UPDATE notifications n JOIN staff s ON n.recipient = s.name SET n.recipient_staff_id = s.id WHERE n.recipient_staff_id IS NULL'
+        },
+        {
+            table: 'inbox_messages', column: 'sender_row_id',
+            ddl: 'ADD COLUMN sender_row_id INT NULL',
+            backfill: 'UPDATE inbox_messages m JOIN staff s ON m.sender = s.name SET m.sender_row_id = s.id WHERE m.sender_row_id IS NULL'
+        }
+    ];
+    for (const w of wanted) {
+        const [[row]] = await sequelize.query(
+            'SELECT COUNT(*) AS n FROM information_schema.COLUMNS ' +
+            'WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = :table AND COLUMN_NAME = :column',
+            { replacements: { table: w.table, column: w.column } }
+        );
+        if (Number(row.n) === 0) {
+            await sequelize.query('ALTER TABLE ' + w.table + ' ' + w.ddl);
+            await sequelize.query(w.backfill);
+        }
+    }
+}
+
 module.exports = {
     sequelize,
     ensureBranchCodeColumns,
     ensureRegionAdminColumns,
+    ensureStaffIdentityColumns,
     Region,
     Branch,
     Staff,

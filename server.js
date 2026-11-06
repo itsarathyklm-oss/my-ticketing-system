@@ -22,7 +22,8 @@ const {
     Ticket, TicketComment, AuditLog, Notification, InboxMessage,
     TicketChecklist,
     ensureBranchCodeColumns,
-    ensureRegionAdminColumns
+    ensureRegionAdminColumns,
+    ensureStaffIdentityColumns
 } = require('./db');
 const logger = require('./logger');
 
@@ -123,6 +124,7 @@ sequelize.authenticate()
     .then(() => sequelize.sync()) // creates any tables that don't exist yet — safe to run every startup
     .then(() => ensureBranchCodeColumns()) // add branch-code columns to tables created before this feature
     .then(() => ensureRegionAdminColumns()) // widen region column so it can hold multiple regions
+    .then(() => ensureStaffIdentityColumns()) // staff-owned tickets/bell/inbox bind to the staff row, not the name
     .then(() => {
         console.log('Connected to MySQL and schema is in sync');
         // Auto-purge audit log entries older than 30 days
@@ -147,10 +149,28 @@ function withId(instance) {
     if (!obj) return obj;
     return { ...obj, _id: String(obj.id) };
 }
-function serializeTicket(instance) {
+function serializeTicket(instance, req) {
     const t = instance && instance.toJSON ? instance.toJSON() : instance;
     if (!t) return t;
-    return { ...t, _id: String(t.id), ticketNumber: t.id, displayNumber: t.displayNumber || String(t.id).padStart(4, '0') };
+    const ser = { ...t, _id: String(t.id), ticketNumber: t.id, displayNumber: t.displayNumber || String(t.id).padStart(4, '0') };
+    // Whether this ticket belongs to the signed-in staff member. Decided from the staff
+    // row, so the page never has to compare names (a reused name is a different person).
+    if (req) ser.isMine = isAssignedToSessionStaff(req, t);
+    return ser;
+}
+
+// --- Staff identity -----------------------------------------------------------------
+// A ticket/notification/message belongs to a staff ROW (staff.id). Names are only ever
+// display text: they can be reused after a delete, so matching on them would hand the
+// previous person's data to a brand-new staff member with the same name.
+function isAssignedToSessionStaff(req, ticket) {
+    const rowId = Number(req.session.staffRowId) || 0;
+    return !!rowId && Number(ticket.assignedStaffId) === rowId;
+}
+
+function staffQueueWhere(req) {
+    const rowId = Number(req.session.staffRowId) || 0;
+    return { [Op.or]: [{ assignedStaffId: rowId }, { escalatedByStaffId: rowId }] };
 }
 
 // Display number for a ticket: the stamped branch-code number (e.g. SAC70/0001)
@@ -928,6 +948,8 @@ app.post('/login', loginRateLimiter, async (req, res) => {
         req.session.isStaff = false;
         req.session.region = null;
         req.session.username = 'Admin';
+        req.session.staffRowId = null; // admins own no staff row: nothing is "assigned to me"
+        req.session.staffId = null;
         return res.json({ success: true, redirect: '/admin' });
     }
 
@@ -947,6 +969,8 @@ app.post('/login', loginRateLimiter, async (req, res) => {
         req.session.regions = adminRegions;
         req.session.region = adminRegions.join(', ');
         req.session.username = regionAdmin.name;
+        req.session.staffRowId = null;
+        req.session.staffId = null;
         // Stable id for the live-session check — a rename can't orphan it like a name lookup would.
         req.session.regionAdminId = regionAdmin.id;
         return res.json({ success: true, redirect: '/admin' });
@@ -969,6 +993,9 @@ app.post('/login', loginRateLimiter, async (req, res) => {
         req.session.region = null;
         req.session.username = staffUser.name;
         req.session.staffId = staffUser.staffId; // stable id used to look up this member's assigned branches
+        // The row id is the person: tickets, bell and inbox are matched on it, never on the
+        // name, so a deleted staff member's data cannot pass to a new staff with that name.
+        req.session.staffRowId = staffUser.id;
         staffLastSeen.set(staffUser.name, Date.now()); // active-staff widget: login counts as online
         return res.json({ success: true, redirect: '/admin' });
     }
@@ -1280,6 +1307,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 (isAdminUser ? '                <li class="menu-item" id="tabStaffLink" onclick="switchView(\'staff\')"><svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>Manage IT Staff</li>' : '') +
 '                <li class="menu-item" id="tabInboxLink" onclick="switchView(\'inbox\')"><svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-6l-2 3h-4l-2-3H2"></path><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"></path></svg>Inbox<span id="inboxUnreadBadge" style="display:none;margin-left:auto;background:#e53e3e;color:#fff;font-size:10px;font-weight:700;border-radius:10px;min-width:16px;height:16px;padding:0 5px;align-items:center;justify-content:center;"></span></li>' +
 '                <li class="menu-item" id="tabReportsLink" onclick="switchView(\'reports\')"><svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>Reports</li>' +
+'                <li class="menu-item" id="tabPerformanceLink" onclick="switchView(\'performance\')"><svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.21 15.89A10 10 0 1 1 8 2.83"></path><path d="M22 12A10 10 0 0 0 12 2v10z"></path></svg>Performance Overview</li>' +
 (isAdminUser ? '                <li class="menu-item" id="tabAuditLink" onclick="switchView(\'audit\')"><svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"></path><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg>Audit Log</li>' : '') +
 '                <li class="menu-item" id="tabPasswordLink" onclick="switchView(\'password\')"><svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>Change Password</li>' +
 '            </ul>' +
@@ -1328,11 +1356,20 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                <div id="ticketPagination" class="pagination-bar" style="display:none;"></div>' +
 '            </div>' +
 '            <div id="viewReports" class="dashboard-view">' +
-'                <div class="branch-panel-card" style="display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 20px;">' +
+'                <div id="reportRegionCard" class="branch-panel-card" style="display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 20px;">' +
 '                    <strong style="font-size: 14px; color: #2d3748;">Region:</strong>' +
 '                    <select id="reportRegion" style="padding: 8px 10px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 14px;"><option value="">All Regions</option></select>' +
 '                    <span style="font-size: 12px; color: #a0aec0;">Applies to both reports below</span>' +
+'                    <span id="reportRegionLockNote" style="display: none; font-size: 12px; font-weight: 600; color: #718096;">Locked \u2014 the ticked branches decide the report</span>' +
 '                </div>' +
+(isAdminUser ? '                <div class="branch-panel-card" style="display: block; margin-bottom: 20px;">' +
+'                    <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 8px;">' +
+'                        <strong style="font-size: 14px; color: #2d3748;">Branches (optional):</strong>' +
+'                        <span style="font-size: 12px; color: #a0aec0;">Tick the branches to include \u2014 untick everything for every branch you manage</span>' +
+'                        <button type="button" onclick="clearReportBranchSelection()" style="background:#edf2f7; color:#2d3748; border:1px solid #cbd5e0; border-radius:6px; padding:5px 10px; font-size:12px; font-weight:600; cursor:pointer;">Clear selection</button>' +
+'                    </div>' +
+'                    <div id="reportBranchChecks" style="display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: #4a5568;">Loading branches...</div>' +
+'                </div>' : '') +
 '                <div class="branch-panel-card" style="display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 20px;">' +
 '                    <strong style="font-size: 14px; color: #2d3748;">Monthly Report:</strong>' +
 '                    <input type="month" id="reportMonth" style="padding: 8px 10px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 14px;">' +
@@ -1344,7 +1381,8 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                    <div><label style="display:block;font-size:12px;font-weight:600;color:#4a5568;margin-bottom:4px;">To Date</label><input type="date" id="reportToDate" style="padding: 8px 10px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 14px;"></div>' +
 '                    <button class="branch-add-btn" onclick="downloadReportByRange()">Download Excel Report</button>' +
 '                </div>' +
-'                <h3 class="section-heading">Performance Overview</h3>' +
+'            </div>' +
+'            <div id="viewPerformance" class="dashboard-view">' +
 '                <div class="chart-grid">' +
 '                    <div class="chart-card"><h3>Tickets by Status</h3><canvas id="chartStatus"></canvas></div>' +
 '                    <div class="chart-card"><h3>Tickets by Priority</h3><canvas id="chartPriority"></canvas></div>' +
@@ -1783,6 +1821,10 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                document.getElementById("viewReports").classList.add("active");' +
 '                document.getElementById("tabReportsLink").classList.add("active");' +
 '                document.getElementById("panelViewTitle").innerText = "Monthly Reports";' +
+'            } else if (target === "performance") {' +
+'                document.getElementById("viewPerformance").classList.add("active");' +
+'                document.getElementById("tabPerformanceLink").classList.add("active");' +
+'                document.getElementById("panelViewTitle").innerText = "Performance Overview";' +
 '                loadReportCharts();' +
 '            } else if (target === "password") {' +
 '                document.getElementById("viewChangePassword").classList.add("active");' +
@@ -1885,6 +1927,17 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            });' +
 '        }' +
 '        function filterByStatus(status) {' +
+'            const leavingCard = currentStatusFilter === "default-view" ? "Open" : currentStatusFilter;' +
+'            const enteringCard = status === "default-view" ? "Open" : status;' +
+'            if (leavingCard !== enteringCard) {' +
+'                /* Another stat card opens on its own full data: the filter panel is closed and' +
+'                   every filter field is cleared, so a search made in one card never carries' +
+'                   into the next. Block comment on purpose - this page script is served as one' +
+'                   single line, so a // comment would swallow every statement after it. */' +
+'                const panel = document.getElementById("ticketFilterPanel");' +
+'                if (panel && panel.style.display !== "none") toggleFilterPanel();' +
+'                ["filterFromDate", "filterToDate", "filterCategory", "filterStaff", "filterRegion", "filterSearchText"].forEach(function (fid) { var el = document.getElementById(fid); if (el) el.value = ""; });' +
+'            }' +
 '            currentStatusFilter = status;' +
 '            currentPage = 1;' +
 '            return loadTickets();' +
@@ -1971,6 +2024,51 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                reportSelect.innerHTML = \'<option value="">All Regions</option>\';' +
 '                regions.forEach(r => { reportSelect.innerHTML += \'<option value="\'+escHtml(r.name)+\'">\'+escHtml(r.name)+\'</option>\'; });' +
 '            }' +
+'        }' +
+'        /* Reports: optional branch ticks. /public-branches already returns only the branches' +
+'           this admin manages (all of them for the Super Admin), so the list can never offer a' +
+'           branch outside their own area. Nothing ticked = the report downloads exactly as before.' +
+'           Block comment on purpose - this page script is served as a single line. */' +
+'        async function loadReportBranchOptions() {' +
+'            const holder = document.getElementById("reportBranchChecks");' +
+'            if (!holder) return;' +
+'            try {' +
+'                const branches = await (await fetch("/public-branches", { cache: "no-store" })).json();' +
+'                if (!branches.length) { holder.innerHTML = \'<span style="color:#a0aec0;">No branches available.</span>\'; return; }' +
+'                const byRegion = {};' +
+'                branches.forEach(b => { const rg = b.region || "Unassigned"; if (!byRegion[rg]) byRegion[rg] = []; byRegion[rg].push(b.name); });' +
+'                holder.innerHTML = Object.keys(byRegion).map(rg => {' +
+'                    const checks = byRegion[rg].map(n => \'<label style="display:inline-flex; align-items:center; gap:4px; font-weight:normal;"><input type="checkbox" class="report-branch-check" value="\'+escHtml(n)+\'" onchange="syncReportRegionLock()"> \'+escHtml(n)+\'</label>\').join("");' +
+'                    return \'<div style="display:flex; flex-wrap:wrap; align-items:center; gap:4px 14px;"><strong style="font-size:12px; color:#2d3748; min-width:110px;">\'+escHtml(rg)+\':</strong>\'+checks+\'</div>\';' +
+'                }).join("");' +
+'            } catch (err) { holder.innerHTML = \'<span style="color:#a0aec0;">Could not load branches.</span>\'; }' +
+'            syncReportRegionLock();' +
+'        }' +
+'        function selectedReportBranches() {' +
+'            return Array.from(document.querySelectorAll(".report-branch-check")).filter(c => c.checked).map(c => c.value);' +
+'        }' +
+'        function reportBranchQuery() {' +
+'            const chosen = selectedReportBranches();' +
+'            return chosen.length ? "&branches=" + encodeURIComponent(chosen.join("|")) : "";' +
+'        }' +
+'        function clearReportBranchSelection() {' +
+'            document.querySelectorAll(".report-branch-check").forEach(c => { c.checked = false; });' +
+'            syncReportRegionLock();' +
+'        }' +
+'        /* A ticked branch already decides what the report covers, so the Region control is' +
+'           greyed and frozen while any branch is ticked, and comes back the moment they are all' +
+'           unticked. Its chosen value is left alone so nothing is silently lost. */' +
+'        function syncReportRegionLock() {' +
+'            const locked = selectedReportBranches().length > 0;' +
+'            const regionSelect = document.getElementById("reportRegion");' +
+'            const regionCard = document.getElementById("reportRegionCard");' +
+'            const lockNote = document.getElementById("reportRegionLockNote");' +
+'            if (regionSelect) regionSelect.disabled = locked;' +
+'            if (regionCard) {' +
+'                regionCard.style.opacity = locked ? "0.55" : "1";' +
+'                regionCard.style.background = locked ? "#f1f3f5" : "";' +
+'            }' +
+'            if (lockNote) lockNote.style.display = locked ? "inline" : "none";' +
 '        }' +
 '        function sortOpenFirstThenResolvedByRecency(list) {' +
 '            const openTickets = list.filter(t => t.status !== "Resolved");' +
@@ -2188,6 +2286,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '               Seeding it here (rather than on the first idle check) is what stops a ticket' +
 '               raised between page load and that first check from being swallowed for good. */' +
 '            queueSignatureSeen = queueSignatureFromTickets(tickets);' +
+'            resolutionsSeen = tickets.filter(t => t.status === "Resolved").length;' +
 '            const staffFilterEl = document.getElementById("filterStaff");' +
 '            const staffFilterValue = staffFilterEl ? staffFilterEl.value : "";' +
 '            if (staffFilterValue) { tickets = tickets.filter(t => t.assignedTo === staffFilterValue); }' +
@@ -2201,6 +2300,8 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            }' +
 '            const categoryFilterValue = document.getElementById("filterCategory").value;' +
 '            if (categoryFilterValue) { tickets = tickets.filter(t => (t.category || "Other") === categoryFilterValue); }' +
+'            /* Search text narrows only the stat card being viewed; the other three keep their own totals. */' +
+'            const preSearchTickets = tickets;' +
 '            const searchTextValue = document.getElementById("filterSearchText").value.trim().toLowerCase();' +
 '            if (searchTextValue) {' +
 '                tickets = tickets.filter(t => {' +
@@ -2217,10 +2318,15 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            const toVal = document.getElementById("filterToDate").value;' +
 '            if (fromVal) { const fromDate = new Date(fromVal + "T00:00:00"); tickets = tickets.filter(t => t.createdAt && new Date(t.createdAt) >= fromDate); }' +
 '            if (toVal) { const toDate = new Date(toVal + "T23:59:59"); tickets = tickets.filter(t => t.createdAt && new Date(t.createdAt) <= toDate); }' +
-'            document.getElementById("statOpen").innerText = tickets.filter(t => t.status === "Open").length;' +
-'            document.getElementById("statResolved").innerText = tickets.filter(t => t.status === "Resolved" && t.resolvedAt && istMonthKey(new Date(t.resolvedAt).getTime()) === istMonthKey(Date.now())).length;' +
-'            document.getElementById("statEscalated").innerText = tickets.filter(t => t.escalated && t.status !== "Resolved").length;' +
-'            document.getElementById("statMine").innerText = tickets.length;' +
+'            const statBaseOpen = preSearchTickets.filter(t => t.status === "Open").length;' +
+'            const statBaseResolved = preSearchTickets.filter(t => t.status === "Resolved" && t.resolvedAt && istMonthKey(new Date(t.resolvedAt).getTime()) === istMonthKey(Date.now())).length;' +
+'            const statBaseEscalated = preSearchTickets.filter(t => t.escalated && t.status !== "Resolved").length;' +
+'            const statBaseTotal = preSearchTickets.length;' +
+'            const selectedStat = currentStatusFilter === "default-view" ? "Open" : currentStatusFilter;' +
+'            document.getElementById("statOpen").innerText = selectedStat === "Open" ? tickets.filter(t => t.status === "Open").length : statBaseOpen;' +
+'            document.getElementById("statResolved").innerText = selectedStat === "Resolved" ? tickets.filter(t => t.status === "Resolved" && t.resolvedAt && istMonthKey(new Date(t.resolvedAt).getTime()) === istMonthKey(Date.now())).length : statBaseResolved;' +
+'            document.getElementById("statEscalated").innerText = selectedStat === "Escalated" ? tickets.filter(t => t.escalated && t.status !== "Resolved").length : statBaseEscalated;' +
+'            document.getElementById("statMine").innerText = selectedStat === "all" ? tickets.length : statBaseTotal;' +
 // Widget counts come from the pre-status-filter set (matches each card exactly).
 '            updateStatusCountWidget(currentStatusFilter, tickets);' +
 '            window.__slaTickets = tickets;' +
@@ -2249,10 +2355,10 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            let ticketCardsHtml = "";' +
 '            pagedTickets.forEach(ticket => {' +
 '                const isResolved = ticket.status === "Resolved";' +
-'                const isMineOrAdmin = isAdmin || ticket.assignedTo === currentUser;' +
+'                const isMineOrAdmin = isAdmin || !!ticket.isMine;' +
 '                const reallocateBtn = (isAdmin && !isResolved && ticket.escalated) ? \'<button class="reallocate-btn" onclick="reallocateTicket(\\\'\'+ticket._id+\'\\\')">Reallocate</button>\' : "";' +
 '                const actionBtn = (!isResolved && isMineOrAdmin) ? \'<button class="resolve-btn" onclick="resolveTicket(\\\'\'+ticket._id+\'\\\')">Resolve Ticket</button>\' : "";' +
-'                const escalateBtn = (!isAdmin && !isResolved && !ticket.escalated && ticket.assignedTo === currentUser) ? \'<button class="escalate-btn" onclick="escalateTicket(\\\'\'+ticket._id+\'\\\')">Escalate to Admin</button>\' : "";' +
+'                const escalateBtn = (!isAdmin && !isResolved && !ticket.escalated && !!ticket.isMine) ? \'<button class="escalate-btn" onclick="escalateTicket(\\\'\'+ticket._id+\'\\\')">Escalate to Admin</button>\' : "";' +
 '                const waitingNote = (!isAdmin && !isResolved && !isMineOrAdmin) ? \'<span class="badge" style="background:#fef3c7;color:#92400e;">Waiting on Admin</span>\' : "";' +
 '                const actionsHtml = (reallocateBtn || actionBtn || escalateBtn || waitingNote) ? \'<div class="ticket-actions">\'+reallocateBtn+actionBtn+escalateBtn+waitingNote+\'</div>\' : "";' +
 '                const escalatedBadge = ticket.escalated ? \'<span class="badge badge-escalated">Escalated</span>\' : "";' +
@@ -2660,7 +2766,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            showConfirmModal("Remove this staff member? This cannot be undone.", async () => {' +
 '                const scrollPos = getMainScroll();' +
 '                const response = await fetch("/tickets/staff/" + staffId, { method: "DELETE" });' +
-'                if (response.ok) { await loadStaffList(); setMainScroll(scrollPos); }' +
+'                if (response.ok) { await loadStaffList(); setMainScroll(scrollPos); showAdminToast("Staff member deleted successfully."); }' +
 '                else showAdminToast("Could not delete staff member.", true);' +
 '            }, "Delete");' +
 '        }' +
@@ -3153,7 +3259,15 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '        async function resolveTicket(id) {' +
 '            showConfirmModal("Mark this ticket as resolved? This action can\'t be undone.", async () => {' +
 '                const response = await fetch("/tickets/" + id + "/resolve", { method: "POST" });' +
-'                if (response.ok) { loadTickets(); }' +
+'                if (response.ok) {' +
+'                    /* The person who resolved it gets the confirmation right away instead of' +
+'                       waiting for the idle check, which must not announce their own action back' +
+'                       to them - so the count it will compare against is moved on first. */' +
+'                    if (resolutionsSeen !== null) resolutionsSeen += 1;' +
+'                    showAdminToast("Ticket resolved successfully.");' +
+'                    playNotificationSound();' +
+'                    loadTickets();' +
+'                }' +
 '                else { const err = await response.json(); showAdminToast(err.error || "Could not resolve ticket.", true); }' +
 '            }, "Mark Resolved");' +
 '        }' +
@@ -3262,7 +3376,10 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            if (!month) { alert("Please select a month."); return; }' +
 '            const region = document.getElementById("reportRegion").value;' +
 '            let url = "/tickets/report?month=" + month;' +
-'            if (region) url += "&region=" + encodeURIComponent(region);' +
+'            /* Ticked branches decide the report by themselves, so the region is not sent.' +
+'               Block comment on purpose - this page script is served as a single line. */' +
+'            if (region && !selectedReportBranches().length) url += "&region=" + encodeURIComponent(region);' +
+'            url += reportBranchQuery();' +
 '            window.location.href = url;' +
 '        }' +
 '        function downloadReportByRange() {' +
@@ -3271,7 +3388,8 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            if (!from || !to) { alert("Please select both a From and To date."); return; }' +
 '            const region = document.getElementById("reportRegion").value;' +
 '            let url = "/tickets/report?from=" + from + "&to=" + to;' +
-'            if (region) url += "&region=" + encodeURIComponent(region);' +
+'            if (region && !selectedReportBranches().length) url += "&region=" + encodeURIComponent(region);' +
+'            url += reportBranchQuery();' +
 '            window.location.href = url;' +
 '        }' +
 '        async function changePassword() {' +
@@ -3313,6 +3431,9 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '           Block comment on purpose: this page script is served as one single line, so a' +
 '           // comment would swallow every statement after it. */' +
 '        let queueSignatureSeen = "";' +
+'        /* How many resolved tickets this panel already knows about, so a resolution someone' +
+'           else made can be announced once - never for one this panel just performed. */' +
+'        let resolutionsSeen = null;' +
 '        function queueSignatureOf(v) {' +
 '            return [Number(v.ticketCount) || 0, Number(v.latestId) || 0, queueTimeMs(v.latestResolvedAt), queueTimeMs(v.latestEscalatedAt), Number(v.resolvedCount) || 0, Number(v.escalatedCount) || 0].join("|");' +
 '        }' +
@@ -3339,7 +3460,17 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            try {' +
 '                const response = await fetch("/tickets/version", { cache: "no-store" });' +
 '                if (!response.ok) return;' +
-'                const signature = queueSignatureOf(await response.json());' +
+'                const data = await response.json();' +
+'                const signature = queueSignatureOf(data);' +
+'                /* A ticket that turned Resolved since this panel last looked is announced' +
+'                   here, from the same tick as the bell, so it is one toast and one sound. */' +
+'                const resolvedNow = Number(data.resolvedCount) || 0;' +
+'                const resolvedDelta = resolutionsSeen === null ? 0 : resolvedNow - resolutionsSeen;' +
+'                resolutionsSeen = resolvedNow;' +
+'                if (resolvedDelta > 0) {' +
+'                    playNotificationSound();' +
+'                    showAdminToast("Ticket resolved successfully.");' +
+'                }' +
 '                if (!queueSignatureSeen) { queueSignatureSeen = signature; return; }' +
 '                if (signature === queueSignatureSeen) return;' +
 '                queueSignatureSeen = signature;' +
@@ -3349,6 +3480,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '        document.addEventListener("visibilitychange", function () { if (!document.hidden) checkQueueChanged(); });' +
 '        loadStaffFilterOptions();' +
 '        loadRegionFilterOptions();' +
+'        loadReportBranchOptions();' +
 '        let pendingRefresh = null;' +
 '        try { pendingRefresh = JSON.parse(sessionStorage.getItem("sarathyPageRefresh") || "null"); sessionStorage.removeItem("sarathyPageRefresh"); } catch (e) { pendingRefresh = null; }' +
 '        const validRefreshViews = ["regions", "admins", "branches", "staff"];' +
@@ -3381,7 +3513,7 @@ app.get('/tickets/version', checkUserLogin, async (req, res) => {
             const regionBranchNames = await getBranchNamesForRegions(req.session.regions);
             where = { branch: { [Op.in]: regionBranchNames } };
         } else {
-            where = { [Op.or]: [{ assignedTo: req.session.username }, { escalatedBy: req.session.username }] };
+            where = staffQueueWhere(req);
         }
         const row = await Ticket.findOne({
             where,
@@ -3419,7 +3551,7 @@ app.get('/tickets', checkUserLogin, async (req, res) => {
             const regionBranchNames = await getBranchNamesForRegions(req.session.regions);
             where = { branch: { [Op.in]: regionBranchNames } };
         } else {
-            where = { [Op.or]: [{ assignedTo: req.session.username }, { escalatedBy: req.session.username }] };
+            where = staffQueueWhere(req);
         }
         const tickets = await Ticket.findAll({
             where,
@@ -3429,10 +3561,10 @@ app.get('/tickets', checkUserLogin, async (req, res) => {
         // Escalated + unresolved + assignee is not an IT staff member = still sitting
         // with an admin, i.e. it needs admin action. An admin's Reallocate is the only
         // action that makes the assignee a staff name, which releases the warning.
-        const staffNames = new Set((await Staff.findAll({ attributes: ['name'] })).map(st => st.name));
+
         res.json(tickets.map(t => {
-            const ser = serializeTicket(t);
-            ser.needsAdminAction = !!ser.escalated && ser.status !== 'Resolved' && !staffNames.has(ser.assignedTo);
+            const ser = serializeTicket(t, req);
+            ser.needsAdminAction = !!ser.escalated && ser.status !== 'Resolved' && !ser.assignedStaffId;
             return ser;
         }));
     } catch (err) {
@@ -3441,10 +3573,17 @@ app.get('/tickets', checkUserLogin, async (req, res) => {
     }
 });
 
+// Whose bell entries these are. A staff member's bell belongs to their staff row, so a
+// deleted person's notifications stay with them; admins are matched by their own name.
+function notificationsWhereForSession(req) {
+    if (!req.session.isAdmin) return { recipientStaffId: Number(req.session.staffRowId) || 0 };
+    return { recipient: req.session.username, recipientStaffId: null };
+}
+
 app.get('/notifications', checkUserLogin, async (req, res) => {
     try {
         const notifications = await Notification.findAll({
-            where: { recipient: req.session.username },
+            where: notificationsWhereForSession(req),
             order: [['createdAt', 'DESC']],
             limit: 50
         });
@@ -3466,7 +3605,7 @@ app.post('/notifications/:id/read', checkUserLogin, async (req, res) => {
     try {
         await Notification.update(
             { read: true },
-            { where: { id: req.params.id, recipient: req.session.username } }
+            { where: { id: req.params.id, ...notificationsWhereForSession(req) } }
         );
         res.json({ success: true });
     } catch (err) {
@@ -3476,7 +3615,7 @@ app.post('/notifications/:id/read', checkUserLogin, async (req, res) => {
 
 app.delete('/notifications', checkUserLogin, async (req, res) => {
     try {
-        await Notification.destroy({ where: { recipient: req.session.username } });
+        await Notification.destroy({ where: notificationsWhereForSession(req) });
         res.json({ success: true });
     } catch (err) {
         res.status(500).json({ error: 'Could not clear notifications.' });
@@ -3509,7 +3648,8 @@ app.get('/tickets/report', checkUserLogin, async (req, res) => {
 
         const where = { createdAt: { [Op.gte]: startDate, [Op.lte]: endDate } };
         if (!req.session.isAdmin) {
-            where[Op.or] = [{ assignedTo: req.session.username }, { escalatedBy: req.session.username }];
+            const staffQueue = staffQueueWhere(req);
+            where[Op.or] = staffQueue[Op.or];
         } else if (!req.session.isSuperAdmin) {
             // Region Admin: always scoped to their own region, regardless of any ?region= param
             const ownRegionBranches = await getBranchNamesForRegions(req.session.regions);
@@ -3523,6 +3663,20 @@ app.get('/tickets/report', checkUserLogin, async (req, res) => {
         } else if (!req.session.isSuperAdmin && req.session.isAdmin) {
             regionLabel = '-' + (req.session.regions || []).map(r => r.replace(/\s+/g, '-')).join('-');
         }
+
+        // Optional branch ticks from the Reports screen (admins only). Applied last so it
+        // decides the report on its own: a Super Admin's ticked branches replace any region
+        // choice, while a region admin is still held inside their own region (so a hand-edited
+        // URL cannot report on a branch they do not manage). Staff reports ignore the parameter
+        // completely; no ticks = the report is exactly as before.
+        if (req.session.isAdmin && req.query.branches) {
+            const asked = String(req.query.branches).split('|').map(b => b.trim()).filter(Boolean);
+            const inScope = (!req.session.isSuperAdmin && where.branch && where.branch[Op.in]) ? where.branch[Op.in] : null;
+            const chosen = inScope ? asked.filter(b => inScope.includes(b)) : asked;
+            if (!chosen.length) return res.status(400).send('Please select at least one branch available to you.');
+            where.branch = { [Op.in]: chosen };
+        }
+
         const tickets = await Ticket.findAll({ where, order: [['id', 'ASC']] });
         const allStaffForReport = await Staff.findAll();
         const staffIdByName = {};
@@ -3600,7 +3754,7 @@ async function getChecklistState(ticketId) {
 // Same access rule as resolving: admins (incl. region admins) or the assigned staff member.
 async function canUseChecklist(req, ticket) {
     if (req.session.isAdmin) return true;
-    return ticket.assignedTo === req.session.username;
+    return isAssignedToSessionStaff(req, ticket);
 }
 
 app.get('/tickets/:id/checklist', checkUserLogin, async (req, res) => {
@@ -3642,7 +3796,7 @@ app.post('/tickets/:id/resolve', checkUserLogin, async (req, res) => {
     try {
         const ticket = await Ticket.findByPk(req.params.id);
         if (!ticket) return res.status(404).json({ error: 'Ticket not found.' });
-        if (!req.session.isAdmin && ticket.assignedTo !== req.session.username) {
+        if (!req.session.isAdmin && !isAssignedToSessionStaff(req, ticket)) {
             return res.status(403).json({ error: 'This ticket is no longer assigned to you, so you cannot resolve it.' });
         }
         if (req.session.isAdmin && !req.session.isSuperAdmin) {
@@ -3683,7 +3837,7 @@ app.post('/tickets/:id/escalate', checkUserLogin, async (req, res) => {
         if (ticket.status === 'Resolved') {
             return res.status(400).json({ error: 'Resolved tickets cannot be escalated.' });
         }
-        if (!req.session.isAdmin && ticket.assignedTo !== req.session.username) {
+        if (!req.session.isAdmin && !isAssignedToSessionStaff(req, ticket)) {
             return res.status(403).json({ error: 'This ticket is not assigned to you.' });
         }
 
@@ -3700,9 +3854,11 @@ app.post('/tickets/:id/escalate', checkUserLogin, async (req, res) => {
 
         ticket.escalated = true;
         ticket.escalatedBy = req.session.username;
+        ticket.escalatedByStaffId = req.session.staffRowId || null; // this staff row, not the name
         ticket.escalatedAt = new Date();
         ticket.escalationReason = reason;
         ticket.assignedTo = recipientName;
+        ticket.assignedStaffId = null; // it now sits with an admin, not a staff row
         await ticket.save();
 
         await Notification.create({
@@ -3769,9 +3925,11 @@ app.post('/tickets/:id/reallocate', checkAdminLogin, async (req, res) => {
         }
 
         ticket.assignedTo = staff.name;
+        ticket.assignedStaffId = staff.id;
         await ticket.save();
         await Notification.create({
             recipient: staff.name,
+            recipientStaffId: staff.id,
             ticketId: ticket.id,
             ticketNumber: ticket.id,
             title: ticket.title,
@@ -3893,7 +4051,8 @@ app.get('/tickets/lookup', lookupRateLimiter, async (req, res) => {
             order: [['id', 'DESC']],
             attributes: ['id', 'displayNumber', 'title', 'branch', 'priority', 'status', 'createdAt', 'resolvedAt', 'assignedTo']
         });
-        res.json(tickets.map(serializeTicket));
+        // Map passes the index as the second argument, so wrap it: serializeTicket needs the request.
+        res.json(tickets.map(t => serializeTicket(t, req)));
     } catch (err) {
         console.error('Request failed:', err.message); res.status(500).json({ error: 'Something went wrong. Please try again.' });
     }
@@ -4053,6 +4212,15 @@ app.post('/tickets/staff', checkAdminLogin, async (req, res) => {
         if (!name || !password || !email) {
             return res.status(400).json({ error: 'Name, password, and email are all required' });
         }
+        // Names must stay unique so each person is one identity in the staff queue (the staff
+        // name is also how someone signs in). Matched case-insensitively like the DB does.
+        const nameTaken = await Staff.findOne({
+            where: sequelize.where(fn('LOWER', col('name')), name.trim().toLowerCase()),
+            attributes: ['id', 'name']
+        });
+        if (nameTaken) {
+            return res.status(400).json({ error: `A staff member named "${nameTaken.name}" already exists.` });
+        }
         let staffId = (req.body.staffId || '').trim();
         if (staffId) {
             const existing = await Staff.findOne({ where: { staffId } });
@@ -4088,6 +4256,20 @@ app.put('/tickets/staff/:staffId', checkAdminLogin, async (req, res) => {
         if (!req.session.isSuperAdmin && !req.session.regions.includes(existingStaff.region)) {
             return res.status(403).json({ error: 'You can only manage staff in your own region.' });
         }
+        // Renaming onto another staff member's name is not allowed either - two people with the
+        // same name cannot be told apart when signing in, on tickets, or in the inbox.
+        const nameTaken = await Staff.findOne({
+            where: {
+                [Op.and]: [
+                    sequelize.where(fn('LOWER', col('name')), name.trim().toLowerCase()),
+                    { id: { [Op.ne]: existingStaff.id } }
+                ]
+            },
+            attributes: ['id', 'name']
+        });
+        if (nameTaken) {
+            return res.status(400).json({ error: `A staff member named "${nameTaken.name}" already exists.` });
+        }
         const update = { name, email };
         if (password) {
             update.password = await bcrypt.hash(password, 10);
@@ -4121,7 +4303,9 @@ app.put('/tickets/staff/:staffId', checkAdminLogin, async (req, res) => {
     }
 });
 
-// Remove a staff member (their existing tickets keep their historical assignedTo name)
+// Remove a staff member. Their tickets keep their historical assigned_to text AND the
+// staff row id they were assigned under, so the queue belongs to nobody afterwards: a
+// new staff created with the same name cannot inherit it (an admin can reallocate it).
 app.delete('/tickets/staff/:staffId', checkAdminLogin, async (req, res) => {
     try {
         const existingStaff = await Staff.findOne({ where: { staffId: req.params.staffId } });
@@ -4291,11 +4475,12 @@ async function regionAdminStaffInScope(req) {
         const admin = await RegionAdmin.findByPk(req.session.regionAdminId);
         if (admin && admin.enabled) regions = (admin.region || '').split(',').map(x => x.trim()).filter(Boolean);
     }
-    if (!regions.length) return { staffIds: [], staffNames: [] };
-    const rows = await Staff.findAll({ where: { region: { [Op.in]: regions } }, attributes: ['staffId', 'name'] });
+    if (!regions.length) return { staffIds: [], staffNames: [], staffRowIds: [] };
+    const rows = await Staff.findAll({ where: { region: { [Op.in]: regions } }, attributes: ['id', 'staffId', 'name'] });
     return {
         staffIds: rows.map(x => x.staffId).filter(Boolean),
-        staffNames: rows.map(x => x.name).filter(Boolean)
+        staffNames: rows.map(x => x.name).filter(Boolean),
+        staffRowIds: rows.map(x => x.id)
     };
 }
 
@@ -4309,13 +4494,18 @@ function messageVisibleToRegionAdmin(message, scope, adminName) {
 
 async function inboxWhereForSession(req) {
     if (req.session.isSuperAdmin) return {};                            // Super Admin: full inbox
-    if (!req.session.isAdmin) return { sender: req.session.username };  // staff: their own messages
+    if (!req.session.isAdmin) {
+        // Staff: only the messages their own staff row sent - never a previous, deleted
+        // person who happened to have the same name.
+        return { senderRowId: Number(req.session.staffRowId) || 0 };
+    }
     const scope = await regionAdminStaffInScope(req);
     return {
         [Op.or]: [
             { sender: req.session.username },
             { sender: 'Admin' },
             { senderStaffId: { [Op.in]: scope.staffIds } },
+            { senderRowId: { [Op.in]: scope.staffRowIds } },
             { sender: { [Op.in]: scope.staffNames } }
         ]
     };
@@ -4346,13 +4536,19 @@ app.post('/inbox', checkUserLogin, async (req, res) => {
             return res.status(400).json({ error: 'Subject and message are both required.' });
         }
         let senderStaffId = '';
+        let senderRowId = null;
         if (!req.session.isAdmin) {
-            const senderStaff = await Staff.findOne({ where: { name: req.session.username } });
-            if (senderStaff) senderStaffId = senderStaff.staffId;
+            // Prefer the signed-in staff row itself; the name lookup is only a fallback for
+            // a session that predates staff row ids.
+            const senderStaff = req.session.staffRowId
+                ? await Staff.findByPk(req.session.staffRowId)
+                : await Staff.findOne({ where: { name: req.session.username } });
+            if (senderStaff) { senderStaffId = senderStaff.staffId; senderRowId = senderStaff.id; }
         }
         const message = await InboxMessage.create({
             sender: req.session.username,
             senderStaffId,
+            senderRowId,
             subject,
             body,
             adminRead: false,
@@ -4395,7 +4591,7 @@ app.post('/inbox/:id/read', checkUserLogin, async (req, res) => {
                 return res.status(403).json({ error: 'Access Denied' });
             }
             message.adminRead = true;
-        } else if (message.sender === req.session.username) {
+        } else if (Number(message.senderRowId) && Number(message.senderRowId) === Number(req.session.staffRowId)) {
             message.staffRead = true;
         } else {
             return res.status(403).json({ error: 'Access Denied' });
@@ -4510,6 +4706,7 @@ app.post('/tickets', publicTicketRateLimiter, (req, res, next) => {
             description: req.body.description,
             screenshot: req.file ? req.file.path : null,
             assignedTo: assignedStaff ? assignedStaff.name : 'Unassigned',
+            assignedStaffId: assignedStaff ? assignedStaff.id : null,
             displayNumber
         });
         const ticketNumber = newTicket.id;
@@ -4517,6 +4714,7 @@ app.post('/tickets', publicTicketRateLimiter, (req, res, next) => {
         if (assignedStaff) {
             await Notification.create({
                 recipient: assignedStaff.name,
+                recipientStaffId: assignedStaff.id,
                 ticketId: newTicket.id,
                 ticketNumber,
                 title: newTicket.title,
