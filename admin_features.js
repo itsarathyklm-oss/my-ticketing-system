@@ -103,5 +103,219 @@ async function deleteInboxMessage(id) {
     }, 'Delete');
 }
 
+// ============ INBOX: admins message staff ============
+function inboxBadge(m) {
+    if (m.isReceived) return ''; /* a message from an admin carries no ticket-style status */
+    if (m.broadcastHeader) return '<span class="badge status-resolved">Sent</span>';
+    if (m.status === 'Replied') return '<span class="badge status-resolved">Replied</span>';
+    return '<span class="badge status-open">Open</span>';
+}
+
+function inboxMetaLine(m, isAdmin, isReceived) {
+    var when = new Date(m.createdAt).toLocaleString();
+    if (m.broadcastHeader) {
+        var names = (m.replierNames || []).join(', ');
+        /* With replies, the names open the whole thread right here on the Sent card. */
+        var replyBit = names
+            ? 'Replied: <span style="cursor:pointer;text-decoration:underline;" title="Show who replied and what they said" onclick="toggleBroadcastReplies(\'' + m._id + '\', this)">' + escHtml(names) + '</span>'
+            : 'No replies yet';
+        var progress = 'Read by ' + (m.readCount || 0) + ' of ' + (m.recipientCount || 0) + ' \u00b7 ' + replyBit;
+        return '<div class="inbox-meta">To: <strong>' + escHtml(m.audience || 'All staff') + '</strong> \u2014 ' + (m.recipientCount || 0) + ' staff \u2014 ' + when + '</div>' +
+            '<div class="inbox-meta" style="margin-top:4px;" data-broadcast-id="' + m._id + '">' + progress + '</div>';
+    }
+    if (isAdmin) {
+        return '<div class="inbox-meta">From: <strong>' + escHtml(m.sender) + '</strong>' + (m.senderStaffId ? ' (' + escHtml(m.senderStaffId) + ')' : '') + ' \u2014 ' + when + '</div>';
+    }
+    return '<div class="inbox-meta">' + (isReceived ? 'From: <strong>' + escHtml(m.sender) + '</strong> \u2014 ' : '') + when + '</div>';
+}
+
+function inboxMarkReadBtn(m, isAdmin) {
+    var unread = isAdmin ? !m.adminRead : !m.staffRead;
+    if (!unread || m.broadcastHeader) return '';
+    return '<button class="branch-delete-btn" onclick="markInboxRead(\'' + m._id + '\')">Mark as read</button>';
+}
+
+function inboxDeleteBtn(m, isReceived) {
+    if (isReceived) return ''; /* a message the admin sent this person is theirs to keep */
+    var fn = m.broadcastHeader ? 'deleteInboxBroadcast' : 'deleteInboxMessage';
+    return '<button class="branch-delete-btn" style="color:#e53e3e;border-color:#e5e1de;margin-left:6px" onclick="' + fn + '(\'' + m._id + '\')">Delete</button>';
+}
+
+function inboxReplySection(m, isAdmin, isReceived) {
+    if (m.status === 'Replied') {
+        return '<div class="inbox-reply-shown"><strong>Reply from ' + escHtml(m.repliedBy) + ':</strong> ' + escHtml(m.reply) + '<div class="inbox-meta">' + new Date(m.repliedAt).toLocaleString() + '</div></div>';
+    }
+    if (isAdmin && !m.broadcastHeader) {
+        return '<div class="inbox-reply-box"><textarea id="inboxReplyInput-' + m._id + '" rows="2" placeholder="Write a reply..."></textarea><button class="branch-add-btn" style="margin-top:8px;" onclick="replyInboxMessage(\'' + m._id + '\')">Send Reply</button></div>';
+    }
+    if (isReceived) {
+        /* The reply (and the admin's answer to it) lives in this message's thread instead of
+           a separate "Re:" card. */
+        var threadHtml = '';
+        (m.thread || []).forEach(function (entry) {
+            threadHtml += '<div class="inbox-reply-shown" style="background:#f7fafc;color:#2d3748;border-left:3px solid #cbd5e0;">' +
+                '<strong>Your reply:</strong> ' + escHtml(entry.body) +
+                '<div class="inbox-meta">' + new Date(entry.createdAt).toLocaleString() + '</div>' +
+                (entry.reply
+                    ? '<div style="margin-top:8px;padding-top:8px;border-top:1px solid #e2e8f0;"><strong>Reply from ' + escHtml(entry.repliedBy) + ':</strong> ' + escHtml(entry.reply) +
+                      '<div class="inbox-meta">' + new Date(entry.repliedAt).toLocaleString() + '</div></div>'
+                    : '') +
+                '</div>';
+        });
+        return threadHtml +
+            '<div class="inbox-reply-box"><textarea id="inboxReplyInput-' + m._id + '" rows="2" placeholder="Write a reply to ' + escHtml(m.sender) + '..."></textarea><button class="branch-add-btn" style="margin-top:8px;" onclick="replyToAdminMessage(\'' + m._id + '\')">Send Reply</button></div>';
+    }
+    return '';
+}
+
+async function replyToAdminMessage(id) {
+    var box = document.getElementById('inboxReplyInput-' + id);
+    var text = box ? box.value.trim() : '';
+    if (!text) { showAdminToast('Please write a reply first.', true); return; }
+    var original = (window.inboxMessagesById || {})[id] || {};
+    try {
+        var res = await fetch('/inbox', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ subject: 'Re: ' + (original.subject || 'Your message'), body: text, replyTo: id })
+        });
+        if (res.ok) {
+            await fetch('/inbox/' + id + '/read', { method: 'POST' });
+            showAdminToast('Reply sent to Admin.');
+            loadInbox();
+        } else {
+            var err = await res.json();
+            showAdminToast(err.error || 'Could not send reply.', true);
+        }
+    } catch (e) { showAdminToast('Something went wrong. Please try again.', true); }
+}
+
+// The regions this admin may address (Super Admin: every region).
+async function loadBroadcastAudience() {
+    var sel = document.getElementById('broadcastAudience');
+    if (!sel || sel.dataset.loaded) return;
+    try {
+        var res = await fetch('/tickets/regions');
+        if (!res.ok) return;
+        var regions = await res.json();
+        regions.forEach(function (r) {
+            var opt = document.createElement('option');
+            opt.value = 'region:' + r.name;
+            opt.textContent = r.name;
+            sel.appendChild(opt);
+        });
+        sel.dataset.loaded = '1';
+    } catch (e) { /* keep the all-staff option */ }
+}
+
+async function sendStaffBroadcast() {
+    var subjectEl = document.getElementById('broadcastSubject');
+    var bodyEl = document.getElementById('broadcastBody');
+    var audienceEl = document.getElementById('broadcastAudience');
+    if (!subjectEl || !bodyEl) return;
+    var subject = subjectEl.value.trim();
+    var body = bodyEl.value.trim();
+    var audience = audienceEl ? audienceEl.value : 'all';
+    if (!subject || !body) { showAdminToast('Please fill in both subject and message.', true); return; }
+    var btn = document.getElementById('sendBroadcastBtn');
+    var defaultHTML = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="admin-spinner"></span>Sending...';
+    try {
+        var res = await fetch('/inbox/broadcast', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ subject: subject, body: body, audience: audience })
+        });
+        if (res.ok) {
+            var data = await res.json();
+            subjectEl.value = '';
+            bodyEl.value = '';
+            if (audienceEl) audienceEl.value = 'all';
+            showAdminToast('Message sent to ' + data.recipients + ' staff member' + (data.recipients === 1 ? '' : 's') + '.');
+            loadInbox();
+        } else {
+            var err = await res.json();
+            showAdminToast(err.error || 'Could not send message.', true);
+        }
+    } catch (e) { showAdminToast('Something went wrong. Please try again.', true); }
+    finally { btn.disabled = false; btn.innerHTML = defaultHTML; }
+}
+
+async function deleteInboxBroadcast(id) {
+    showConfirmModal('Delete this message? It is removed from every staff inbox that received it, and this cannot be undone.', async function () {
+        try {
+            var res = await fetch('/inbox/' + id, { method: 'DELETE' });
+            if (res.ok) { showAdminToast('Message deleted for all recipients.'); loadInbox(); }
+            else { showAdminToast('Failed to delete message.', true); }
+        } catch (e) { showAdminToast('Error deleting message.', true); }
+    }, 'Delete');
+}
+
+// Open the replies to one send inline on its Sent card, so the admin does not have to hunt
+// down each "Re:" message. Clicking the names again closes it.
+async function toggleBroadcastReplies(id, trigger) {
+    var existing = document.getElementById('inboxReplies-' + id);
+    if (existing) { existing.remove(); return; }
+    var card = trigger && trigger.closest ? trigger.closest('.inbox-card') : null;
+    var anchor = trigger && trigger.closest ? trigger.closest('.inbox-meta') : null;
+    if (!card) return;
+    var box = document.createElement('div');
+    box.id = 'inboxReplies-' + id;
+    box.style.cssText = 'margin-top:10px;padding:10px 12px;background:#f7fafc;border:1px solid #e2e8f0;border-radius:6px;font-size:13px;color:#2d3748;';
+    box.textContent = 'Loading replies...';
+    if (anchor) anchor.insertAdjacentElement('afterend', box); else card.appendChild(box);
+    try {
+        var res = await fetch('/inbox/' + id + '/replies');
+        if (!res.ok) { box.textContent = 'Could not load replies.'; return; }
+        var replies = await res.json();
+        if (!replies.length) { box.textContent = 'No replies yet.'; return; }
+        var html = '';
+        replies.forEach(function (r, i) {
+            html += '<div style="padding:8px 0;' + (i ? 'border-top:1px solid #e2e8f0;' : '') + '">' +
+                '<div style="font-weight:600;">' + escHtml(r.name) + (r.staffId ? ' <span style="font-weight:400;color:#a0aec0;">(' + escHtml(r.staffId) + ')</span>' : '') +
+                ' <span style="font-weight:400;color:#a0aec0;">' + new Date(r.createdAt).toLocaleString() + '</span></div>' +
+                '<div style="margin-top:4px;white-space:pre-wrap;">' + escHtml(r.body) + '</div>' +
+                (r.reply
+                    ? '<div style="margin-top:6px;padding:8px 10px;background:#f0fff4;border-radius:6px;"><strong>Your reply:</strong> ' + escHtml(r.reply) + '</div>'
+                    : '<div style="margin-top:6px;"><textarea id="threadReplyInput-' + r._id + '" rows="2" style="width:100%;padding:8px 10px;border:1px solid #cbd5e0;border-radius:6px;font-size:13px;resize:vertical;" placeholder="Reply to ' + escHtml(r.name) + '..."></textarea>' +
+                      '<button class="branch-add-btn" id="threadReplyBtn-' + r._id + '" style="margin-top:6px;" onclick="replyFromBroadcastThread(\'' + r._id + '\', \'' + id + '\')">Send Reply</button></div>') +
+                '</div>';
+        });
+        box.innerHTML = html;
+    } catch (e) { box.textContent = 'Could not load replies.'; }
+}
+
+// Answer a staff reply straight from the thread panel on the Sent card. It posts to the same
+// reply route the "Re:" message uses, then reopens the panel so the answer is visible there.
+async function replyFromBroadcastThread(replyId, broadcastId) {
+    var box = document.getElementById('threadReplyInput-' + replyId);
+    var text = box ? box.value.trim() : '';
+    if (!text) { showAdminToast('Please write a reply first.', true); return; }
+    var btn = document.getElementById('threadReplyBtn-' + replyId);
+    var defaultHTML = btn ? btn.innerHTML : '';
+    if (btn) { btn.disabled = true; btn.innerHTML = '<span class="admin-spinner"></span>Sending...'; }
+    try {
+        var res = await fetch('/inbox/' + replyId + '/reply', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ reply: text })
+        });
+        if (res.ok) {
+            showAdminToast('Reply sent.');
+            await loadInbox();
+            var anchor = document.querySelector('#inboxList [data-broadcast-id="' + broadcastId + '"]');
+            if (anchor) toggleBroadcastReplies(broadcastId, anchor);
+        } else {
+            var err = await res.json();
+            showAdminToast(err.error || 'Could not send reply.', true);
+        }
+    } catch (e) {
+        showAdminToast('Something went wrong. Please try again.', true);
+    } finally {
+        if (btn && document.body.contains(btn)) { btn.disabled = false; btn.innerHTML = defaultHTML; }
+    }
+}
+
 // Load the resolution checklist UI (fully additive)
 (function(){var s=document.createElement("script");s.src="/checklist.js";document.head.appendChild(s);})();

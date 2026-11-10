@@ -76,7 +76,9 @@ const Staff = sequelize.define('Staff', {
     name: { type: DataTypes.STRING(150), allowNull: false },
     password: { type: DataTypes.STRING(255), allowNull: false },
     email: { type: DataTypes.STRING(150), allowNull: false },
-    region: { type: DataTypes.STRING(120), defaultValue: '' } // '' = unassigned/global
+    region: { type: DataTypes.STRING(120), defaultValue: '' }, // '' = unassigned/global
+    mobile: { type: DataTypes.STRING(20), allowNull: true }, // 10-digit Indian mobile; NULL for staff added before this
+    photoUrl: { type: DataTypes.STRING(500), field: 'photo_url' } // Cloudinary avatar, NULL = initials
 }, { tableName: 'staff', timestamps: false });
 
 // --- StaffBranchAssignment (was StaffBranch.branches[] in Mongo — one row per pairing) ---
@@ -99,7 +101,8 @@ const RegionAdmin = sequelize.define('RegionAdmin', {
     // Comma-separated region list (e.g. "KOLLAM, TRIVANDRUM") — a region admin can
     // now be assigned multiple regions; widened on boot by ensureRegionAdminColumns().
     region: { type: DataTypes.STRING(500), allowNull: false },
-    enabled: { type: DataTypes.BOOLEAN, defaultValue: true }
+    enabled: { type: DataTypes.BOOLEAN, defaultValue: true },
+    photoUrl: { type: DataTypes.STRING(500), field: 'photo_url' } // Cloudinary avatar, NULL = initials
 }, { tableName: 'region_admins', timestamps: false });
 
 // --- Ticket ---
@@ -186,6 +189,16 @@ const InboxMessage = sequelize.define('InboxMessage', {
     repliedAt: { type: DataTypes.DATE, field: 'replied_at' },
     adminRead: { type: DataTypes.BOOLEAN, defaultValue: false, field: 'admin_read' },
     staffRead: { type: DataTypes.BOOLEAN, defaultValue: true, field: 'staff_read' },
+    // Admin broadcast: the sender keeps one "Sent" row (broadcast_header = 1, broadcast_id =
+    // its own id) and each recipient staff row gets its own copy carrying recipient_row_id,
+    // so read/unread stays per person and the admin never sees one card per recipient.
+    recipientRowId: { type: DataTypes.INTEGER, field: 'recipient_row_id' },
+    broadcastId: { type: DataTypes.INTEGER, field: 'broadcast_id' },
+    // Set on a staff reply so the sender's "Sent" card can name who answered. The reply is
+    // still an ordinary message in the admin's inbox - this is only a back-reference.
+    replyToBroadcastId: { type: DataTypes.INTEGER, field: 'reply_to_broadcast_id' },
+    broadcastHeader: { type: DataTypes.BOOLEAN, defaultValue: false, field: 'broadcast_header' },
+    audience: { type: DataTypes.STRING(255), defaultValue: '' },
     createdAt: { type: DataTypes.DATE, defaultValue: DataTypes.NOW, field: 'created_at' }
 }, { tableName: 'inbox_messages', timestamps: false });
 
@@ -290,11 +303,69 @@ async function ensureStaffIdentityColumns() {
     }
 }
 
+// Inbox broadcasts -------------------------------------------------------------
+// A message an admin sends to staff is stored as one "Sent" row plus one copy per
+// recipient staff row. These columns let an existing database grow the feature without
+// a rebuild; no backfill is needed because every row that predates them is a staff ->
+// admin message (recipient_row_id NULL), which is exactly how they are still read.
+async function ensureInboxBroadcastColumns() {
+    const wanted = [
+        { column: 'recipient_row_id', ddl: 'ADD COLUMN recipient_row_id INT NULL' },
+        { column: 'broadcast_id', ddl: 'ADD COLUMN broadcast_id INT NULL' },
+        { column: 'broadcast_header', ddl: 'ADD COLUMN broadcast_header TINYINT(1) NOT NULL DEFAULT 0' },
+        { column: 'audience', ddl: "ADD COLUMN audience VARCHAR(255) NOT NULL DEFAULT ''" },
+        { column: 'reply_to_broadcast_id', ddl: 'ADD COLUMN reply_to_broadcast_id INT NULL' }
+    ];
+    for (const w of wanted) {
+        const [[row]] = await sequelize.query(
+            'SELECT COUNT(*) AS n FROM information_schema.COLUMNS ' +
+            'WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = :table AND COLUMN_NAME = :column',
+            { replacements: { table: 'inbox_messages', column: w.column } }
+        );
+        if (Number(row.n) === 0) {
+            await sequelize.query('ALTER TABLE inbox_messages ' + w.ddl);
+        }
+    }
+}
+
+// Staff mobile number -----------------------------------------------------------
+// Added on boot for databases created before staff carried a mobile number; NULL means
+// "not recorded yet", which My Profile simply omits.
+async function ensureStaffMobileColumn() {
+    const [[row]] = await sequelize.query(
+        'SELECT COUNT(*) AS n FROM information_schema.COLUMNS ' +
+        'WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = :table AND COLUMN_NAME = :column',
+        { replacements: { table: 'staff', column: 'mobile' } }
+    );
+    if (Number(row.n) === 0) {
+        await sequelize.query('ALTER TABLE staff ADD COLUMN mobile VARCHAR(20) NULL');
+    }
+}
+
+// Profile photos ----------------------------------------------------------------
+// Added on boot for databases created before My Profile existed; NULL simply means the
+// avatar falls back to the person's initials, so no backfill is needed.
+async function ensureProfilePhotoColumns() {
+    for (const table of ['staff', 'region_admins']) {
+        const [[row]] = await sequelize.query(
+            'SELECT COUNT(*) AS n FROM information_schema.COLUMNS ' +
+            'WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = :table AND COLUMN_NAME = :column',
+            { replacements: { table, column: 'photo_url' } }
+        );
+        if (Number(row.n) === 0) {
+            await sequelize.query('ALTER TABLE ' + table + ' ADD COLUMN photo_url VARCHAR(500) NULL');
+        }
+    }
+}
+
 module.exports = {
     sequelize,
     ensureBranchCodeColumns,
     ensureRegionAdminColumns,
     ensureStaffIdentityColumns,
+    ensureInboxBroadcastColumns,
+    ensureProfilePhotoColumns,
+    ensureStaffMobileColumn,
     Region,
     Branch,
     Staff,

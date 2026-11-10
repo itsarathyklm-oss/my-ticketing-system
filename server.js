@@ -23,7 +23,10 @@ const {
     TicketChecklist,
     ensureBranchCodeColumns,
     ensureRegionAdminColumns,
-    ensureStaffIdentityColumns
+    ensureStaffIdentityColumns,
+    ensureInboxBroadcastColumns,
+    ensureProfilePhotoColumns,
+    ensureStaffMobileColumn
 } = require('./db');
 const logger = require('./logger');
 
@@ -125,6 +128,9 @@ sequelize.authenticate()
     .then(() => ensureBranchCodeColumns()) // add branch-code columns to tables created before this feature
     .then(() => ensureRegionAdminColumns()) // widen region column so it can hold multiple regions
     .then(() => ensureStaffIdentityColumns()) // staff-owned tickets/bell/inbox bind to the staff row, not the name
+    .then(() => ensureInboxBroadcastColumns()) // admin -> staff broadcast columns on inbox_messages
+    .then(() => ensureProfilePhotoColumns()) // My Profile avatar column on staff/region_admins
+    .then(() => ensureStaffMobileColumn()) // staff mobile number shown on My Profile
     .then(() => {
         console.log('Connected to MySQL and schema is in sync');
         // Auto-purge audit log entries older than 30 days
@@ -206,24 +212,51 @@ cloudinary.config({
     api_secret: process.env.CLOUDINARY_API_SECRET
 });
 
+// iPhone/iPad photos frequently arrive as HEIC/HEIF, and some mobile browsers report a
+// generic mimetype (image/jpg, application/octet-stream, or none at all) even for an
+// ordinary JPEG. Both used to be rejected as "Invalid file upload". HEIC/HEIF is kept out
+// of Cloudinary's allowed_formats on purpose, so those files are converted to JPEG during
+// upload and the stored link still opens in every browser.
+const HEIC_UPLOAD_EXTENSIONS = ['.heic', '.heif'];
+const HEIC_UPLOAD_MIME_TYPES = ['image/heic', 'image/heif', 'image/heic-sequence', 'image/heif-sequence'];
+const GENERIC_UPLOAD_MIME_TYPES = ['', 'application/octet-stream'];
+
+function isHeicUpload(file) {
+    const ext = path.extname((file && file.originalname) || '').toLowerCase();
+    const mime = ((file && file.mimetype) || '').toLowerCase();
+    return HEIC_UPLOAD_EXTENSIONS.includes(ext) || HEIC_UPLOAD_MIME_TYPES.includes(mime);
+}
+
+function uploadStorageParams(folder, allowedFormats) {
+    return async (req, file) => {
+        const params = { folder, allowed_formats: allowedFormats };
+        if (isHeicUpload(file)) params.format = 'jpg';
+        return params;
+    };
+}
+
 const storage = new CloudinaryStorage({
     cloudinary: cloudinary,
-    params: {
-        folder: 'helpdesk_screenshots',
-        allowed_formats: ['jpg', 'png', 'jpeg', 'webp', 'gif', 'pdf']
-    }
+    params: uploadStorageParams('helpdesk_screenshots', ['jpg', 'png', 'jpeg', 'webp', 'gif', 'pdf'])
 });
 
 // Upload security: explicit allowlist (not a blocklist) so anything not on this list —
 // including executables like .exe/.bat/.js/.php — is rejected outright, regardless of
-// what extension someone tries to disguise it with. Checks both the extension AND the
-// browser-reported mimetype since either alone can be spoofed.
-const ALLOWED_UPLOAD_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.pdf'];
-const ALLOWED_UPLOAD_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'application/pdf'];
+// what extension someone tries to disguise it with. The extension must be allowlisted and
+// the browser-reported mimetype must be one we recognise (a generic or absent mimetype is
+// accepted because mobile browsers routinely send those for camera photos).
+const ALLOWED_UPLOAD_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.pdf'].concat(HEIC_UPLOAD_EXTENSIONS);
+const ALLOWED_UPLOAD_MIME_TYPES = ['image/jpeg', 'image/jpg', 'image/pjpeg', 'image/png', 'image/webp', 'image/gif', 'application/pdf'].concat(HEIC_UPLOAD_MIME_TYPES);
+
+function isAllowedUploadFile(file, allowedExtensions, allowedMimeTypes) {
+    const ext = path.extname((file && file.originalname) || '').toLowerCase();
+    const mime = ((file && file.mimetype) || '').toLowerCase();
+    if (!allowedExtensions.includes(ext) && !(ext === '' && allowedMimeTypes.includes(mime))) return false;
+    return allowedMimeTypes.includes(mime) || GENERIC_UPLOAD_MIME_TYPES.includes(mime);
+}
 
 function uploadFileFilter(req, file, cb) {
-    const ext = path.extname(file.originalname || '').toLowerCase();
-    if (ALLOWED_UPLOAD_EXTENSIONS.includes(ext) && ALLOWED_UPLOAD_MIME_TYPES.includes(file.mimetype)) {
+    if (isAllowedUploadFile(file, ALLOWED_UPLOAD_EXTENSIONS, ALLOWED_UPLOAD_MIME_TYPES)) {
         cb(null, true);
     } else {
         cb(new Error('Only PDF, JPG, PNG, WEBP, and GIF files are allowed.'));
@@ -239,15 +272,29 @@ const upload = multer({
 // Separate storage/upload for optional attachments on internal work note comments
 const commentAttachmentStorage = new CloudinaryStorage({
     cloudinary: cloudinary,
-    params: {
-        folder: 'helpdesk_comment_attachments',
-        allowed_formats: ['jpg', 'png', 'jpeg', 'webp', 'gif', 'pdf']
-    }
+    params: uploadStorageParams('helpdesk_comment_attachments', ['jpg', 'png', 'jpeg', 'webp', 'gif', 'pdf'])
 });
 const commentUpload = multer({
     storage: commentAttachmentStorage,
     limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
     fileFilter: uploadFileFilter
+});
+
+// Profile pictures for My Profile - images only, stored in their own Cloudinary folder
+const PROFILE_PHOTO_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.webp'].concat(HEIC_UPLOAD_EXTENSIONS);
+const PROFILE_PHOTO_MIME_TYPES = ['image/jpeg', 'image/jpg', 'image/pjpeg', 'image/png', 'image/webp'].concat(HEIC_UPLOAD_MIME_TYPES);
+
+const profilePhotoStorage = new CloudinaryStorage({
+    cloudinary: cloudinary,
+    params: uploadStorageParams('helpdesk_profile_photos', ['jpg', 'jpeg', 'png', 'webp'])
+});
+const profilePhotoUpload = multer({
+    storage: profilePhotoStorage,
+    limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
+    fileFilter: (req, file, cb) => {
+        if (isAllowedUploadFile(file, PROFILE_PHOTO_EXTENSIONS, PROFILE_PHOTO_MIME_TYPES)) cb(null, true);
+        else cb(new Error('Only JPG, PNG or WEBP images are allowed.'));
+    }
 });
 
 
@@ -490,8 +537,14 @@ h2.form-title { font-family: 'Barlow Condensed', sans-serif; font-weight: 600; f
 .full-width { grid-column: 1 / -1; }
 label { display: block; margin-bottom: 3px; font-weight: 600; font-size: 10.5px; color: #6b7280; text-transform: uppercase; letter-spacing: .4px; }
 input, textarea, select { width: 100%; padding: 8px 11px; border: 1.5px solid #e5e1de; border-radius: 7px; font-size: 13px; font-family: 'Inter', sans-serif; background: #faf9f7; color: #1e2229; transition: border-color .18s, box-shadow .18s; }
+/* 16px stops iOS Safari from zooming the page when a field is focused. */
+@media (max-width: 768px) { input:not([type="checkbox"]):not([type="radio"]), textarea, select { font-size: 16px; } }
 input:focus, textarea:focus, select:focus { outline: none; border-color: #e53e3e; box-shadow: 0 0 0 3px rgba(229,62,62,.14); background: #fff; }
 textarea { resize: none; height: 44px; }
+.screenshot-file-row { display: none; align-items: center; gap: 8px; margin-top: 6px; }
+.screenshot-file-row.show { display: flex; }
+.screenshot-file-name { font-size: 11px; color: #6b7280; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 210px; }
+.screenshot-clear-btn { border: none; background: #fee2e2; color: #b91c1c; width: 22px; height: 22px; border-radius: 50%; font-size: 13px; line-height: 1; cursor: pointer; padding: 0; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
 button[type="submit"] { grid-column: 1 / -1; margin-top: 12px; padding: 11px; width: 100%; background: linear-gradient(120deg, #e53e3e, #c53030); color: #fff; border: none; border-radius: 8px; cursor: pointer; font-family: 'Barlow Condensed', sans-serif; font-weight: 700; font-size: 14px; letter-spacing: 1px; text-transform: uppercase; box-shadow: 0 8px 20px rgba(197,48,48,.4); transition: transform .15s, box-shadow .15s; display: flex; align-items: center; justify-content: center; gap: 8px; }
 button[type="submit"]:disabled { opacity: .7; cursor: not-allowed; transform: none; }
 .spinner { width: 14px; height: 14px; border: 2px solid rgba(255,255,255,.45); border-top-color: #fff; border-radius: 50%; animation: spin .7s linear infinite; }
@@ -523,7 +576,7 @@ button[type="submit"]:active { transform: translateY(0); }
 .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 .toast.error { background: #9b2c2c; }
 .page-footer { position: fixed; bottom: 8px; left: 0; width: 100%; text-align: center; font-size: 11px; color: rgba(255,255,255,0.55); letter-spacing: .3px; }
-</style></head><body>${INTRO_SPLASH_HTML}<div id="formToast" class="toast"></div><div class="ticket-card"><div class="ticket-ribbon"><img src="/logo.png" alt="Company Logo" onerror="this.style.display='none'"><span class="ticket-ribbon-text">Sarathy IT Helpdesk</span></div><div class="tab-switch"><button type="button" class="tab-btn active" id="tabSubmitBtn" onclick="showTab('submit')">Submit Ticket</button><button type="button" class="tab-btn" id="tabStatusBtn" onclick="showTab('status')">Check Status</button></div><div class="ticket-body"><div id="submitPane"><h2 class="form-title">Submit a New Ticket</h2><div class="form-subtitle">We'll route it to the right person and keep you posted.</div><div class="ticket-perforation"></div><form id="ticketForm" enctype="multipart/form-data" class="form-grid"><div class="form-field"><label>Your Name</label><input type="text" id="submitterName" required></div><div class="form-field"><label>Designation</label><input type="text" id="submitterDesignation"></div><div class="form-field"><label>Mobile Number</label><input type="tel" id="mobile" placeholder="10-digit mobile number" pattern="[0-9]{10}" maxlength="10" inputmode="numeric" oninput="this.value=this.value.replace(/[^0-9]/g,'').slice(0,10)" required></div><div class="form-field full-width"><label>Issue Title</label><input type="text" id="title" required></div><div class="form-field"><label>Region</label><select id="region" required onchange="updateBranchOptions()"><option value="" disabled selected>Loading...</option></select></div><div class="form-field"><label>Branch Location</label><select id="branch" required><option value="" disabled selected>Select region first</option></select></div><div class="form-field"><label>Priority Level</label><select id="priority"><option value="Low">Low</option><option value="Medium" selected>Medium</option><option value="High">High</option></select></div><div class="form-field"><label>Category</label><select id="category" required><option value="" disabled selected>Select Category</option><option value="Hardware">Hardware</option><option value="Software">Software</option><option value="Network">Network</option><option value="Printer">Printer</option><option value="Other">Other</option></select></div><div class="form-field full-width"><label>Description</label><textarea id="description" required></textarea></div><div class="form-field full-width"><label>Upload Screenshot (Optional, PDF/JPG/PNG/WEBP/GIF, max 5MB)</label><input type="file" id="screenshot" accept="image/jpeg,image/png,image/webp,image/gif,application/pdf,.jpg,.jpeg,.png,.webp,.gif,.pdf"></div><button type="submit" id="submitTicketBtn">Submit Ticket</button></form></div><div id="statusPane" style="display:none;"><h2 class="form-title">Check Ticket Status</h2><div class="form-subtitle">Enter the mobile number you used when submitting.</div><label>Mobile Number</label><input type="tel" id="statusMobile" placeholder="Enter your 10-digit mobile number" pattern="[0-9]{10}" maxlength="10" inputmode="numeric" oninput="this.value=this.value.replace(/[^0-9]/g,'').slice(0,10)"><button type="button" class="check-status-btn" onclick="checkTicketStatus()">Check Status</button><div id="statusResults"></div></div></div></div><div class="page-footer">&copy; 2026 Sarathy Pvt Ltd</div><script>
+</style></head><body>${INTRO_SPLASH_HTML}<div id="formToast" class="toast"></div><div class="ticket-card"><div class="ticket-ribbon"><img src="/logo.png" alt="Company Logo" onerror="this.style.display='none'"><span class="ticket-ribbon-text">Sarathy IT Helpdesk</span></div><div class="tab-switch"><button type="button" class="tab-btn active" id="tabSubmitBtn" onclick="showTab('submit')">Submit Ticket</button><button type="button" class="tab-btn" id="tabStatusBtn" onclick="showTab('status')">Check Status</button></div><div class="ticket-body"><div id="submitPane"><h2 class="form-title">Submit a New Ticket</h2><div class="form-subtitle">We'll route it to the right person and keep you posted.</div><div class="ticket-perforation"></div><form id="ticketForm" enctype="multipart/form-data" class="form-grid"><div class="form-field"><label>Your Name</label><input type="text" id="submitterName" required></div><div class="form-field"><label>Designation</label><input type="text" id="submitterDesignation"></div><div class="form-field"><label>Mobile Number</label><input type="tel" id="mobile" placeholder="10-digit mobile number" pattern="[0-9]{10}" maxlength="10" inputmode="numeric" oninput="this.value=this.value.replace(/[^0-9]/g,'').slice(0,10)" required></div><div class="form-field full-width"><label>Issue Title</label><input type="text" id="title" required></div><div class="form-field"><label>Region</label><select id="region" required onchange="updateBranchOptions()"><option value="" disabled selected>Loading...</option></select></div><div class="form-field"><label>Branch Location</label><select id="branch" required><option value="" disabled selected>Select region first</option></select></div><div class="form-field"><label>Priority Level</label><select id="priority"><option value="Low">Low</option><option value="Medium" selected>Medium</option><option value="High">High</option></select></div><div class="form-field"><label>Category</label><select id="category" required><option value="" disabled selected>Select Category</option><option value="Hardware">Hardware</option><option value="Software">Software</option><option value="Network">Network</option><option value="Printer">Printer</option><option value="Other">Other</option></select></div><div class="form-field full-width"><label>Description</label><textarea id="description" required></textarea></div><div class="form-field full-width"><label>Upload Screenshot (Optional, PDF/JPG/PNG/WEBP/GIF, max 5MB)</label><input type="file" id="screenshot" accept="image/jpeg,image/png,image/webp,image/gif,application/pdf,.jpg,.jpeg,.png,.webp,.gif,.pdf"><div id="screenshotFileRow" class="screenshot-file-row"><span id="screenshotFileName" class="screenshot-file-name"></span><button type="button" class="screenshot-clear-btn" title="Remove file" aria-label="Remove selected file" onclick="clearScreenshotFile()">&times;</button></div></div><button type="submit" id="submitTicketBtn">Submit Ticket</button></form></div><div id="statusPane" style="display:none;"><h2 class="form-title">Check Ticket Status</h2><div class="form-subtitle">Enter the mobile number you used when submitting.</div><label>Mobile Number</label><input type="tel" id="statusMobile" placeholder="Enter your 10-digit mobile number" pattern="[0-9]{10}" maxlength="10" inputmode="numeric" oninput="this.value=this.value.replace(/[^0-9]/g,'').slice(0,10)"><button type="button" class="check-status-btn" onclick="checkTicketStatus()">Check Status</button><div id="statusResults"></div></div></div></div><div class="page-footer">&copy; 2026 Sarathy Pvt Ltd</div><script>
     let allBranchesCache = [];
     let toastTimer = null;
     function showToast(message, isError) {
@@ -590,6 +643,24 @@ button[type="submit"]:active { transform: translateY(0); }
         });
     }
     loadFormBranches();
+    const screenshotInput = document.getElementById('screenshot');
+    const screenshotFileRow = document.getElementById('screenshotFileRow');
+    const screenshotFileName = document.getElementById('screenshotFileName');
+    function syncScreenshotFileRow() {
+        const picked = screenshotInput && screenshotInput.files && screenshotInput.files[0];
+        if (screenshotFileName) screenshotFileName.textContent = picked ? picked.name : '';
+        if (screenshotFileRow) screenshotFileRow.classList.toggle('show', !!picked);
+    }
+    function clearScreenshotFile() {
+        if (!screenshotInput) return;
+        screenshotInput.value = '';
+        syncScreenshotFileRow();
+    }
+    window.clearScreenshotFile = clearScreenshotFile;
+    if (screenshotInput) {
+        screenshotInput.addEventListener('change', syncScreenshotFileRow);
+        syncScreenshotFileRow();
+    }
 
     document.getElementById('ticketForm').addEventListener('submit', async (e) => { 
         e.preventDefault(); 
@@ -609,7 +680,7 @@ button[type="submit"]:active { transform: translateY(0); }
         const fileInput = document.getElementById('screenshot'); 
         if (fileInput.files[0]) {
             const file = fileInput.files[0];
-            const allowedExts = ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.pdf'];
+            const allowedExts = ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.pdf', '.heic', '.heif'];
             const nameParts = file.name.split('.');
             const ext = nameParts.length > 1 ? '.' + nameParts.pop().toLowerCase() : '';
             if (!allowedExts.includes(ext)) {
@@ -633,6 +704,7 @@ button[type="submit"]:active { transform: translateY(0); }
                 localStorage.setItem('sarathyTicketMobile', document.getElementById('mobile').value);
                 showToast('Ticket #' + (result.displayNumber || String(result.ticketNumber).padStart(4, '0')) + ' submitted successfully!'); 
                 document.getElementById('ticketForm').reset(); 
+                syncScreenshotFileRow();
                 loadFormBranches();
             } else {
                 let errorMsg = 'Could not submit the ticket. Please try again.';
@@ -669,7 +741,7 @@ button[type="submit"]:active { transform: translateY(0); }
 
     async function checkTicketStatus() {
         const mobile = document.getElementById('statusMobile').value.trim();
-        if (!mobile) { alert('Please enter your mobile number.'); return; }
+        if (!mobile) { showToast('Please enter your mobile number.', true); return; }
         const btn = document.querySelector('.check-status-btn');
         const container = document.getElementById('statusResults');
         const prevHTML = container.innerHTML;
@@ -1011,7 +1083,9 @@ app.get('/logout', (req, res) => {
 // variable (ADMIN_PASSWORD), so it can't be changed here — only from the hosting dashboard.
 app.post('/change-password', checkUserLogin, async (req, res) => {
     try {
-        if (req.session.isAdmin) {
+        // Only the Super Admin is the env-var account. A Region Admin is a row in
+        // region_admins with its own bcrypt password, so it can change that password here.
+        if (req.session.isSuperAdmin) {
             return res.status(400).json({ error: 'Admin password is set via the ADMIN_PASSWORD environment variable in your hosting dashboard — it can\'t be changed here.' });
         }
         const { currentPassword, newPassword } = req.body;
@@ -1021,6 +1095,22 @@ app.post('/change-password', checkUserLogin, async (req, res) => {
         if (newPassword.length < 4) {
             return res.status(400).json({ error: 'New password is too short' });
         }
+        // Region Admin: its own row, found by the id stored at login (name as a fallback
+        // for a session that predates it). Never a client-supplied id.
+        if (req.session.isAdmin) {
+            const adminRow = req.session.regionAdminId
+                ? await RegionAdmin.findByPk(req.session.regionAdminId)
+                : await RegionAdmin.findOne({ where: { name: req.session.username } });
+            if (!adminRow) return res.status(404).json({ error: 'Account not found' });
+            const adminPasswordIsValid = await verifyPassword(currentPassword, adminRow.password);
+            if (!adminPasswordIsValid) {
+                return res.status(401).json({ error: 'Current password is incorrect' });
+            }
+            adminRow.password = await bcrypt.hash(newPassword, 10);
+            await adminRow.save();
+            await logAudit(req.session.username, 'Change Password', `${req.session.username} changed their own password`);
+            return res.json({ success: true });
+        }
         const staffUser = await Staff.findOne({ name: req.session.username });
         if (!staffUser) return res.status(404).json({ error: 'Account not found' });
         const isValid = await verifyPassword(currentPassword, staffUser.password);
@@ -1029,6 +1119,109 @@ app.post('/change-password', checkUserLogin, async (req, res) => {
         await staffUser.save();
         await logAudit(req.session.username, 'Change Password', `${req.session.username} changed their own password`);
         res.json({ success: true });
+    } catch (err) {
+        console.error('Request failed:', err.message); res.status(500).json({ error: 'Something went wrong. Please try again.' });
+    }
+});
+
+// My Profile: who the signed-in user is and what they can reach. Read-only apart from the
+// photo below - names, usernames and branch assignments stay managed where they always were.
+app.get('/profile', checkUserLogin, async (req, res) => {
+    try {
+        const profile = {
+            role: 'Staff',
+            name: req.session.username || 'User',
+            username: req.session.username || '',
+            email: '',
+            staffId: '',
+            mobile: '',
+            region: '',
+            regions: [],
+            branches: [],
+            status: 'Active',
+            photoUrl: '',
+            canUploadPhoto: true,
+            allRegions: false
+        };
+        if (req.session.isSuperAdmin) {
+            profile.role = 'Super Admin';
+            profile.allRegions = true;
+            profile.canUploadPhoto = false; // env-managed account: no row to hold a photo
+            return res.json(profile);
+        }
+        if (req.session.isAdmin) {
+            const adminRow = req.session.regionAdminId
+                ? await RegionAdmin.findByPk(req.session.regionAdminId)
+                : await RegionAdmin.findOne({ where: { name: req.session.username } });
+            if (!adminRow) return res.status(404).json({ error: 'Account not found' });
+            profile.role = 'Region Admin';
+            profile.name = adminRow.name;
+            profile.username = adminRow.username;
+            profile.regions = (adminRow.region || '').split(',').map(s => s.trim()).filter(Boolean);
+            profile.region = profile.regions.join(', ');
+            profile.status = adminRow.enabled ? 'Active' : 'Disabled';
+            profile.photoUrl = adminRow.photoUrl || '';
+            return res.json(profile);
+        }
+        const staffRow = req.session.staffRowId
+            ? await Staff.findByPk(req.session.staffRowId)
+            : await Staff.findOne({ where: { name: req.session.username } });
+        if (!staffRow) return res.status(404).json({ error: 'Account not found' });
+        profile.name = staffRow.name;
+        profile.email = staffRow.email || '';
+        profile.staffId = staffRow.staffId || '';
+        profile.mobile = staffRow.mobile || '';
+        profile.region = staffRow.region || '';
+        profile.photoUrl = staffRow.photoUrl || '';
+        const assignments = await StaffBranchAssignment.findAll({
+            where: { staffId: staffRow.staffId },
+            attributes: ['branchName'],
+            order: [['branchName', 'ASC']]
+        });
+        profile.branches = assignments.map(a => a.branchName).filter(Boolean);
+        res.json(profile);
+    } catch (err) {
+        console.error('Request failed:', err.message); res.status(500).json({ error: 'Something went wrong. Please try again.' });
+    }
+});
+
+// The only part of My Profile a user can change: their picture. The Super Admin account is
+// environment-managed, so it is rejected before anything is sent to Cloudinary.
+app.post('/profile/photo', checkUserLogin, (req, res, next) => {
+    if (req.session.isSuperAdmin) {
+        return res.status(400).json({ error: 'The Super Admin account is managed by the environment, so a photo cannot be uploaded here.' });
+    }
+    profilePhotoUpload.single('photo')(req, res, (err) => {
+        if (err) {
+            if (err.code === 'LIMIT_FILE_SIZE') return res.status(400).json({ error: 'That image is too large. Maximum allowed size is 5MB.' });
+            if (typeof err.message === 'string' && err.message.indexOf('Only ') === 0) {
+                return res.status(400).json({ error: err.message });
+            }
+            console.error('Profile photo upload failed:', err.message);
+            return res.status(400).json({ error: 'Could not upload the photo right now. Please try again later.' });
+        }
+        next();
+    });
+}, async (req, res) => {
+    try {
+        if (!req.file) return res.status(400).json({ error: 'Choose an image file first.' });
+        const photoUrl = req.file.path;
+        if (req.session.isAdmin) {
+            const adminRow = req.session.regionAdminId
+                ? await RegionAdmin.findByPk(req.session.regionAdminId)
+                : await RegionAdmin.findOne({ where: { name: req.session.username } });
+            if (!adminRow) return res.status(404).json({ error: 'Account not found' });
+            adminRow.photoUrl = photoUrl;
+            await adminRow.save();
+        } else {
+            const staffRow = req.session.staffRowId
+                ? await Staff.findByPk(req.session.staffRowId)
+                : await Staff.findOne({ where: { name: req.session.username } });
+            if (!staffRow) return res.status(404).json({ error: 'Account not found' });
+            staffRow.photoUrl = photoUrl;
+            await staffRow.save();
+        }
+        res.json({ success: true, photoUrl });
     } catch (err) {
         console.error('Request failed:', err.message); res.status(500).json({ error: 'Something went wrong. Please try again.' });
     }
@@ -1068,6 +1261,8 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            .hamburger-btn { display: flex; }' +
 '            .top-navbar { padding: 0 16px; }' +
 '            .content-body { padding: 16px; }' +
+'            /* 16px stops iOS Safari from zooming the page when a field is focused. */' +
+'            input:not([type="checkbox"]):not([type="radio"]), select, textarea { font-size: 16px !important; }' +
 '            .metrics-grid { gap: 12px; }' +
 '            .branch-table { display: block; overflow-x: auto; white-space: nowrap; }' +
 '            .ticket-header { flex-direction: column; align-items: flex-start; gap: 10px; }' +
@@ -1086,10 +1281,10 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '        .menu-item { padding: 12px 24px; display: flex; align-items: center; gap: 12px; color: #a0aec0; text-decoration: none; font-size: 14px; font-weight: 500; cursor: pointer; transition: all 0.2s; border-left: 4px solid transparent; }' +
 '        .menu-icon { width: 17px; height: 17px; flex-shrink: 0; }' +
 '        .menu-item:hover, .menu-item.active { background-color: #2d323e; color: #fff; border-left-color: #0056b3; }' +
-'        .sidebar-footer { padding: 20px; border-top: 1px solid #2d323e; flex-shrink: 0; }' +
-'        .user-info { font-size: 12px; color: #a0aec0; margin-bottom: 12px; }' +
-'        .user-info strong { color: #fff; display: block; font-size: 14px; margin-bottom: 2px; }' +
-'        .logout-btn { display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%; background-color: #e53e3e; color: white; text-decoration: none; padding: 10px; border-radius: 6px; font-size: 14px; font-weight: 600; transition: background 0.2s; }' +
+'        .sidebar-footer { padding: 10px 14px 12px; border-top: 1px solid #2d323e; flex-shrink: 0; }' +
+'        .user-info { font-size: 11px; color: #a0aec0; margin-bottom: 8px; }' +
+'        .user-info strong { color: #fff; display: block; font-size: 13px; margin-bottom: 1px; }' +
+'        .logout-btn { display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%; background-color: #e53e3e; color: white; text-decoration: none; padding: 7px; border-radius: 6px; font-size: 13px; font-weight: 600; transition: background 0.2s; }' +
 '        .logout-btn:hover { background-color: #c53030; }' +
 '        .main-content { flex-grow: 1; display: flex; flex-direction: column; height: 100vh; overflow-y: auto; scrollbar-gutter: stable; scrollbar-width: thin; scrollbar-color: #cbd5e0 #f8f9fa; }' +
 '        .main-content::-webkit-scrollbar { width: 8px; }' +
@@ -1189,6 +1384,8 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '        .comment-attach-btn { display: flex; align-items: center; justify-content: center; padding: 8px 12px; border: 1px solid #e2e8f0; border-radius: 6px; background: #f7fafc; cursor: pointer; font-size: 14px; flex-shrink: 0; }' +
 '        .comment-attach-btn:hover { background: #edf2f7; }' +
 '        .attachment-name-tag { font-size: 11px; color: #718096; max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; align-self: center; }' +
+'        .comment-form .attachment-clear-btn { display: none; border: none; background: #fee2e2; color: #b91c1c; width: 22px; height: 22px; min-width: 22px; border-radius: 50%; padding: 0; font-size: 13px; line-height: 1; cursor: pointer; align-items: center; justify-content: center; flex-shrink: 0; }' +
+'        .comment-form .attachment-clear-btn.show { display: flex; }' +
 '        .inbox-card { background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); border-left: 4px solid #cbd5e0; }' +
 '        .inbox-card.inbox-unread { border-left-color: #e53e3e; background: #fffafa; }' +
 '        .inbox-subject { font-size: 16px; font-weight: 700; color: #2d3748; }' +
@@ -1202,6 +1399,8 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '        .branch-input-group { display: flex; gap: 15px; margin-bottom: 25px; flex-wrap: wrap; }' +
 '        .branch-input-group input { flex-grow: 1; padding: 12px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 14px; }' +
 '        .branch-add-btn { background-color: #0056b3; color: white; border: none; padding: 0 30px; font-size: 14px; font-weight: 600; border-radius: 6px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 4px; }' +
+'        .profile-photo-clear { display: none; border: none; background: #fee2e2; color: #b91c1c; width: 22px; height: 22px; border-radius: 50%; font-size: 13px; line-height: 1; cursor: pointer; padding: 0; align-items: center; justify-content: center; flex-shrink: 0; }' +
+'        .profile-photo-clear.show { display: inline-flex; }' +
 '        .search-btn { padding: 9px 22px; font-size: 13.5px; }' +
 '        .branch-add-btn:disabled { opacity: .7; cursor: not-allowed; }' +
 '        .branch-table { width: 100%; border-collapse: collapse; text-align: left; margin-top: 10px; }' +
@@ -1309,13 +1508,17 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                <li class="menu-item" id="tabReportsLink" onclick="switchView(\'reports\')"><svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>Reports</li>' +
 '                <li class="menu-item" id="tabPerformanceLink" onclick="switchView(\'performance\')"><svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.21 15.89A10 10 0 1 1 8 2.83"></path><path d="M22 12A10 10 0 0 0 12 2v10z"></path></svg>Performance Overview</li>' +
 (isAdminUser ? '                <li class="menu-item" id="tabAuditLink" onclick="switchView(\'audit\')"><svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"></path><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg>Audit Log</li>' : '') +
-'                <li class="menu-item" id="tabPasswordLink" onclick="switchView(\'password\')"><svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>Change Password</li>' +
+'                <li class="menu-item" id="tabProfileLink" onclick="switchView(\'profile\')"><svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>My Profile</li>' +
 '            </ul>' +
 '        </div>' +
 '        <div class="sidebar-footer">' +
-'            <div class="user-info">' +
-'                <span>Logged in as</span>' +
-'                <strong id="displayUserLabel">Loading...</strong>' +
+'            <div class="user-info" style="display:flex;align-items:center;gap:10px;">' +
+'                <div id="sidebarAvatar" style="width:28px;height:28px;border-radius:50%;background:#3a4150;color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;overflow:hidden;flex-shrink:0;">--</div>' +
+'                <div style="min-width:0;">' +
+'                    <span>Logged in as</span>' +
+'                    <strong id="displayUserLabel">Loading...</strong>' +
+'                    <span id="displayUserRole" style="display:block;font-size:11px;color:#a0aec0;"></span>' +
+'                </div>' +
 '            </div>' +
 '            <a href="/logout" class="logout-btn" id="logoutBtn" onclick="handleLogoutClick()">Logout</a>' +
 '        </div>' +
@@ -1392,10 +1595,34 @@ app.get('/admin', checkUserLogin, (req, res) => {
 (isAdminUser ? '                    <div class="chart-card"><h3>Tickets by Branch</h3><canvas id="chartBranch"></canvas></div>' : '') +
 '                </div>' +
 '            </div>' +
-'            <div id="viewChangePassword" class="dashboard-view">' +
+'            <div id="viewMyProfile" class="dashboard-view">' +
+'                <div class="branch-panel-card" style="margin-bottom:20px;">' +
+'                    <div style="display:flex;align-items:flex-start;gap:18px;flex-wrap:wrap;">' +
+'                        <div id="profileAvatar" style="width:84px;height:84px;border-radius:50%;background:#edf2f7;color:#2d3748;display:flex;align-items:center;justify-content:center;font-size:26px;font-weight:700;overflow:hidden;flex-shrink:0;">--</div>' +
+'                        <div style="flex:1 1 320px;min-width:240px;">' +
+'                            <h2 id="profileName" style="margin-bottom:4px;">Loading...</h2>' +
+'                            <div id="profileSubtitle" style="font-size:13px;color:#718096;"></div>' +
+'                            <div id="profileTiles" style="display:flex;gap:12px;flex-wrap:wrap;margin-top:14px;"></div>' +
+'                        </div>' +
+'                    </div>' +
+'                    <div id="profilePhotoRow" style="margin-top:16px;padding-top:16px;border-top:1px solid #edf2f7;display:none;">' +
+'                        <label style="display:block;font-size:12px;font-weight:600;color:#4a5568;margin-bottom:6px;">Profile picture</label>' +
+'                        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">' +
+'                            <img id=\"profilePhotoPreview\" alt=\"Selected photo preview\" style=\"display:none;width:44px;height:44px;border-radius:50%;object-fit:cover;border:1px solid #e2e8f0;flex-shrink:0;\">' +
+'                            <input type="file" id="profilePhotoInput" accept="image/png,image/jpeg,image/webp" style="font-size:13px;">' +
+'                            <button class="branch-add-btn" id="profilePhotoBtn" onclick="uploadProfilePhoto()">Upload photo</button>' +
+'                            <button type=\"button\" class=\"profile-photo-clear\" id=\"profilePhotoClearBtn\" title=\"Remove selected photo\" aria-label=\"Remove selected photo\" onclick=\"clearProfilePhoto()\">&times;</button>' +
+'                        </div>' +
+'                        <div style="font-size:11.5px;color:#a0aec0;margin-top:6px;">JPG, PNG or WEBP, up to 5 MB.</div>' +
+'                    </div>' +
+'                </div>' +
+'                <div class="branch-panel-card" style="margin-bottom:20px;">' +
+'                    <h2>Your Access</h2>' +
+'                    <div id="profileAccess" style="font-size:13.5px;color:#4a5568;"></div>' +
+'                </div>' +
 '                <div class="branch-panel-card">' +
-'                    <h2>Change Password</h2>' +
-(isAdminUser ?
+'                    <h2>Password</h2>' +
+(isSuperAdminUser ?
 '                    <p style="color:#718096;font-size:14px;line-height:1.6;max-width:480px;">Admin password is set via the <code>ADMIN_PASSWORD</code> environment variable in your hosting dashboard (e.g. Render). Update it there and redeploy \u2014 it can\'t be changed from this page.</p>'
 :
 '                    <div style="max-width:360px;">' +
@@ -1470,10 +1697,11 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                        <input type="text" id="newStaffId" placeholder="Staff ID (optional)">' +
 '                        <input type="text" id="newStaffPassword" placeholder="Password">' +
 '                        <input type="email" id="newStaffEmail" placeholder="Email">' +
+'                        <input type="tel" id="newStaffMobile" placeholder="Mobile Number (10 digits)" maxlength="10" inputmode="numeric">' +
 (isSuperAdminUser ?
-'                        <select id="newStaffRegion" style="flex-grow: 1; padding: 12px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 14px;"><option value="">Unassigned (global)</option></select>'
+'                        <select id="newStaffRegion" style="flex: 0 0 200px; max-width: 200px; padding: 12px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 14px;"><option value="">Unassigned (global)</option></select>'
 : '') +
-'                        <button class="branch-add-btn" id="addStaffBtn" onclick="addNewStaff()">Add Staff</button>' +
+'                        <button class="branch-add-btn" id="addStaffBtn" onclick="addNewStaff()" style="min-height: 45px;">Add Staff</button>' +
 '                    </div>' +
 '                </div>' +
 '                <div class="branch-panel-card">' +
@@ -1504,14 +1732,28 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                        <span id="myBranchTotal" style="font-size:13px; color:#718096;"></span>' +
 '                    </div>' +
 '                    <table class="branch-table">' +
-'                        <thead><tr><th>#</th><th>Branch</th><th>Code</th><th>Region</th></tr></thead>' +
+'                        <thead><tr><th>#</th><th>Branch</th><th>Code</th><th>Region</th><th>Active tickets</th></tr></thead>' +
 '                        <tbody id="myBranchTableBody"></tbody>' +
 '                    </table>' +
 '                    <div id="myBranchEmpty" style="display:none; padding:24px 0; color:#718096; font-size:14px;">No branches are assigned to your account yet. Ask your administrator to allocate them.</div>' +
 '                </div>' +
 '            </div>' +
 '            <div id="viewInbox" class="dashboard-view">' +
-(isAdminUser ? '' :
+(isAdminUser ?
+'                <div class="branch-panel-card" style="margin-bottom: 20px;">' +
+'                    <h2>Send a Message to Staff</h2>' +
+'                    <div style="max-width:560px;">' +
+'                        <label style="display:block;font-size:12px;font-weight:600;color:#4a5568;margin-bottom:4px;">Subject</label>' +
+'                        <input type="text" id="broadcastSubject" style="width:100%;padding:10px;border:1px solid #cbd5e0;border-radius:6px;font-size:14px;margin-bottom:12px;">' +
+'                        <label style="display:block;font-size:12px;font-weight:600;color:#4a5568;margin-bottom:4px;">Message</label>' +
+'                        <textarea id="broadcastBody" rows="4" style="width:100%;padding:10px;border:1px solid #cbd5e0;border-radius:6px;font-size:14px;resize:vertical;"></textarea>' +
+'                        <label style="display:block;font-size:12px;font-weight:600;color:#4a5568;margin:12px 0 4px;">Send to</label>' +
+'                        <select id="broadcastAudience" style="width:100%;padding:10px;border:1px solid #cbd5e0;border-radius:6px;font-size:14px;"><option value="all">' + (isSuperAdminUser ? 'All staff' : 'All staff in my regions') + '</option></select>' +
+'                        <button class="branch-add-btn" id="sendBroadcastBtn" onclick="sendStaffBroadcast()" style="margin-top:12px;">Send Message</button>' +
+'                    </div>' +
+'                </div>'
+:
+
 '                <div class="branch-panel-card" style="margin-bottom: 20px;">' +
 '                    <h2>Send a Message to Admin</h2>' +
 '                    <div style="max-width:520px;">' +
@@ -1801,11 +2043,11 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '        function switchView(target) {' +
 '            closeSidebar();' +
 '            if ((target === "branches" || target === "staff" || target === "audit") && !isAdmin) {' +
-'                alert("Access Denied: Admins only.");' +
+'                showAdminToast("Access Denied: Admins only.", true);' +
 '                return;' +
 '            }' +
 '            if ((target === "admins" || target === "regions") && !isSuperAdmin) {' +
-'                alert("You are not authorized to access this page.");' +
+'                showAdminToast("You are not authorized to access this page.", true);' +
 '                return;' +
 '            }' +
 '            const mainContentEl = document.querySelector(".main-content");' +
@@ -1826,10 +2068,11 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                document.getElementById("tabPerformanceLink").classList.add("active");' +
 '                document.getElementById("panelViewTitle").innerText = "Performance Overview";' +
 '                loadReportCharts();' +
-'            } else if (target === "password") {' +
-'                document.getElementById("viewChangePassword").classList.add("active");' +
-'                document.getElementById("tabPasswordLink").classList.add("active");' +
-'                document.getElementById("panelViewTitle").innerText = "Change Password";' +
+'            } else if (target === "profile") {' +
+'                document.getElementById("viewMyProfile").classList.add("active");' +
+'                document.getElementById("tabProfileLink").classList.add("active");' +
+'                document.getElementById("panelViewTitle").innerText = "My Profile";' +
+'                loadProfile();' +
 '            } else if (target === "branches") {' +
 '                document.getElementById("viewBranches").classList.add("active");' +
 '                document.getElementById("tabBranchesLink").classList.add("active");' +
@@ -1885,9 +2128,29 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                var empty = document.getElementById("myBranchEmpty");' +
 '                if (empty) empty.style.display = branches.length ? "none" : "block";' +
 '                body.innerHTML = branches.map(function (b, i) {' +
-'                    return "<tr><td>" + (i + 1) + "</td><td>" + escHtml(b.name) + "</td><td>" + escHtml(b.code || "-") + "</td><td>" + escHtml(b.region || "-") + "</td></tr>";' +
+'                    var openCount = (typeof b.openTickets === "number") ? b.openTickets : 0;' +
+'                    return `<tr class="my-branch-row" data-branch="${escHtml(b.name)}" style="cursor:pointer;" title="Show this branch open tickets on the dashboard"><td>${i + 1}</td><td>${escHtml(b.name)}</td><td>${escHtml(b.code || "-")}</td><td>${escHtml(b.region || "-")}</td><td style="font-weight:600;">${openCount}</td></tr>`;' +
 '                }).join("");' +
+'                /* The whole row opens the dashboard filtered to that branch. The name travels in a' +
+'                   data attribute (already escaped above), never inside an inline onclick string. */' +
+'                Array.prototype.forEach.call(body.querySelectorAll("tr.my-branch-row"), function (row) {' +
+'                    row.onclick = function () { openBranchTickets(row.getAttribute("data-branch")); };' +
+'                });' +
 '            }).catch(function () { });' +
+'        }' +
+'        /* My Branches row click: open the dashboard on its default (Open) view, narrowed to that' +
+'           branch. The branch name goes into the existing Search field, which already matches Branch,' +
+'           so the filter is visible in the panel and Clear filters resets it like any other search.' +
+'           Block comment on purpose - this page script is served as a single line. */' +
+'        function openBranchTickets(branchName) {' +
+'            if (!branchName) return;' +
+'            currentStatusFilter = "default-view";' +
+'            currentPage = 1;' +
+'            var searchEl = document.getElementById("filterSearchText");' +
+'            if (searchEl) searchEl.value = branchName;' +
+'            var panel = document.getElementById("ticketFilterPanel");' +
+'            if (panel && panel.style.display === "none") toggleFilterPanel();' +
+'            switchView("tickets");' +
 '        }' +
 '        if (document.getElementById("tabMyBranchesLink")) loadMyBranches();' +
 '        let currentStatusFilter = "default-view";' +
@@ -2373,7 +2636,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                        commentListHtml += \'<div class="comment-item"><strong>\'+escHtml(c.author)+\':</strong> \'+escHtml(c.text)+(c.attachment ? \' <a href="\'+escHtml(c.attachment)+\'" target="_blank">\uD83D\uDCCE Attachment</a>\' : "")+\'</div>\';' +
 '                    });' +
 '                }' +
-'                ticketCardsHtml += \'<div class="ticket-card \'+cardStateClass+\'" data-ticket-id="\'+ticket._id+\'"><div class="ticket-header"><div><h3 class="ticket-title">#\'+(ticket.displayNumber || String(ticket.ticketNumber).padStart(4,"0"))+\' \'+escHtml(ticket.title)+\'</h3><div style="margin-top: 8px;"><span class="badge p-\'+escHtml(ticket.priority)+\'">\'+escHtml(ticket.priority)+\'</span><span class="badge status-\'+ticket.status.toLowerCase()+\'">\'+ticket.status+\'</span><span class="badge badge-category">\'+escHtml(ticket.category || "Other")+\'</span>\'+escalatedBadge+slaBadgeHtml(ticket)+newBadge+\'</div></div>\'+actionsHtml+\'</div><p class="ticket-desc">\'+escHtml(ticket.description)+\'</p>\'+imageHtml+(ticket.needsAdminAction?\'<div class="admin-action-warning">&#9888; <span>Needs admin action required: not yet allocated to any staff</span></div>\':\'\')+\'<div class="assignment-info"><div class="assignment-row"><span class="assignment-label">Submitted By</span><span class="assignment-value">\'+escHtml(ticket.submittedBy || "Unknown")+(ticket.designation ? " ("+escHtml(ticket.designation)+")" : "")+\'</span></div><div class="assignment-row"><span class="assignment-label">Branch</span><span class="assignment-value">\'+escHtml(ticket.branch)+\'</span></div><div class="assignment-row"><span class="assignment-label">Mobile</span><span class="assignment-value">\'+escHtml(ticket.mobile)+\'</span></div><div class="assignment-row"><span class="assignment-label">Assigned</span><span class="assignment-value">\'+escHtml(ticket.assignedTo)+\'</span></div><div class="assignment-row"><span class="assignment-label">Submitted</span><span class="assignment-value">\'+(ticket.createdAt ? new Date(ticket.createdAt).toLocaleString() : "N/A")+\'</span></div>\'+escalationLine+resolvedLine+\'</div><div class="comments-section"><h4 class="comments-header">Internal Work Notes</h4><div>\'+(commentListHtml || "No updates.")+\'</div><div class="comment-form"><input type="text" id="input-\'+ticket._id+\'" placeholder="Write operational update..."><label class="comment-attach-btn" title="Attach a file (optional)">📎<input type="file" id="attachment-\'+ticket._id+\'" style="display:none;" accept="image/jpeg,image/png,image/webp,image/gif,application/pdf,.jpg,.jpeg,.png,.webp,.gif,.pdf" onchange="updateAttachmentLabel(\\\'\'+ticket._id+\'\\\')"></label><span id="attachmentName-\'+ticket._id+\'" class="attachment-name-tag"></span><button onclick="addComment(\\\'\'+ticket._id+\'\\\')">Post</button></div></div></div>\';' +
+'                ticketCardsHtml += \'<div class="ticket-card \'+cardStateClass+\'" data-ticket-id="\'+ticket._id+\'"><div class="ticket-header"><div><h3 class="ticket-title">#\'+(ticket.displayNumber || String(ticket.ticketNumber).padStart(4,"0"))+\' \'+escHtml(ticket.title)+\'</h3><div style="margin-top: 8px;"><span class="badge p-\'+escHtml(ticket.priority)+\'">\'+escHtml(ticket.priority)+\'</span><span class="badge status-\'+ticket.status.toLowerCase()+\'">\'+ticket.status+\'</span><span class="badge badge-category">\'+escHtml(ticket.category || "Other")+\'</span>\'+escalatedBadge+slaBadgeHtml(ticket)+newBadge+\'</div></div>\'+actionsHtml+\'</div><p class="ticket-desc">\'+escHtml(ticket.description)+\'</p>\'+imageHtml+(ticket.needsAdminAction?\'<div class="admin-action-warning">&#9888; <span>Needs admin action required: not yet allocated to any staff</span></div>\':\'\')+\'<div class="assignment-info"><div class="assignment-row"><span class="assignment-label">Submitted By</span><span class="assignment-value">\'+escHtml(ticket.submittedBy || "Unknown")+(ticket.designation ? " ("+escHtml(ticket.designation)+")" : "")+\'</span></div><div class="assignment-row"><span class="assignment-label">Branch</span><span class="assignment-value">\'+escHtml(ticket.branch)+\'</span></div><div class="assignment-row"><span class="assignment-label">Mobile</span><span class="assignment-value">\'+escHtml(ticket.mobile)+\'</span></div><div class="assignment-row"><span class="assignment-label">Assigned</span><span class="assignment-value">\'+escHtml(ticket.assignedTo)+\'</span></div><div class="assignment-row"><span class="assignment-label">Submitted</span><span class="assignment-value">\'+(ticket.createdAt ? new Date(ticket.createdAt).toLocaleString() : "N/A")+\'</span></div>\'+escalationLine+resolvedLine+\'</div><div class="comments-section"><h4 class="comments-header">Internal Work Notes</h4><div>\'+(commentListHtml || "No updates.")+\'</div><div class="comment-form"><input type="text" id="input-\'+ticket._id+\'" placeholder="Write operational update..."><label class="comment-attach-btn" title="Attach a file (optional)">📎<input type="file" id="attachment-\'+ticket._id+\'" style="display:none;" accept="image/jpeg,image/png,image/webp,image/gif,application/pdf,.jpg,.jpeg,.png,.webp,.gif,.pdf" onchange="updateAttachmentLabel(\\\'\'+ticket._id+\'\\\')"></label><span id="attachmentName-\'+ticket._id+\'" class="attachment-name-tag"></span><button type="button" id="attachmentClear-\'+ticket._id+\'" class="attachment-clear-btn" title="Remove attachment" aria-label="Remove attachment" onclick="clearAttachment(\\\'\'+ticket._id+\'\\\')">&times;</button><button onclick="addComment(\\\'\'+ticket._id+\'\\\')">Post</button></div></div></div>\';' +
 '            });' +
 '            listDiv.innerHTML = ticketCardsHtml;' +
 '            /* The marks have now been shown, so the next visit counts them as seen. */' +
@@ -2464,7 +2727,8 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '}' +
 'let editingBranchIds = new Set();' +
 'async function loadBranchesList() {' +
-'    const [branchRes, regionRes] = await Promise.all([fetch("/public-branches"), fetch("/tickets/regions")]);' +
+'    const [branchRes, regionRes, openRes] = await Promise.all([fetch("/public-branches"), fetch("/tickets/regions"), fetch("/tickets/branch-open-counts")]);' +
+'    const openCounts = await openRes.json().catch(function () { return {}; });' +
 '    const branches = await branchRes.json();' +
 '    const regions = await regionRes.json();' +
 '    const allRegionNames = regions.map(r => r.name);' +
@@ -2492,7 +2756,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            let nameCell, codeCell, regionCell, editCell, deleteCell;' +
 '            nameCell = isEditingBranch' +
 '                ? \'<input type="text" id="editBranchName-\' + escHtml(String(b._id)) + \'" value="\' + escHtml(b.name) + \'" style="width:100%;padding:6px;border:1px solid #cbd5e0;border-radius:4px;">\'' +
-'                : escHtml(b.name);' +
+'                : \'<span class="branch-open-link" data-branch-name="\' + escHtml(b.name) + \'" style="cursor:pointer;font-weight:700;color:#000;" title="Show this branch open tickets on the dashboard">\' + escHtml(b.name) + \'</span>\';' +
 '            codeCell = isEditingBranch' +
 '                ? \'<input type="text" id="editBranchCode-\' + escHtml(String(b._id)) + \'" value="\' + escHtml(b.code || "") + \'" style="width:100%;padding:6px;border:1px solid #cbd5e0;border-radius:4px;">\'' +
 '                : escHtml(b.code || "—");' +
@@ -2505,13 +2769,19 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                editCell = \'<button type="button" class="branch-delete-btn" onclick="toggleEditBranch(\\\'\' + b._id + \'\\\')">Edit</button>\';' +
 '                deleteCell = \'<button type="button" class="branch-delete-btn" onclick="deleteBranch(\\\'\' + b._id + \'\\\')">Delete</button>\';' +
 '            }' +
-'            rowsHtml += \'<tr><td>\' + nameCell + \'</td><td>\' + codeCell + \'</td>\' + regionCell + \'<td>\' + editCell + \'</td><td>\' + deleteCell + \'</td></tr>\';' +
+'            const openCount = openCounts[b.name] || 0;' +
+'            rowsHtml += \'<tr><td>\' + nameCell + \'</td><td>\' + codeCell + \'</td>\' + regionCell + \'<td style="font-weight:600;">\' + openCount + \'</td><td>\' + editCell + \'</td><td>\' + deleteCell + \'</td></tr>\';' +
 '        });' +
 '        groupsHtml +=' +
 '            \'<h3 style="margin: 20px 0 8px; font-size: 14px; font-weight: 700; color: #4a5568; text-transform: uppercase; letter-spacing: 0.5px;">\' + escHtml(region) + \'</h3>\' +' +
-'            \'<table class="branch-table"><thead><tr><th>Branch Name</th><th>Code</th><th>Region</th><th>Edit</th><th>Delete</th></tr></thead><tbody>\' + rowsHtml + \'</tbody></table>\';' +
+'            \'<table class="branch-table"><thead><tr><th>Branch Name</th><th>Code</th><th>Region</th><th>Active tickets</th><th>Edit</th><th>Delete</th></tr></thead><tbody>\' + rowsHtml + \'</tbody></table>\';' +
 '    });' +
 '    container.innerHTML = groupsHtml;' +
+'    /* Only the branch name opens the dashboard. Edit, Delete and the region dropdown keep' +
+'       their own behaviour. Block comment - this page script is served as a single line. */' +
+'    Array.prototype.forEach.call(container.querySelectorAll("[data-branch-name]"), function (el) {' +
+'        el.onclick = function () { openBranchTickets(el.getAttribute("data-branch-name")); };' +
+'    });' +
 '}' +
 'async function addNewBranch() {' +
 '    const input = document.getElementById("newBranchName");' +
@@ -2664,7 +2934,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                if (editingStaffIds.has(s.id)) {' +
 '                    idCell = isSuperAdmin ? \'<input type="text" id="editStaffId-\'+escHtml(s.id)+\'" value="\'+escHtml(s.id)+\'" style="width:100%;padding:6px;border:1px solid #cbd5e0;border-radius:4px;">\' : escHtml(s.id);' +
 '                    nameCell = \'<input type="text" id="editName-\'+escHtml(s.id)+\'" value="\'+escHtml(s.name)+\'" style="width:100%;padding:6px;border:1px solid #cbd5e0;border-radius:4px;">\';' +
-'                    emailCell = \'<input type="email" id="editEmail-\'+escHtml(s.id)+\'" value="\'+escHtml(s.email)+\'" style="width:100%;padding:6px;border:1px solid #cbd5e0;border-radius:4px;margin-bottom:4px;"><input type="text" id="editPassword-\'+escHtml(s.id)+\'" placeholder="New password (optional)" style="width:100%;padding:6px;border:1px solid #cbd5e0;border-radius:4px;">\';' +
+'                    emailCell = \'<input type="email" id="editEmail-\'+escHtml(s.id)+\'" value="\'+escHtml(s.email)+\'" style="width:100%;padding:6px;border:1px solid #cbd5e0;border-radius:4px;margin-bottom:4px;"><input type="tel" id="editMobile-\'+escHtml(s.id)+\'" value="\'+escHtml(s.mobile || "")+\'" placeholder="Mobile (10 digits)" maxlength="10" style="width:100%;padding:6px;border:1px solid #cbd5e0;border-radius:4px;margin-bottom:4px;"><input type="text" id="editPassword-\'+escHtml(s.id)+\'" placeholder="New password (optional)" style="width:100%;padding:6px;border:1px solid #cbd5e0;border-radius:4px;">\';' +
 '                    editCell = \'<button type="button" class="resolve-btn" onclick="saveStaffEdit(\\\'\'+escHtml(s.id)+\'\\\')">Save</button>\';' +
 '                    deleteCell = \'<button type="button" class="branch-delete-btn" onclick="toggleEditStaff(\\\'\'+escHtml(s.id)+\'\\\')">Cancel</button>\';' +
 '                } else {' +
@@ -2735,8 +3005,12 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            const name = document.getElementById("editName-" + staffId).value.trim();' +
 '            const email = document.getElementById("editEmail-" + staffId).value.trim();' +
 '            const password = document.getElementById("editPassword-" + staffId).value.trim();' +
+'            const mobileEl = document.getElementById("editMobile-" + staffId);' +
+'            const mobile = mobileEl ? mobileEl.value.trim() : "";' +
 '            if (!name || !email) { showAdminToast("Name and email are required.", true); return; }' +
+'            if (mobile && !/^[0-9]{10}$/.test(mobile)) { showAdminToast("Mobile number must be exactly 10 digits.", true); return; }' +
 '            const body = { name, email };' +
+'            if (mobileEl) body.mobile = mobile;' +
 '            if (password) body.password = password;' +
 '            if (isSuperAdmin) {' +
 '                const regionEl = document.getElementById("editStaffRegion-" + staffId);' +
@@ -3017,11 +3291,13 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            bar.innerHTML = \'<div class="pagination-info">Showing \'+startItem+\' \u2013 \'+endItem+\' of \'+totalItems+\' messages<//div><div class="pagination-controls">\'+pageButtonsHtml+\'</div>\';' +
 '        }' +
 '        async function loadInbox() {' +
+'            if (isAdmin) loadBroadcastAudience();' +
 '            const listDiv = document.getElementById("inboxList");' +
 '            try {' +
 '                const response = await fetch("/inbox");' +
 '                if (!response.ok) { listDiv.innerHTML = \'<p style="text-align:center;color:#c53030;padding:30px 0;">Could not load messages.</p>\'; return; }' +
 '                const messages = await response.json();' +
+'                if (!isAdmin) { window.inboxMessagesById = {}; messages.forEach(m => { window.inboxMessagesById[m._id] = m; }); }' +
 '                if (messages.length === 0) {' +
 '                    listDiv.innerHTML = \'<p style="text-align: center; color: #718096; padding: 40px 0;">\'+(isAdmin ? "No messages from staff yet." : "You have not sent any messages yet.")+\'</p>\';' +
 '                    updateInboxBadge(messages);' +
@@ -3035,17 +3311,13 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                const pagedMessages = messages.slice(pageStart, pageStart + INBOX_PAGE_SIZE);' +
 '                let inboxCardsHtml = "";' +
 '                pagedMessages.forEach(m => {' +
-'                    const isUnread = isAdmin ? !m.adminRead : !m.staffRead;' +
-'                    const statusBadge = m.status === "Replied" ? \'<span class="badge status-resolved">Replied</span>\' : \'<span class="badge status-open">Open</span>\';' +
-'                    const senderLine = isAdmin ? \'<div class="inbox-meta">From: <strong>\'+escHtml(m.sender)+\'</strong>\'+(m.senderStaffId ? \' (\'+escHtml(m.senderStaffId)+\')\' : "")+\' \u2014 \'+new Date(m.createdAt).toLocaleString()+\'</div>\' : \'<div class="inbox-meta">\'+new Date(m.createdAt).toLocaleString()+\'</div>\';' +
-'                    const markReadBtn = isUnread ? \'<button class="branch-delete-btn" onclick="markInboxRead(\\\'\'+m._id+\'\\\')">Mark as read</button>\' : "";' +
-'                    const deleteBtn = \'<button class="branch-delete-btn" style="color:#e53e3e;border-color:#e5e1de;margin-left:6px" onclick="deleteInboxMessage(\\\'\'+m._id+\'\\\')">Delete</button>\';' +
-'                    let replySection = "";' +
-'                    if (m.status === "Replied") {' +
-'                        replySection = \'<div class="inbox-reply-shown"><strong>Reply from \'+escHtml(m.repliedBy)+\':</strong> \'+escHtml(m.reply)+\'<div class="inbox-meta">\'+new Date(m.repliedAt).toLocaleString()+\'</div></div>\';' +
-'                    } else if (isAdmin) {' +
-'                        replySection = \'<div class="inbox-reply-box"><textarea id="inboxReplyInput-\'+m._id+\'" rows="2" placeholder="Write a reply..."></textarea><button class="branch-add-btn" style="margin-top:8px;" onclick="replyInboxMessage(\\\'\'+m._id+\'\\\')">Send Reply</button></div>\';' +
-'                    }' +
+'                    const isReceived = !isAdmin && !!m.isReceived;' +
+'                    const isUnread = m.broadcastHeader ? false : (isAdmin ? !m.adminRead : !m.staffRead);' +
+'                    const statusBadge = inboxBadge(m);' +
+'                    const senderLine = inboxMetaLine(m, isAdmin, isReceived);' +
+'                    const markReadBtn = inboxMarkReadBtn(m, isAdmin);' +
+'                    const deleteBtn = inboxDeleteBtn(m, isReceived);' +
+'                    let replySection = inboxReplySection(m, isAdmin, isReceived);' +
 '                    inboxCardsHtml += \'<div class="inbox-card \'+(isUnread ? "inbox-unread" : "")+\'"><div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;"><div><div class="inbox-subject">\'+escHtml(m.subject)+\'</div>\'+senderLine+\'</div><div style="display:flex;align-items:center;gap:8px;">\'+statusBadge+\' \'+deleteBtn+markReadBtn+\'</div></div><div class="inbox-body">\'+escHtml(m.body)+\'</div>\'+replySection+\'</div>\';' +
 '                });' +
 '                listDiv.innerHTML = inboxCardsHtml;' +
@@ -3194,9 +3466,13 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            const staffId = document.getElementById("newStaffId").value.trim();' +
 '            const password = document.getElementById("newStaffPassword").value.trim();' +
 '            const email = document.getElementById("newStaffEmail").value.trim();' +
+'            const mobileEl = document.getElementById("newStaffMobile");' +
+'            const mobile = mobileEl ? mobileEl.value.trim() : "";' +
 '            const regionEl = document.getElementById("newStaffRegion");' +
 '            const region = regionEl ? regionEl.value : undefined;' +
 '            if (!name || !password || !email) { showAdminToast("Please fill in name, password, and email.", true); return; }' +
+'            if (!mobile) { showAdminToast("Please enter a mobile number.", true); return; }' +
+'            if (!/^[0-9]{10}$/.test(mobile)) { showAdminToast("Mobile number must be exactly 10 digits.", true); return; }' +
 '            const btn = document.getElementById("addStaffBtn");' +
 '            const defaultHTML = btn.innerHTML;' +
 '            btn.disabled = true;' +
@@ -3205,7 +3481,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                const response = await fetch("/tickets/staff", {' +
 '                    method: "POST",' +
 '                    headers: { "Content-Type": "application/json" },' +
-'                    body: JSON.stringify({ name, staffId, password, email, region })' +
+'                    body: JSON.stringify({ name, staffId, password, email, mobile, region })' +
 '                });' +
 '                if (response.ok) {' +
 '                    const result = await response.json();' +
@@ -3213,6 +3489,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                    document.getElementById("newStaffId").value = "";' +
 '                    document.getElementById("newStaffPassword").value = "";' +
 '                    document.getElementById("newStaffEmail").value = "";' +
+'                    if (mobileEl) mobileEl.value = "";' +
 '                    if (regionEl) regionEl.value = "";' +
 '                    refreshPageWithToast("staff", "Staff member added successfully (" + result.staffId + ").");' +
 '                } else {' +
@@ -3229,8 +3506,16 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '        function updateAttachmentLabel(id) {' +
 '            const fileInput = document.getElementById("attachment-" + id);' +
 '            const nameTag = document.getElementById("attachmentName-" + id);' +
+'            const clearBtn = document.getElementById("attachmentClear-" + id);' +
 '            if (!fileInput || !nameTag) return;' +
-'            nameTag.innerText = (fileInput.files && fileInput.files[0]) ? fileInput.files[0].name : "";' +
+'            const hasFile = !!(fileInput.files && fileInput.files[0]);' +
+'            nameTag.innerText = hasFile ? fileInput.files[0].name : "";' +
+'            if (clearBtn) clearBtn.classList.toggle("show", hasFile);' +
+'        }' +
+'        function clearAttachment(id) {' +
+'            const fileInput = document.getElementById("attachment-" + id);' +
+'            if (fileInput) fileInput.value = "";' +
+'            updateAttachmentLabel(id);' +
 '        }' +
 '        async function addComment(id) {' +
 '            const textInput = document.getElementById("input-" + id);' +
@@ -3250,6 +3535,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                textInput.value = "";' +
 '                if (fileInput) fileInput.value = "";' +
 '                if (nameTag) nameTag.innerText = "";' +
+'                updateAttachmentLabel(id);' +
 '                loadTickets();' +
 '            } else {' +
 '                const err = await response.json().catch(() => ({}));' +
@@ -3373,7 +3659,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '        }' +
 '        function downloadReport() {' +
 '            const month = document.getElementById("reportMonth").value;' +
-'            if (!month) { alert("Please select a month."); return; }' +
+'            if (!month) { showAdminToast("Please select a month.", true); return; }' +
 '            const region = document.getElementById("reportRegion").value;' +
 '            let url = "/tickets/report?month=" + month;' +
 '            /* Ticked branches decide the report by themselves, so the region is not sent.' +
@@ -3385,19 +3671,144 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '        function downloadReportByRange() {' +
 '            const from = document.getElementById("reportFromDate").value;' +
 '            const to = document.getElementById("reportToDate").value;' +
-'            if (!from || !to) { alert("Please select both a From and To date."); return; }' +
+'            if (!from || !to) { showAdminToast("Please select both a From and To date.", true); return; }' +
 '            const region = document.getElementById("reportRegion").value;' +
 '            let url = "/tickets/report?from=" + from + "&to=" + to;' +
 '            if (region && !selectedReportBranches().length) url += "&region=" + encodeURIComponent(region);' +
 '            url += reportBranchQuery();' +
 '            window.location.href = url;' +
 '        }' +
+'        function roleDisplayName(role) {' +
+'            return role === "Staff" ? "IT EXECUTIVE" : (role || "");' +
+'        }' +
+'        function paintAvatar(el, photoUrl, name) {' +
+'            if (!el) return;' +
+'            if (photoUrl) {' +
+'                el.innerHTML = \'<img src="\' + escHtml(photoUrl) + \'" alt="Profile picture" style="width:100%;height:100%;object-fit:cover;">\';' +
+'            } else {' +
+'                el.innerHTML = "";' +
+'                el.textContent = profileInitials(name);' +
+'            }' +
+'        }' +
+'        function paintSidebarIdentity(p) {' +
+'            var roleEl = document.getElementById("displayUserRole");' +
+'            if (roleEl) roleEl.textContent = roleDisplayName(p.role);' +
+'            paintAvatar(document.getElementById("sidebarAvatar"), p.photoUrl, p.name);' +
+'        }' +
+'        async function loadSidebarIdentity() {' +
+'            try {' +
+'                var res = await fetch("/profile");' +
+'                if (!res.ok) return;' +
+'                paintSidebarIdentity(await res.json());' +
+'            } catch (e) { /* the footer still shows the name without a role */ }' +
+'        }' +
+'        function profileInitials(name) {' +
+'            var parts = String(name || "").trim().split(" ").filter(Boolean);' +
+'            if (!parts.length) return "?";' +
+'            return (parts[0].charAt(0) + (parts.length > 1 ? parts[parts.length - 1].charAt(0) : "")).toUpperCase();' +
+'        }' +
+'        async function loadProfile() {' +
+'            var nameEl = document.getElementById("profileName");' +
+'            if (!nameEl) return;' +
+'            try {' +
+'                var res = await fetch("/profile");' +
+'                if (!res.ok) throw new Error("profile");' +
+'                var p = await res.json();' +
+'                paintAvatar(document.getElementById("profileAvatar"), p.photoUrl, p.name);' +
+'                nameEl.textContent = p.name || "Unknown";' +
+'                document.getElementById("profileSubtitle").textContent = p.email || (p.username && p.username !== p.name ? "Username: " + p.username : "");' +
+'                var tiles = [["Role", roleDisplayName(p.role)], ["Status", p.status || "Active"]];' +
+'                if (p.staffId) tiles.push(["Staff ID", p.staffId]);' +
+'                if (p.mobile) tiles.push(["Mobile", p.mobile]);' +
+'                if (p.username && p.username !== p.name) tiles.push(["Username", p.username]);' +
+'                if (p.region) tiles.push([(p.regions && p.regions.length > 1) ? "Regions" : "Region", p.region]);' +
+'                document.getElementById("profileTiles").innerHTML = tiles.map(function (t) {' +
+'                    return \'<div style="border:1px solid #e2e8f0;border-radius:8px;padding:10px 14px;min-width:130px;"><div style="font-size:10.5px;font-weight:700;letter-spacing:.4px;color:#a0aec0;text-transform:uppercase;">\' + escHtml(t[0]) + \'</div><div style="font-size:14px;font-weight:600;color:#2d3748;margin-top:3px;">\' + escHtml(t[1]) + \'</div></div>\';' +
+'                }).join("");' +
+'                var access = document.getElementById("profileAccess");' +
+'                function chips(items) {' +
+'                    return \'<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;">\' + items.map(function (x) {' +
+'                        return \'<span style="border:1px solid #e2e8f0;border-radius:14px;padding:4px 12px;font-size:12.5px;color:#2d3748;">\' + escHtml(x) + \'</span>\';' +
+'                    }).join("") + \'</div>\';' +
+'                }' +
+'                if (p.allRegions) {' +
+'                    access.innerHTML = \'<div>Full access to every region and branch.</div>\';' +
+'                } else if (p.branches && p.branches.length) {' +
+'                    access.innerHTML = \'<div>Branch locations assigned to you:</div>\' + chips(p.branches);' +
+'                } else if (p.regions && p.regions.length) {' +
+'                    access.innerHTML = \'<div>Regions you manage:</div>\' + chips(p.regions);' +
+'                } else {' +
+'                    access.innerHTML = \'<div style="color:#718096;">No work areas are assigned yet.</div>\';' +
+'                }' +
+'                document.getElementById("profilePhotoRow").style.display = p.canUploadPhoto ? "block" : "none";' +
+'                paintSidebarIdentity(p);' +
+'            } catch (err) {' +
+'                nameEl.textContent = "Could not load profile";' +
+'            }' +
+'        }' +
+'        async function uploadProfilePhoto() {' +
+'            var input = document.getElementById("profilePhotoInput");' +
+'            if (!input || !input.files || !input.files.length) { showAdminToast("Choose an image first.", true); return; }' +
+'            var btn = document.getElementById("profilePhotoBtn");' +
+'            var defaultHTML = btn.innerHTML;' +
+'            btn.disabled = true;' +
+'            btn.innerHTML = \'<span class="admin-spinner"></span>Uploading...\';' +
+'            try {' +
+'                var form = new FormData();' +
+'                form.append("photo", input.files[0]);' +
+'                var res = await fetch("/profile/photo", { method: "POST", body: form });' +
+'                if (res.ok) {' +
+'                    showAdminToast("Profile picture updated.");' +
+'                    input.value = "";' +
+'                    syncProfilePhotoClear();' +
+'                    loadProfile();' +
+'                } else {' +
+'                    var errBody = await res.json();' +
+'                    showAdminToast(errBody.error || "Could not upload photo.", true);' +
+'                }' +
+'            } catch (e) {' +
+'                showAdminToast("Something went wrong. Please try again.", true);' +
+'            } finally {' +
+'                btn.disabled = false;' +
+'                btn.innerHTML = defaultHTML;' +
+'            }' +
+'        }' +
+'        function syncProfilePhotoClear() {' +
+'            var input = document.getElementById(\"profilePhotoInput\");' +
+'            var btn = document.getElementById(\"profilePhotoClearBtn\");' +
+'            var preview = document.getElementById(\"profilePhotoPreview\");' +
+'            if (!input || !btn) return;' +
+'            var file = input.files && input.files[0];' +
+'            if (preview) {' +
+'                if (window.__profilePhotoPreviewUrl) { URL.revokeObjectURL(window.__profilePhotoPreviewUrl); window.__profilePhotoPreviewUrl = null; }' +
+'                if (file) {' +
+'                    window.__profilePhotoPreviewUrl = URL.createObjectURL(file);' +
+'                    preview.src = window.__profilePhotoPreviewUrl;' +
+'                    preview.style.display = \"block\";' +
+'                } else {' +
+'                    preview.removeAttribute(\"src\");' +
+'                    preview.style.display = \"none\";' +
+'                }' +
+'            }' +
+'            btn.classList.toggle(\"show\", !!file);' +
+'        }' +
+'        function clearProfilePhoto() {' +
+'            var input = document.getElementById(\"profilePhotoInput\");' +
+'            if (input) input.value = \"\";' +
+'            syncProfilePhotoClear();' +
+'        }' +
+'        (function initProfilePhotoPicker() {' +
+'            var input = document.getElementById(\"profilePhotoInput\");' +
+'            if (!input) return;' +
+'            input.addEventListener(\"change\", syncProfilePhotoClear);' +
+'            syncProfilePhotoClear();' +
+'        })();' +
 '        async function changePassword() {' +
 '            const current = document.getElementById("currentPassword").value;' +
 '            const next = document.getElementById("newPassword").value;' +
 '            const confirmVal = document.getElementById("confirmPassword").value;' +
-'            if (!current || !next || !confirmVal) { alert("Please fill in all fields."); return; }' +
-'            if (next !== confirmVal) { alert("New password and confirmation do not match."); return; }' +
+'            if (!current || !next || !confirmVal) { showAdminToast("Please fill in all fields.", true); return; }' +
+'            if (next !== confirmVal) { showAdminToast("New password and confirmation do not match.", true); return; }' +
 '            const response = await fetch("/change-password", {' +
 '                method: "POST",' +
 '                headers: { "Content-Type": "application/json" },' +
@@ -3405,12 +3816,12 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            });' +
 '            const data = await response.json();' +
 '            if (response.ok) {' +
-'                alert("Password updated successfully.");' +
+'                showAdminToast("Password updated successfully.");' +
 '                document.getElementById("currentPassword").value = "";' +
 '                document.getElementById("newPassword").value = "";' +
 '                document.getElementById("confirmPassword").value = "";' +
 '            } else {' +
-'                alert(data.error || "Could not update password.");' +
+'                showAdminToast(data.error || "Could not update password.", true);' +
 '            }' +
 '        }' +
 '        document.getElementById("reportMonth").value = new Date().toISOString().slice(0, 7);' +
@@ -3479,6 +3890,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '        }' +
 '        document.addEventListener("visibilitychange", function () { if (!document.hidden) checkQueueChanged(); });' +
 '        loadStaffFilterOptions();' +
+'        loadSidebarIdentity();' +
 '        loadRegionFilterOptions();' +
 '        loadReportBranchOptions();' +
 '        let pendingRefresh = null;' +
@@ -3948,7 +4360,13 @@ app.post('/tickets/:id/comment', checkUserLogin, (req, res, next) => {
             if (err.code === 'LIMIT_FILE_SIZE') {
                 return res.status(400).json({ error: 'Attachment is too large. Maximum allowed size is 5MB.' });
             }
-            return res.status(400).json({ error: 'Invalid file upload. Only PDF, JPG, PNG, WEBP, and GIF files are allowed.' });
+            // Our own allowlist rejection keeps its precise wording; anything else came from
+            // Cloudinary/storage and must not be reported as a file-format problem.
+            if (typeof err.message === 'string' && err.message.indexOf('Only ') === 0) {
+                return res.status(400).json({ error: err.message });
+            }
+            console.error('Attachment upload failed:', err.message);
+            return res.status(400).json({ error: 'Could not upload the attachment right now. Please try again later.' });
         }
         next();
     });
@@ -3982,6 +4400,30 @@ app.get('/public-branches', async (req, res) => {
 
 // Regions (admin only — used to organize the branch list into groups). Region Admins only
 // see their own region here; only the Super Admin can create/rename/delete whole regions.
+// Open-ticket count per branch, for the Manage Branches table. Scoped exactly like /tickets:
+// the Super Admin sees every branch, a Region Admin only branches in their own regions — so
+// the number matches the list that clicking the branch name opens. Authenticated on purpose:
+// /public-branches is also used by the public status page and must not leak ticket counts.
+app.get('/tickets/branch-open-counts', checkAdminLogin, async (req, res) => {
+    try {
+        const regionBranchNames = req.session.isSuperAdmin ? null : await getBranchNamesForRegions(req.session.regions);
+        const where = { status: 'Open' };
+        if (regionBranchNames) where.branch = { [Op.in]: regionBranchNames };
+        const rows = await Ticket.findAll({
+            attributes: ['branch', [fn('COUNT', col('id')), 'openCount']],
+            where,
+            group: ['branch'],
+            raw: true
+        });
+        const counts = {};
+        rows.forEach(r => { counts[r.branch] = Number(r.openCount) || 0; });
+        res.json(counts);
+    } catch (err) {
+        console.error('Request failed:', err.message);
+        res.status(500).json({});
+    }
+});
+
 app.get('/tickets/regions', checkAdminLogin, async (req, res) => {
     const where = req.session.isSuperAdmin ? {} : { name: { [Op.in]: req.session.regions || [] } };
     const regions = await Region.findAll({ where, order: [['name', 'ASC']] });
@@ -4162,7 +4604,7 @@ app.put('/tickets/branches/:id', checkAdminLogin, async (req, res) => {
 app.get('/tickets/staff-list', checkAdminLogin, async (req, res) => {
     const where = req.session.isSuperAdmin ? {} : { region: { [Op.in]: req.session.regions || [] } };
     const staff = await Staff.findAll({ where, order: [['staffId', 'ASC']] });
-    res.json(staff.map(s => ({ id: s.staffId, name: s.name, email: s.email, region: s.region })));
+    res.json(staff.map(s => ({ id: s.staffId, name: s.name, email: s.email, mobile: s.mobile || '', region: s.region })));
 });
 
 // Active-staff widget data: the roster in the caller's scope (same region rule as
@@ -4212,6 +4654,14 @@ app.post('/tickets/staff', checkAdminLogin, async (req, res) => {
         if (!name || !password || !email) {
             return res.status(400).json({ error: 'Name, password, and email are all required' });
         }
+        // New staff must carry a reachable Indian mobile number; it is shown on My Profile.
+        const mobile = (req.body.mobile || '').trim();
+        if (!mobile) {
+            return res.status(400).json({ error: 'Mobile number is required.' });
+        }
+        if (!/^\d{10}$/.test(mobile)) {
+            return res.status(400).json({ error: 'Mobile number must be exactly 10 digits.' });
+        }
         // Names must stay unique so each person is one identity in the staff queue (the staff
         // name is also how someone signs in). Matched case-insensitively like the DB does.
         const nameTaken = await Staff.findOne({
@@ -4236,7 +4686,7 @@ app.post('/tickets/staff', checkAdminLogin, async (req, res) => {
             region = req.session.regions[0];
         }
         const hashedPassword = await bcrypt.hash(password, 10);
-        await Staff.create({ staffId, name, password: hashedPassword, email, region });
+        await Staff.create({ staffId, name, password: hashedPassword, email, mobile, region });
         await logAudit(req.session.username, 'Add Staff', `Added staff ${name} (${staffId})${region ? ' — region: ' + region : ''}`);
         res.status(201).json({ success: true, staffId });
     } catch (err) {
@@ -4271,6 +4721,15 @@ app.put('/tickets/staff/:staffId', checkAdminLogin, async (req, res) => {
             return res.status(400).json({ error: `A staff member named "${nameTaken.name}" already exists.` });
         }
         const update = { name, email };
+        // Mobile stays optional on edit so staff added before it existed can still be saved;
+        // when one is supplied it must be a 10-digit number, and clearing it is allowed.
+        if (req.body.mobile !== undefined) {
+            const mobile = String(req.body.mobile || '').trim();
+            if (mobile && !/^\d{10}$/.test(mobile)) {
+                return res.status(400).json({ error: 'Mobile number must be exactly 10 digits.' });
+            }
+            update.mobile = mobile || null;
+        }
         if (password) {
             update.password = await bcrypt.hash(password, 10);
         }
@@ -4336,11 +4795,28 @@ app.get('/tickets/my-branches', checkUserLogin, async (req, res) => {
         const branchRows = names.length ? await Branch.findAll({ where: { name: names } }) : [];
         const byName = {};
         branchRows.forEach(b => { byName[b.name] = b; });
+        // Open tickets per branch, counted over this staff member's own queue — exactly the set
+        // /tickets returns for them — so the number matches the list the row opens.
+        const openRows = names.length
+            ? await Ticket.findAll({
+                attributes: ['branch', [fn('COUNT', col('id')), 'openCount']],
+                where: Object.assign({}, staffQueueWhere(req), { status: 'Open', branch: { [Op.in]: names } }),
+                group: ['branch'],
+                raw: true
+            })
+            : [];
+        const openByBranch = {};
+        openRows.forEach(r => { openByBranch[r.branch] = Number(r.openCount) || 0; });
         res.json({
             count: names.length,
             branches: names.map(name => {
                 const b = byName[name];
-                return { name: name, code: (b && b.code) ? b.code : '', region: (b && b.region) ? b.region : '' };
+                return {
+                    name: name,
+                    code: (b && b.code) ? b.code : '',
+                    region: (b && b.region) ? b.region : '',
+                    openTickets: openByBranch[name] || 0
+                };
             })
         });
     } catch (err) {
@@ -4493,20 +4969,31 @@ function messageVisibleToRegionAdmin(message, scope, adminName) {
 }
 
 async function inboxWhereForSession(req) {
-    if (req.session.isSuperAdmin) return {};                            // Super Admin: full inbox
+    if (req.session.isSuperAdmin) return { recipientRowId: null };       // Super Admin: every message, their own Sent rows included
     if (!req.session.isAdmin) {
-        // Staff: only the messages their own staff row sent - never a previous, deleted
-        // person who happened to have the same name.
-        return { senderRowId: Number(req.session.staffRowId) || 0 };
+        // Staff: what their own staff row sent, plus the admin copies addressed to them -
+        // never a previous, deleted person who happened to have the same name.
+        const rowId = Number(req.session.staffRowId) || 0;
+        return { [Op.or]: [{ senderRowId: rowId }, { recipientRowId: rowId }] };
     }
     const scope = await regionAdminStaffInScope(req);
+    // Staff copies carry recipientRowId, so a region admin only ever sees the single
+    // "Sent" row they created - never one identical card per recipient.
     return {
-        [Op.or]: [
-            { sender: req.session.username },
-            { sender: 'Admin' },
-            { senderStaffId: { [Op.in]: scope.staffIds } },
-            { senderRowId: { [Op.in]: scope.staffRowIds } },
-            { sender: { [Op.in]: scope.staffNames } }
+        recipientRowId: null,
+        [Op.and]: [
+            // Another admin's "Sent" card is theirs, not this admin's: staff messages and
+            // this admin's own sends only (legacy Super Admin rows have no header flag).
+            { [Op.or]: [{ broadcastHeader: false }, { sender: req.session.username }] },
+            {
+                [Op.or]: [
+                    { sender: req.session.username },
+                    { sender: 'Admin' },
+                    { senderStaffId: { [Op.in]: scope.staffIds } },
+                    { senderRowId: { [Op.in]: scope.staffRowIds } },
+                    { sender: { [Op.in]: scope.staffNames } }
+                ]
+            }
         ]
     };
 }
@@ -4521,8 +5008,79 @@ async function regionAdminCanActOnMessage(req, message) {
 app.get('/inbox', checkUserLogin, async (req, res) => {
     try {
         const where = await inboxWhereForSession(req);
-        const messages = await InboxMessage.findAll({ where, order: [['createdAt', 'DESC']] });
-        res.json(messages.map(withId));
+        let messages = await InboxMessage.findAll({ where, order: [['createdAt', 'DESC']] });
+        // A broadcast is one "Sent" row plus one copy per recipient; the card needs the
+        // number of people it actually reached.
+        const broadcastIds = messages.filter(m => m.broadcastHeader).map(m => m.broadcastId).filter(Boolean);
+        const recipientCounts = {};
+        const readCounts = {};
+        const repliers = {};
+        if (broadcastIds.length) {
+            const counts = await InboxMessage.findAll({
+                attributes: ['broadcastId', [fn('COUNT', col('id')), 'total'], [fn('SUM', literal('CASE WHEN staff_read = 1 THEN 1 ELSE 0 END')), 'read_total']],
+                where: { broadcastId: { [Op.in]: broadcastIds }, recipientRowId: { [Op.ne]: null } },
+                group: ['broadcastId'],
+                raw: true
+            });
+            counts.forEach(c => {
+                recipientCounts[c.broadcastId] = Number(c.total);
+                readCounts[c.broadcastId] = Number(c.read_total) || 0;
+            });
+            const replies = await InboxMessage.findAll({
+                attributes: ['replyToBroadcastId', 'sender'],
+                where: { replyToBroadcastId: { [Op.in]: broadcastIds } },
+                order: [['createdAt', 'ASC']],
+                raw: true
+            });
+            replies.forEach(r => {
+                const list = repliers[r.replyToBroadcastId] || (repliers[r.replyToBroadcastId] = []);
+                if (!list.includes(r.sender)) list.push(r.sender);
+            });
+        }
+        const staffRowId = Number(req.session.staffRowId) || 0;
+        // Staff see their answer inside the message an admin sent them instead of as a
+        // separate "Re:" card, so those reply rows are folded into a thread on the copy.
+        const threadByBroadcast = {};
+        const foldedReplyIds = new Set();
+        if (!req.session.isAdmin && staffRowId) {
+            const receivedBroadcastIds = messages
+                .filter(m => Number(m.recipientRowId) === staffRowId && m.broadcastId)
+                .map(m => m.broadcastId);
+            const linkedReplies = receivedBroadcastIds.length ? await InboxMessage.findAll({
+                where: { senderRowId: staffRowId, replyToBroadcastId: { [Op.in]: receivedBroadcastIds } },
+                order: [['createdAt', 'ASC']]
+            }) : [];
+            linkedReplies.forEach(reply => {
+                (threadByBroadcast[reply.replyToBroadcastId] || (threadByBroadcast[reply.replyToBroadcastId] = [])).push(reply);
+                foldedReplyIds.add(reply.id);
+            });
+            messages = messages.filter(m => !foldedReplyIds.has(m.id));
+        }
+        res.json(messages.map(m => {
+            const obj = withId(m);
+            if (m.broadcastHeader) {
+                obj.recipientCount = recipientCounts[m.broadcastId] || 0;
+                obj.readCount = readCounts[m.broadcastId] || 0;
+                obj.replierNames = repliers[m.broadcastId] || [];
+            }
+            if (!req.session.isAdmin && staffRowId && Number(m.recipientRowId) === staffRowId) {
+                obj.isReceived = true;
+                const thread = threadByBroadcast[m.broadcastId] || [];
+                if (thread.length) {
+                    obj.thread = thread.map(r => ({
+                        _id: String(r.id),
+                        body: r.body,
+                        createdAt: r.createdAt,
+                        reply: r.reply || '',
+                        repliedBy: r.repliedBy || '',
+                        repliedAt: r.repliedAt
+                    }));
+                    // An answer the staff has not looked at yet keeps the message unread.
+                    if (thread.some(r => r.reply && !r.staffRead)) obj.staffRead = false;
+                }
+            }
+            return obj;
+        }));
     } catch (err) {
         console.error('Request failed:', err.message); res.status(500).json({ error: 'Something went wrong. Please try again.' });
     }
@@ -4545,6 +5103,17 @@ app.post('/inbox', checkUserLogin, async (req, res) => {
                 : await Staff.findOne({ where: { name: req.session.username } });
             if (senderStaff) { senderStaffId = senderStaff.staffId; senderRowId = senderStaff.id; }
         }
+        // A reply written on a message an admin sent this person remembers which send it
+        // answered, so that admin's "Sent" card can name the repliers. Only a copy that is
+        // actually addressed to the signed-in staff row is accepted.
+        let replyToBroadcastId = null;
+        if (!req.session.isAdmin && req.body.replyTo) {
+            const source = await InboxMessage.findByPk(Number(req.body.replyTo) || 0);
+            if (source && source.broadcastId &&
+                Number(source.recipientRowId) && Number(source.recipientRowId) === Number(req.session.staffRowId)) {
+                replyToBroadcastId = Number(source.broadcastId);
+            }
+        }
         const message = await InboxMessage.create({
             sender: req.session.username,
             senderStaffId,
@@ -4552,9 +5121,114 @@ app.post('/inbox', checkUserLogin, async (req, res) => {
             subject,
             body,
             adminRead: false,
-            staffRead: true
+            staffRead: true,
+            replyToBroadcastId
         });
         res.status(201).json({ success: true, id: message.id });
+    } catch (err) {
+        console.error('Request failed:', err.message); res.status(500).json({ error: 'Something went wrong. Please try again.' });
+    }
+});
+
+// Admin -> staff message. The sender keeps one "Sent" row; each staff member in the
+// audience gets their own copy so read/unread and replies stay per person.
+app.post('/inbox/broadcast', checkAdminLogin, async (req, res) => {
+    try {
+        const subject = (req.body.subject || '').trim();
+        const body = (req.body.body || '').trim();
+        const audience = (req.body.audience || 'all').trim();
+        if (!subject || !body) {
+            return res.status(400).json({ error: 'Subject and message are both required.' });
+        }
+        const ownRegions = (req.session.regions || []).filter(Boolean);
+        let regions = null;          // null = every staff row (Super Admin, all staff)
+        let audienceLabel = '';
+        if (audience === 'all') {
+            if (req.session.isSuperAdmin) {
+                audienceLabel = 'All staff';
+            } else {
+                regions = ownRegions;
+                audienceLabel = 'All staff in my regions';
+            }
+        } else if (audience.startsWith('region:')) {
+            const target = audience.slice('region:'.length).trim();
+            if (!target) return res.status(400).json({ error: 'Choose who should receive this message.' });
+            // A region admin may only address a region they actually own.
+            if (!req.session.isSuperAdmin && !ownRegions.includes(target)) {
+                return res.status(403).json({ error: 'Access Denied' });
+            }
+            regions = [target];
+            audienceLabel = target;
+        } else {
+            return res.status(400).json({ error: 'Choose who should receive this message.' });
+        }
+        const recipients = await Staff.findAll({
+            where: regions ? { region: { [Op.in]: regions } } : {},
+            attributes: ['id', 'name', 'staffId'],
+            order: [['staffId', 'ASC']]
+        });
+        if (!recipients.length) {
+            return res.status(400).json({ error: 'There are no staff members in that audience yet.' });
+        }
+        const header = await InboxMessage.create({
+            sender: req.session.username,
+            senderStaffId: '',
+            senderRowId: null,
+            subject,
+            body,
+            status: 'Sent',
+            adminRead: true,
+            staffRead: true,
+            broadcastHeader: true,
+            audience: audienceLabel,
+            recipientRowId: null
+        });
+        header.broadcastId = header.id;
+        await header.save();
+        await InboxMessage.bulkCreate(recipients.map(s => ({
+            sender: req.session.username,
+            senderStaffId: '',
+            senderRowId: null,
+            subject,
+            body,
+            status: 'Open',
+            adminRead: true,
+            staffRead: false,
+            broadcastId: header.id,
+            broadcastHeader: false,
+            audience: audienceLabel,
+            recipientRowId: s.id
+        })));
+        await logAudit(req.session.username, 'Message sent to staff', '"' + subject + '" to ' + audienceLabel + ' (' + recipients.length + ' staff)');
+        res.status(201).json({ success: true, recipients: recipients.length });
+    } catch (err) {
+        console.error('Request failed:', err.message); res.status(500).json({ error: 'Something went wrong. Please try again.' });
+    }
+});
+
+// Who replied to one send, and what they said - read straight from the Sent card instead
+// of opening every "Re:" message in the inbox.
+app.get('/inbox/:id/replies', checkAdminLogin, async (req, res) => {
+    try {
+        const message = await InboxMessage.findByPk(req.params.id);
+        if (!message || !message.broadcastHeader) return res.status(404).json({ error: 'Message not found.' });
+        if (!req.session.isSuperAdmin && message.sender !== req.session.username) {
+            return res.status(403).json({ error: 'Access Denied' });
+        }
+        const replies = await InboxMessage.findAll({
+            where: { replyToBroadcastId: message.id },
+            order: [['createdAt', 'ASC']]
+        });
+        res.json(replies.map(r => ({
+            _id: String(r.id),
+            name: r.sender,
+            staffId: r.senderStaffId || '',
+            createdAt: r.createdAt,
+            body: r.body,
+            reply: r.reply || '',
+            repliedBy: r.repliedBy || '',
+            repliedAt: r.repliedAt
+        })));
     } catch (err) {
         console.error('Request failed:', err.message); res.status(500).json({ error: 'Something went wrong. Please try again.' });
     }
@@ -4586,17 +5260,26 @@ app.post('/inbox/:id/read', checkUserLogin, async (req, res) => {
     try {
         const message = await InboxMessage.findByPk(req.params.id);
         if (!message) return res.status(404).json({ error: 'Message not found.' });
+        const staffRowId = Number(req.session.staffRowId) || 0;
+        const isRecipientCopy = !!(staffRowId && Number(message.recipientRowId) === staffRowId);
         if (req.session.isAdmin) {
             if (!(await regionAdminCanActOnMessage(req, message))) {
                 return res.status(403).json({ error: 'Access Denied' });
             }
             message.adminRead = true;
-        } else if (Number(message.senderRowId) && Number(message.senderRowId) === Number(req.session.staffRowId)) {
+        } else if ((Number(message.senderRowId) && Number(message.senderRowId) === staffRowId) || isRecipientCopy) {
             message.staffRead = true;
         } else {
             return res.status(403).json({ error: 'Access Denied' });
         }
         await message.save();
+        if (!req.session.isAdmin && isRecipientCopy && message.broadcastId) {
+            // The thread shown inside this message carries the admin's answers, so opening
+            // the message clears them as read too.
+            await InboxMessage.update({ staffRead: true }, {
+                where: { replyToBroadcastId: message.broadcastId, senderRowId: staffRowId }
+            });
+        }
         res.json({ success: true });
     } catch (err) {
         console.error('Request failed:', err.message); res.status(500).json({ error: 'Something went wrong. Please try again.' });
@@ -4610,6 +5293,17 @@ app.delete('/inbox/:id', checkAdminLogin, async (req, res) => {
         if (!(await regionAdminCanActOnMessage(req, message))) {
             return res.status(403).json({ error: 'Access Denied' });
         }
+        if (message.broadcastHeader || message.broadcastId) {
+            // A broadcast is removed for everyone it reached, so only the admin who sent it
+            // (or the Super Admin) may delete it.
+            if (!req.session.isSuperAdmin && message.sender !== req.session.username) {
+                return res.status(403).json({ error: 'Access Denied' });
+            }
+            const broadcastId = message.broadcastHeader ? message.id : message.broadcastId;
+            await InboxMessage.destroy({ where: { [Op.or]: [{ id: broadcastId }, { broadcastId }] } });
+            await logAudit(req.session.username, 'Message to staff deleted', '"' + message.subject + '" removed from every staff inbox');
+            return res.json({ success: true });
+        }
         await InboxMessage.destroy({ where: { id: req.params.id } });
         res.json({ success: true });
     } catch(err) { console.error('Request failed:', err.message); res.status(500).json({ error: 'Something went wrong. Please try again.' }); }
@@ -4620,7 +5314,13 @@ app.post('/tickets', publicTicketRateLimiter, (req, res, next) => {
             if (err.code === 'LIMIT_FILE_SIZE') {
                 return res.status(400).json({ error: 'File is too large. Maximum allowed size is 5MB.' });
             }
-            return res.status(400).json({ error: 'Invalid file upload. Only PDF, JPG, PNG, WEBP, and GIF files are allowed.' });
+            // Our own allowlist rejection keeps its precise wording; anything else came from
+            // Cloudinary/storage and must not be reported as a file-format problem.
+            if (typeof err.message === 'string' && err.message.indexOf('Only ') === 0) {
+                return res.status(400).json({ error: err.message });
+            }
+            console.error('Screenshot upload failed:', err.message);
+            return res.status(400).json({ error: 'Could not upload the screenshot right now. Please try again later.' });
         }
         next();
     });
