@@ -165,6 +165,16 @@ function serializeTicket(instance, req) {
     return ser;
 }
 
+// A ticket still needs admin action while no IT staff row owns it and it is not resolved.
+// Escalated tickets get their own reason so the admin knows the ticket came back from
+// staff rather than never being allocated at all.
+function adminActionFor(ticket) {
+    if (!ticket) return '';
+    if (ticket.status === 'Resolved') return '';
+    if (ticket.assignedStaffId) return '';
+    return ticket.escalated ? 'Escalated and not yet reallocated to any staff' : 'Not assigned to any staff';
+}
+
 // --- Staff identity -----------------------------------------------------------------
 // A ticket/notification/message belongs to a staff ROW (staff.id). Names are only ever
 // display text: they can be reused after a delete, so matching on them would hand the
@@ -1338,6 +1348,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '        .ticket-card.ticket-resolved { border-top-color: #38a169; }' +
 '        .ticket-card.ticket-escalated { border-top-color: #dd6b20; background: #fffaf0; }' +
 '        .admin-action-warning { margin: 10px 0 0; padding: 9px 12px; background: #fff7ed; border: 1px solid #f59e0b; border-left: 4px solid #dc2626; border-radius: 6px; color: #92400e; font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 8px; }' +
+'        .admin-action-banner { display: none; align-items: center; gap: 10px; margin: 0 0 14px; padding: 11px 14px; background: #fff7ed; border: 1px solid #f59e0b; border-left: 4px solid #dc2626; border-radius: 8px; color: #92400e; font-size: 13px; line-height: 1.45; }' +
 '        .ticket-card.ticket-high-priority { background: #fff5f5; border: 2px solid #e53e3e; border-top: 4px solid #e53e3e; }' +
 '        .ticket-card.ticket-high-priority .ticket-title { color: #c53030; }' +
 '        .ticket-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; }' +
@@ -1555,6 +1566,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                    <button class="branch-add-btn search-btn" id="searchTicketsBtn" onclick="applyTicketFilters()">Search</button>' +
 '                    <button class="branch-delete-btn" onclick="clearTicketFilters()">Clear</button>' +
 '                </div>' +
+'                <div id="adminActionBanner" class="admin-action-banner"></div>' +
 '                <div id="ticketList">Loading active queue...</div>' +
 '                <div id="ticketPagination" class="pagination-bar" style="display:none;"></div>' +
 '            </div>' +
@@ -1855,7 +1867,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                count.innerText = unread.length > 99 ? "99+" : unread.length;' +
 '                count.style.display = unread.length ? "flex" : "none";' +
 '                const list = document.getElementById("notificationList");' +
-'                list.innerHTML = notifications.length ? notifications.map(n => \'<div class="notification-item \'+(!n.read ? "unread" : "")+\'"><div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;"><div><strong>Ticket #\'+(n.displayNumber || String(n.ticketNumber).padStart(4,"0"))+\' assigned</strong>\'+escHtml(n.message)+\'<br><small>\'+new Date(n.createdAt).toLocaleString()+\'</small></div>\'+(!n.read ? \'<button onclick="markNotificationRead(\\\'\'+n._id+\'\\\')" style="flex-shrink:0;background:none;border:1px solid #cbd5e0;border-radius:5px;padding:3px 8px;font-size:10px;font-weight:600;color:#4a5568;cursor:pointer;">Mark as read</button>\' : "")+\'</div></div>\').join("") : \'<div class="notification-empty">No notifications.</div>\';' +
+'                list.innerHTML = notifications.length ? notifications.map(n => \'<div class="notification-item \'+(!n.read ? "unread" : "")+\'"><div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;"><div><strong>Ticket #\'+(n.displayNumber || String(n.ticketNumber).padStart(4,"0"))+\' assigned</strong>\'+escHtml(n.message)+(n.adminActionReason?\'<div style=\"margin-top:6px;color:#b91c1c;font-weight:700;font-size:11px;\">&#9888; Action Required: \'+escHtml(n.adminActionReason)+\'</div>\':\'\')+\'<br><small>\'+new Date(n.createdAt).toLocaleString()+\'</small></div>\'+(!n.read ? \'<button onclick="markNotificationRead(\\\'\'+n._id+\'\\\')" style="flex-shrink:0;background:none;border:1px solid #cbd5e0;border-radius:5px;padding:3px 8px;font-size:10px;font-weight:600;color:#4a5568;cursor:pointer;">Mark as read</button>\' : "")+\'</div></div>\').join("") : \'<div class="notification-empty">No notifications.</div>\';' +
 '                const newUnread = unread.filter(n => !knownNotificationIds.has(n._id));' +
 '                if (newUnread.length && notificationsInitialized) { playNotificationSound(); showAdminToast(newUnread[0].message); }' +
 '                notifications.forEach(n => knownNotificationIds.add(n._id));' +
@@ -2533,6 +2545,15 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            var h = document.querySelector("#slaSummary .sla-load-gif");' +
 '            if (h && h.parentNode) h.parentNode.removeChild(h);' +
 '        }' +
+'        function updateAdminActionBanner(list) {' +
+'            if (!isAdmin) return;' +
+'            var el = document.getElementById(\"adminActionBanner\");' +
+'            if (!el) return;' +
+'            var n = (list || []).filter(function (t) { return !!t.needsAdminAction; }).length;' +
+'            if (!n) { el.style.display = \"none\"; el.innerHTML = \"\"; return; }' +
+'            el.style.display = \"flex\";' +
+'            el.innerHTML = \"&#9888; <span><strong>Action Required:</strong> \" + n + (n === 1 ? \" ticket is\" : \" tickets are\") + \" not assigned to any staff - allocate an IT staff member to clear this.</span>\";' +
+'        }' +
 '        async function loadTickets() {' +
 '            try {' +
 '                var widgetsLoadStart = Date.now();' +
@@ -2545,6 +2566,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            if (response.status === 401) { window.location.href = "/login"; return; }' +
 '            if (!response.ok) { throw new Error("Ticket request failed (" + response.status + ")"); }' +
 '            let tickets = await response.json();' +
+'            updateAdminActionBanner(tickets);' +
 '            /* What this render shows becomes the baseline the idle check compares against.' +
 '               Seeding it here (rather than on the first idle check) is what stops a ticket' +
 '               raised between page load and that first check from being swallowed for good. */' +
@@ -2619,7 +2641,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            pagedTickets.forEach(ticket => {' +
 '                const isResolved = ticket.status === "Resolved";' +
 '                const isMineOrAdmin = isAdmin || !!ticket.isMine;' +
-'                const reallocateBtn = (isAdmin && !isResolved && ticket.escalated) ? \'<button class="reallocate-btn" onclick="reallocateTicket(\\\'\'+ticket._id+\'\\\')">Reallocate</button>\' : "";' +
+'                const reallocateBtn = (isAdmin && !isResolved && !ticket.assignedStaffId) ? \'<button class="reallocate-btn" onclick="reallocateTicket(\\\'\'+ticket._id+\'\\\')">Reallocate</button>\' : "";' +
 '                const actionBtn = (!isResolved && isMineOrAdmin) ? \'<button class="resolve-btn" onclick="resolveTicket(\\\'\'+ticket._id+\'\\\')">Resolve Ticket</button>\' : "";' +
 '                const escalateBtn = (!isAdmin && !isResolved && !ticket.escalated && !!ticket.isMine) ? \'<button class="escalate-btn" onclick="escalateTicket(\\\'\'+ticket._id+\'\\\')">Escalate to Admin</button>\' : "";' +
 '                const waitingNote = (!isAdmin && !isResolved && !isMineOrAdmin) ? \'<span class="badge" style="background:#fef3c7;color:#92400e;">Waiting on Admin</span>\' : "";' +
@@ -2636,7 +2658,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                        commentListHtml += \'<div class="comment-item"><strong>\'+escHtml(c.author)+\':</strong> \'+escHtml(c.text)+(c.attachment ? \' <a href="\'+escHtml(c.attachment)+\'" target="_blank">\uD83D\uDCCE Attachment</a>\' : "")+\'</div>\';' +
 '                    });' +
 '                }' +
-'                ticketCardsHtml += \'<div class="ticket-card \'+cardStateClass+\'" data-ticket-id="\'+ticket._id+\'"><div class="ticket-header"><div><h3 class="ticket-title">#\'+(ticket.displayNumber || String(ticket.ticketNumber).padStart(4,"0"))+\' \'+escHtml(ticket.title)+\'</h3><div style="margin-top: 8px;"><span class="badge p-\'+escHtml(ticket.priority)+\'">\'+escHtml(ticket.priority)+\'</span><span class="badge status-\'+ticket.status.toLowerCase()+\'">\'+ticket.status+\'</span><span class="badge badge-category">\'+escHtml(ticket.category || "Other")+\'</span>\'+escalatedBadge+slaBadgeHtml(ticket)+newBadge+\'</div></div>\'+actionsHtml+\'</div><p class="ticket-desc">\'+escHtml(ticket.description)+\'</p>\'+imageHtml+(ticket.needsAdminAction?\'<div class="admin-action-warning">&#9888; <span>Needs admin action required: not yet allocated to any staff</span></div>\':\'\')+\'<div class="assignment-info"><div class="assignment-row"><span class="assignment-label">Submitted By</span><span class="assignment-value">\'+escHtml(ticket.submittedBy || "Unknown")+(ticket.designation ? " ("+escHtml(ticket.designation)+")" : "")+\'</span></div><div class="assignment-row"><span class="assignment-label">Branch</span><span class="assignment-value">\'+escHtml(ticket.branch)+\'</span></div><div class="assignment-row"><span class="assignment-label">Mobile</span><span class="assignment-value">\'+escHtml(ticket.mobile)+\'</span></div><div class="assignment-row"><span class="assignment-label">Assigned</span><span class="assignment-value">\'+escHtml(ticket.assignedTo)+\'</span></div><div class="assignment-row"><span class="assignment-label">Submitted</span><span class="assignment-value">\'+(ticket.createdAt ? new Date(ticket.createdAt).toLocaleString() : "N/A")+\'</span></div>\'+escalationLine+resolvedLine+\'</div><div class="comments-section"><h4 class="comments-header">Internal Work Notes</h4><div>\'+(commentListHtml || "No updates.")+\'</div><div class="comment-form"><input type="text" id="input-\'+ticket._id+\'" placeholder="Write operational update..."><label class="comment-attach-btn" title="Attach a file (optional)">📎<input type="file" id="attachment-\'+ticket._id+\'" style="display:none;" accept="image/jpeg,image/png,image/webp,image/gif,application/pdf,.jpg,.jpeg,.png,.webp,.gif,.pdf" onchange="updateAttachmentLabel(\\\'\'+ticket._id+\'\\\')"></label><span id="attachmentName-\'+ticket._id+\'" class="attachment-name-tag"></span><button type="button" id="attachmentClear-\'+ticket._id+\'" class="attachment-clear-btn" title="Remove attachment" aria-label="Remove attachment" onclick="clearAttachment(\\\'\'+ticket._id+\'\\\')">&times;</button><button onclick="addComment(\\\'\'+ticket._id+\'\\\')">Post</button></div></div></div>\';' +
+'                ticketCardsHtml += \'<div class="ticket-card \'+cardStateClass+\'" data-ticket-id="\'+ticket._id+\'"><div class="ticket-header"><div><h3 class="ticket-title">#\'+(ticket.displayNumber || String(ticket.ticketNumber).padStart(4,"0"))+\' \'+escHtml(ticket.title)+\'</h3><div style="margin-top: 8px;"><span class="badge p-\'+escHtml(ticket.priority)+\'">\'+escHtml(ticket.priority)+\'</span><span class="badge status-\'+ticket.status.toLowerCase()+\'">\'+ticket.status+\'</span><span class="badge badge-category">\'+escHtml(ticket.category || "Other")+\'</span>\'+escalatedBadge+slaBadgeHtml(ticket)+newBadge+\'</div></div>\'+actionsHtml+\'</div><p class="ticket-desc">\'+escHtml(ticket.description)+\'</p>\'+imageHtml+(ticket.needsAdminAction?\'<div class=\"admin-action-warning\">&#9888; <span><strong>Action Required:</strong> \'+escHtml(ticket.adminActionReason || \"Not assigned to any staff\")+\'</span></div>\':\'\')+\'<div class="assignment-info"><div class="assignment-row"><span class="assignment-label">Submitted By</span><span class="assignment-value">\'+escHtml(ticket.submittedBy || "Unknown")+(ticket.designation ? " ("+escHtml(ticket.designation)+")" : "")+\'</span></div><div class="assignment-row"><span class="assignment-label">Branch</span><span class="assignment-value">\'+escHtml(ticket.branch)+\'</span></div><div class="assignment-row"><span class="assignment-label">Mobile</span><span class="assignment-value">\'+escHtml(ticket.mobile)+\'</span></div><div class="assignment-row"><span class="assignment-label">Assigned</span><span class="assignment-value">\'+escHtml(ticket.assignedTo)+\'</span></div><div class="assignment-row"><span class="assignment-label">Submitted</span><span class="assignment-value">\'+(ticket.createdAt ? new Date(ticket.createdAt).toLocaleString() : "N/A")+\'</span></div>\'+escalationLine+resolvedLine+\'</div><div class="comments-section"><h4 class="comments-header">Internal Work Notes</h4><div>\'+(commentListHtml || "No updates.")+\'</div><div class="comment-form"><input type="text" id="input-\'+ticket._id+\'" placeholder="Write operational update..."><label class="comment-attach-btn" title="Attach a file (optional)">📎<input type="file" id="attachment-\'+ticket._id+\'" style="display:none;" accept="image/jpeg,image/png,image/webp,image/gif,application/pdf,.jpg,.jpeg,.png,.webp,.gif,.pdf" onchange="updateAttachmentLabel(\\\'\'+ticket._id+\'\\\')"></label><span id="attachmentName-\'+ticket._id+\'" class="attachment-name-tag"></span><button type="button" id="attachmentClear-\'+ticket._id+\'" class="attachment-clear-btn" title="Remove attachment" aria-label="Remove attachment" onclick="clearAttachment(\\\'\'+ticket._id+\'\\\')">&times;</button><button onclick="addComment(\\\'\'+ticket._id+\'\\\')">Post</button></div></div></div>\';' +
 '            });' +
 '            listDiv.innerHTML = ticketCardsHtml;' +
 '            /* The marks have now been shown, so the next visit counts them as seen. */' +
@@ -3976,7 +3998,8 @@ app.get('/tickets', checkUserLogin, async (req, res) => {
 
         res.json(tickets.map(t => {
             const ser = serializeTicket(t, req);
-            ser.needsAdminAction = !!ser.escalated && ser.status !== 'Resolved' && !ser.assignedStaffId;
+            ser.adminActionReason = adminActionFor(ser);
+            ser.needsAdminAction = !!ser.adminActionReason;
             return ser;
         }));
     } catch (err) {
@@ -4003,11 +4026,16 @@ app.get('/notifications', checkUserLogin, async (req, res) => {
         // so the bell dropdown shows the real number with one extra query, not 50.
         const notifTicketIds = [...new Set(notifications.map(n => n.ticketId))];
         const displayByTicketId = {};
+        const actionByTicketId = {};
         if (notifTicketIds.length) {
-            const rows = await Ticket.findAll({ where: { id: notifTicketIds }, attributes: ['id', 'displayNumber'] });
-            rows.forEach(r => { displayByTicketId[r.id] = r.displayNumber || String(r.id).padStart(4, '0'); });
+            const rows = await Ticket.findAll({ where: { id: notifTicketIds }, attributes: ['id', 'displayNumber', 'status', 'assignedStaffId', 'escalated'] });
+            rows.forEach(r => {
+                displayByTicketId[r.id] = r.displayNumber || String(r.id).padStart(4, '0');
+                const reason = adminActionFor(r);
+                if (reason) actionByTicketId[r.id] = reason;
+            });
         }
-        res.json(notifications.map(n => ({ ...withId(n), displayNumber: displayByTicketId[n.ticketId] || String(n.ticketNumber).padStart(4, '0') })));
+        res.json(notifications.map(n => ({ ...withId(n), displayNumber: displayByTicketId[n.ticketId] || String(n.ticketNumber).padStart(4, '0'), adminActionReason: actionByTicketId[n.ticketId] || '' })));
     } catch (err) {
         res.status(500).json({ error: 'Could not load notifications.' });
     }
@@ -4317,8 +4345,8 @@ app.post('/tickets/:id/reallocate', checkAdminLogin, async (req, res) => {
         if (ticket.status === 'Resolved') {
             return res.status(400).json({ error: 'Resolved tickets cannot be reallocated.' });
         }
-        if (!ticket.escalated) {
-            return res.status(400).json({ error: 'Only escalated tickets can be reallocated.' });
+        if (ticket.assignedStaffId) {
+            return res.status(400).json({ error: 'This ticket is already allocated to a staff member.' });
         }
 
         const staff = await Staff.findOne({ where: { name: assignTo } });
@@ -4347,7 +4375,7 @@ app.post('/tickets/:id/reallocate', checkAdminLogin, async (req, res) => {
             title: ticket.title,
             message: `Ticket #${fmtTicketNumber(ticket)} - ${ticket.title} was reallocated to you.`
         });
-        await logAudit(req.session.username, 'Reallocate Escalated Ticket', `Reallocated ticket #${ticket.id} to ${staff.name}`);
+        await logAudit(req.session.username, ticket.escalated ? 'Reallocate Escalated Ticket' : 'Reallocate Ticket', `Reallocated ticket #${ticket.id} to ${staff.name}`);
         res.json({ success: true, assignedTo: staff.name });
     } catch (err) {
         console.error('Request failed:', err.message); res.status(500).json({ error: 'Something went wrong. Please try again.' });
