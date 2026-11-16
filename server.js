@@ -52,7 +52,7 @@ app.disable("x-powered-by");
 // Anything not on this list falls through to the routes and 404s as usual.
 const SERVABLE_STATIC_FILES = new Set([
     "/logo.png", "/background.png", "/icon-512.png", "/manifest.json", "/manifest-login.json",
-    "/loading.gif", "/intro-video.mp4", "/notification.mp3", "/admin_features.js", "/checklist.js", "/service-worker.js"
+    "/loading.gif", "/intro-video.mp4", "/notification.mp3", "/admin_features.js", "/checklist.js", "/theme.js", "/service-worker.js"
 ]);
 app.use((req, res, next) => {
     if ((req.method === "GET" || req.method === "HEAD") && SERVABLE_STATIC_FILES.has(req.path)) {
@@ -512,7 +512,7 @@ function checkSuperAdminLogin(req, res, next) {
 
 // User Ticket Submission Page
 app.get('/', (req, res) => {
-    res.send(`<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Submit a Ticket | IT DEPARTMENT SARATHY</title><meta name="theme-color" content="#e53e3e"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="Sarathy IT"><link rel="manifest" href="/manifest.json"><link rel="icon" type="image/png" href="/logo.png"><link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"><style>
+    res.send(`<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Submit a Ticket | IT DEPARTMENT SARATHY</title><script src="/theme.js"></script><meta name="theme-color" content="#e53e3e"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="Sarathy IT"><link rel="manifest" href="/manifest.json"><link rel="icon" type="image/png" href="/logo.png"><link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"><style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body {
     font-family: 'Inter', 'Segoe UI', Arial, sans-serif;
@@ -850,7 +850,7 @@ button[type="submit"]:active { transform: translateY(0); }
 
 // Login Page
 app.get('/login', (req, res) => {
-    res.send(`<!DOCTYPE html><html><head><title>Login | IT DEPARTMENT SARATHY</title><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="theme-color" content="#e53e3e"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="Sarathy IT"><link rel="manifest" href="/manifest-login.json"><link rel="icon" type="image/png" href="/logo.png"><link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"><style>
+    res.send(`<!DOCTYPE html><html><head><title>Login | IT DEPARTMENT SARATHY</title><script src="/theme.js"></script><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="theme-color" content="#e53e3e"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="Sarathy IT"><link rel="manifest" href="/manifest-login.json"><link rel="icon" type="image/png" href="/logo.png"><link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"><style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body {
     font-family: 'Inter', 'Segoe UI', Arial, sans-serif;
@@ -1255,7 +1255,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '<head>' +
 '    <meta charset="UTF-8">' +
 '    <meta name="viewport" content="width=device-width, initial-scale=1.0">' +
-'    <meta name="theme-color" content="#e53e3e"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><link rel="manifest" href="/manifest.json"><link rel="icon" type="image/png" href="/logo.png"><title>IT Helpdesk | Dashboard</title>' +
+'    <meta name="theme-color" content="#e53e3e"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><link rel="manifest" href="/manifest.json"><link rel="icon" type="image/png" href="/logo.png"><title>IT Helpdesk | Dashboard</title><script src="/theme.js"></script>' +
 '    <link rel="icon" type="image/png" href="/logo.png">' +
 '    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>' +
 '    <style>' +
@@ -1276,7 +1276,20 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            .metrics-grid { gap: 12px; }' +
 '            .branch-table { display: block; overflow-x: auto; white-space: nowrap; }' +
 '            .ticket-header { flex-direction: column; align-items: flex-start; gap: 10px; }' +
+// The staff popover is centred under its pill, which on a phone opens it past the right
+// edge and dragged the whole page sideways. Anchor it to the pill's right edge and cap
+// it to the screen width instead.
+'            .staff-pill-wrap .staff-popover { left: auto; right: 0; transform: none; max-width: calc(100vw - 32px); }' +
 '        }' +
+// The SLA strip is the widest item in the toolbar row. When its text is wider than the
+// screen (narrow phones, iOS font metrics) it used to push the whole dashboard wider
+// than the viewport; let it shrink and wrap its own lines instead.
+'        #slaSummary { min-width: 0; max-width: 100%; flex-shrink: 1; white-space: normal !important; flex-wrap: wrap; row-gap: 2px; }' +
+'        @media (max-width: 480px) { #slaSummary .sla-sep { display: none; } #slaSummary { column-gap: 10px; } }' +
+// The admin New Ticket form is a 4-column grid on desktop; four fields across a phone
+// clipped every label and input, so it steps down to two columns and then one.
+'        @media (max-width: 768px) { #viewNewTicket .new-tkt-grid { grid-template-columns: 1fr 1fr !important; grid-template-rows: auto !important; } }' +
+'        @media (max-width: 600px) { #viewNewTicket .new-tkt-grid { grid-template-columns: 1fr !important; } }' +
 '        .sidebar { width: 260px; flex-shrink: 0; height: 100vh; background-color: #1e2229; color: #fff; display: flex; flex-direction: column; justify-content: space-between; overflow: hidden; }' +
 '        .sidebar-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; scrollbar-width: thin; scrollbar-color: #3a4150 transparent; }' +
 '        .sidebar-scroll::-webkit-scrollbar { width: 6px; }' +
@@ -1319,6 +1332,12 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '        .notification-item strong { display: block; color: #2d3748; margin-bottom: 3px; }' +
 '        .notification-empty { padding: 20px; text-align: center; color: #718096; font-size: 13px; }' +
 '        .content-body { padding: 30px; max-width: 1200px; width: 100%; margin: 0 auto; }' +
+// Mobile browser chrome (URL bar + system navigation) changes the visible height during a
+// scroll, and a fixed 100vh is taller than what is on screen. That left the last rows of
+// the list - the pagination buttons - under the navigation bar. Track the dynamic
+// viewport where the browser supports it and keep a clear strip below the list.
+'        @supports (height: 100dvh) { body, .main-content, .sidebar { height: 100dvh; } }' +
+'        @media (max-width: 768px) { .main-content .content-body { padding-bottom: 88px; } .sidebar { height: auto; } }' +
 '        .dashboard-view { display: none; }' +
 '        .dashboard-view.active { display: block; }' +
 '        .metrics-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 16px; }' +
@@ -1363,7 +1382,6 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '        .sla-met { background-color: #c6f6d5; color: #22543d; }' +
 '        .sla-missed { background-color: #fed7d7; color: #9b2c2c; }' +
 '        .sla-clock.paused { background-color: #edf2f7; color: #718096; opacity: 0.85; animation: none; }' +
-'        .sla-stale { opacity: 0.9; }' +
 '        @keyframes slaPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.62; } }' +
 '        .p-Medium { background-color: #feebc8; color: #c05621; }' +
 '        .p-High { background-color: #fed7d7; color: #9b2c2c; }' +
@@ -1417,12 +1435,23 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '        .branch-table { width: 100%; border-collapse: collapse; text-align: left; margin-top: 10px; }' +
 '        .branch-table th { background-color: #f7fafc; color: #4a5568; font-size: 13px; font-weight: 600; padding: 12px 16px; border-bottom: 1px solid #e2e8f0; }' +
 '        .branch-table td { padding: 14px 16px; font-size: 14px; color: #2d3748; border-bottom: 1px solid #edf2f7; }' +
+// Management tables (staff, branches, admins) carry six or seven columns plus inline edit
+// fields. On a phone that squeezed every cell into ~50px, so below 768px each row becomes
+// its own card: labels above the values, fields full width, Edit/Save/Cancel underneath.
+'        @media (max-width: 768px) {' +
+'            .branch-table.tbl-cards { display: block; width: 100%; border-collapse: separate; white-space: normal; overflow: visible; }' +
+'            .branch-table.tbl-cards thead { display: none; }' +
+'            .branch-table.tbl-cards tbody { display: block; }' +
+'            .branch-table.tbl-cards tr { display: block; background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px 14px; margin-bottom: 12px; }' +
+'            .branch-table.tbl-cards td { display: block; width: 100%; border: none; padding: 6px 0; font-size: 13.5px; }' +
+'            .branch-table.tbl-cards td[data-label]::before { content: attr(data-label); display: block; font-size: 10px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase; color: #a0aec0; margin-bottom: 3px; }' +
+'            .branch-table.tbl-cards td input:not([type="checkbox"]), .branch-table.tbl-cards td select { width: 100%; max-width: 100%; }' +
+'        }' +
 '        .branch-delete-btn { color: #e53e3e; background: none; border: none; cursor: pointer; font-weight: 600; font-size: 13px; }' +
 '        .chart-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 20px; margin-top: 24px; }' +
 '        .chart-card { background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); position: relative; height: 300px; }' +
 '        .chart-card.wide { grid-column: 1 / -1; }' +
 '        .chart-card h3 { font-size: 14px; font-weight: 600; color: #2d3748; margin: 0 0 14px; }' +
-'        .section-heading { font-size: 16px; font-weight: 600; color: #2d3748; margin: 28px 0 0; }' +
 '        .confirm-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 3000; align-items: center; justify-content: center; padding: 20px; }' +
 '        .confirm-overlay.show { display: flex; }' +
 '        .confirm-box { background: #fff; border-radius: 10px; padding: 24px; max-width: 380px; width: 100%; box-shadow: 0 20px 50px rgba(0,0,0,0.3); }' +
@@ -1554,7 +1583,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                    <div class="status-pill-wrap" id="statusPillWrap"><span class="status-pill"><span class="status-pill-badge" id="statusPillIcon">&#10003;</span><span class="status-pill-label" id="statusPillLabel">Resolved total</span><span class="status-pill-count" id="statusPillCount">0</span></span></div>' +
 // Active-staff widget: pill sits in the gap between Filters and the SLA strip; admins only.
 (isAdminUser ? '                    <div class="staff-pill-wrap" id="staffPillWrap"><button type="button" class="staff-pill" id="staffPill" onclick="toggleStaffPopover(event)" title="Active staff"><span class="staff-pill-dot" id="staffPillDot"></span><span class="staff-pill-label">Staff activity</span><span id="staffPillCount">&mdash;</span><span class="staff-pill-caret">&#9662;</span></button><div class="staff-popover" id="staffPopover"><div class="staff-pop-head"><span>ACTIVE STAFF</span><button type="button" class="staff-pop-refresh" onclick="loadStaffPresence(true)">Refresh</button></div><div class="staff-pop-body" id="staffPopBody"><div class="staff-pop-empty">Loading&hellip;</div></div><div class="staff-pop-foot"><span id="staffPopSummary"></span><a onclick="switchView(\'staff\'); closeStaffPopover()">View all staff &rarr;</a></div></div></div>' : '') +
-'                    <div id="slaSummary" onclick="toggleSlaFilter()" title="Click to show breached tickets" style="cursor:pointer; display:flex; align-items:center; gap:8px; background:#ffffff; border:1px solid #e2e8f0; border-radius:8px; padding:9px 14px; font-size:12.5px; font-weight:600; color:#4a5568; box-shadow:0 1px 3px rgba(0,0,0,0.06); white-space:nowrap;"><span style="color:#2d3748; letter-spacing:0.5px;">SLA</span><span id="slaBreached" style="color:#c53030;">0 breached</span><span style="color:#cbd5e0;">&middot;</span><span id="slaRisk" style="color:#dd6b20;">0 at risk</span><span style="color:#cbd5e0;">&middot;</span><span id="slaOnTrack" style="color:#2f855a;">0 on track</span><span style="color:#cbd5e0;">&middot;</span><span id="slaStale" style="color:#718096;">0 in last 24h</span></div>' +
+'                    <div id="slaSummary" onclick="toggleSlaFilter()" title="Click to show breached tickets" style="cursor:pointer; display:flex; align-items:center; gap:8px; background:#ffffff; border:1px solid #e2e8f0; border-radius:8px; padding:9px 14px; font-size:12.5px; font-weight:600; color:#4a5568; box-shadow:0 1px 3px rgba(0,0,0,0.06); white-space:nowrap;"><span style="color:#2d3748; letter-spacing:0.5px;">SLA</span><span id="slaBreached" style="color:#c53030;">0 breached</span><span class="sla-sep" style="color:#cbd5e0;">&middot;</span><span id="slaRisk" style="color:#dd6b20;">0 at risk</span><span class="sla-sep" style="color:#cbd5e0;">&middot;</span><span id="slaOnTrack" style="color:#2f855a;">0 on track</span><span class="sla-sep" style="color:#cbd5e0;">&middot;</span><span id="slaStale" style="color:#718096;">0 in last 24h</span></div>' +
 '                </div>' +
 '                <div class="branch-panel-card" id="ticketFilterPanel" style="display:none; margin-bottom: 20px; align-items: flex-end; gap: 14px; flex-wrap: wrap;">' +
 '                    <div style="flex-grow: 1; min-width: 220px;"><label style="display:block;font-size:12px;font-weight:600;color:#4a5568;margin-bottom:4px;">Search</label><input type="text" id="filterSearchText" placeholder="Ticket #, Submitted By, Branch, Mobile..." style="width:100%; padding: 8px 10px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 14px;" onkeydown="if(event.key===\'Enter\') applyTicketFilters();"></div>' +
@@ -1632,6 +1661,15 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                    <h2>Your Access</h2>' +
 '                    <div id="profileAccess" style="font-size:13.5px;color:#4a5568;"></div>' +
 '                </div>' +
+'                <div class="branch-panel-card" style="margin-bottom:20px;">' +
+'                    <h2>Appearance</h2>' +
+'                    <p style="color:#718096;font-size:13px;margin-top:6px;max-width:520px;">Light is the default. System follows your phone or computer setting, and whichever you pick is remembered on this browser.</p>' +
+'                    <div class="theme-switch" role="group" aria-label="Appearance">' +
+'                        <button type="button" data-theme-mode="system" onclick="SarathyTheme.set(\u0027system\u0027)">System</button>' +
+'                        <button type="button" data-theme-mode="light" onclick="SarathyTheme.set(\u0027light\u0027)">Light</button>' +
+'                        <button type="button" data-theme-mode="dark" onclick="SarathyTheme.set(\u0027dark\u0027)">Dark</button>' +
+'                    </div>' +
+'                </div>' +
 '                <div class="branch-panel-card">' +
 '                    <h2>Password</h2>' +
 (isSuperAdminUser ?
@@ -1663,7 +1701,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                </div>' +
 '                <div class="branch-panel-card">' +
 '                    <h2>Region Admins</h2>' +
-'                    <table class="branch-table">' +
+'                    <table class="branch-table tbl-cards">' +
 '                        <thead><tr><th>Name</th><th>Username</th><th>Region</th><th>Status</th><th>Edit</th><th>Delete</th></tr></thead>' +
 '                        <tbody id="regionAdminsTableBody"></tbody>' +
 '                    </table>' +
@@ -1721,7 +1759,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                        <h2 style="margin-bottom:0;">Active Helpdesk Personnel</h2>' +
 '                        <input type="text" id="staffSearchInput" placeholder="Search by name, staff ID, email, or region..." oninput="renderStaffTable()" style="padding: 8px 12px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 13px; width: 300px; max-width: 100%;">' +
 '                    </div>' +
-'                    <table class="branch-table">' +
+'                    <table class="branch-table tbl-cards">' +
 '                        <thead><tr><th>Staff ID</th><th>Name Tag</th><th>Operational Route Email</th>' + (isSuperAdminUser ? '<th>Region</th>' : '') + '<th>Assigned Branches</th><th>Edit</th><th>Delete</th></tr></thead>' +
 '                        <tbody id="staffTableBody"></tbody>' +
 '                    </table>' +
@@ -2783,20 +2821,20 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                ? \'<input type="text" id="editBranchCode-\' + escHtml(String(b._id)) + \'" value="\' + escHtml(b.code || "") + \'" style="width:100%;padding:6px;border:1px solid #cbd5e0;border-radius:4px;">\'' +
 '                : escHtml(b.code || "—");' +
 '            if (isEditingBranch) {' +
-'                regionCell = \'<td><select id="editBranchRegion-\' + escHtml(String(b._id)) + \'" style="padding:6px;border:1px solid #cbd5e0;border-radius:4px;font-size:13px;">\' + regionOptionsHtml + \'</select></td>\';' +
+'                regionCell = \'<td data-label="Region"><select id="editBranchRegion-\' + escHtml(String(b._id)) + \'" style="padding:6px;border:1px solid #cbd5e0;border-radius:4px;font-size:13px;">\' + regionOptionsHtml + \'</select></td>\';' +
 '                editCell = \'<button type="button" class="resolve-btn" onclick="saveBranchEdit(\\\'\' + b._id + \'\\\')">Save</button>\';' +
 '                deleteCell = \'<button type="button" class="branch-delete-btn" onclick="toggleEditBranch(\\\'\' + b._id + \'\\\')">Cancel</button>\';' +
 '            } else {' +
-'                regionCell = \'<td><select disabled title="Locked - click Edit to change region" onchange="moveBranchRegion(\\\'\' + b._id + \'\\\', this.value)" style="padding:6px;border:1px solid #cbd5e0;border-radius:4px;font-size:13px;">\' + regionOptionsHtml + \'</select></td>\';' +
+'                regionCell = \'<td data-label="Region"><select disabled title="Locked - click Edit to change region" onchange="moveBranchRegion(\\\'\' + b._id + \'\\\', this.value)" style="padding:6px;border:1px solid #cbd5e0;border-radius:4px;font-size:13px;">\' + regionOptionsHtml + \'</select></td>\';' +
 '                editCell = \'<button type="button" class="branch-delete-btn" onclick="toggleEditBranch(\\\'\' + b._id + \'\\\')">Edit</button>\';' +
 '                deleteCell = \'<button type="button" class="branch-delete-btn" onclick="deleteBranch(\\\'\' + b._id + \'\\\')">Delete</button>\';' +
 '            }' +
 '            const openCount = openCounts[b.name] || 0;' +
-'            rowsHtml += \'<tr><td>\' + nameCell + \'</td><td>\' + codeCell + \'</td>\' + regionCell + \'<td style="font-weight:600;">\' + openCount + \'</td><td>\' + editCell + \'</td><td>\' + deleteCell + \'</td></tr>\';' +
+'            rowsHtml += \'<tr><td data-label="Branch Name">\' + nameCell + \'</td><td data-label="Code">\' + codeCell + \'</td>\' + regionCell + \'<td data-label="Active tickets" style="font-weight:600;">\' + openCount + \'</td><td>\' + editCell + \'</td><td>\' + deleteCell + \'</td></tr>\';' +
 '        });' +
 '        groupsHtml +=' +
 '            \'<h3 style="margin: 20px 0 8px; font-size: 14px; font-weight: 700; color: #4a5568; text-transform: uppercase; letter-spacing: 0.5px;">\' + escHtml(region) + \'</h3>\' +' +
-'            \'<table class="branch-table"><thead><tr><th>Branch Name</th><th>Code</th><th>Region</th><th>Active tickets</th><th>Edit</th><th>Delete</th></tr></thead><tbody>\' + rowsHtml + \'</tbody></table>\';' +
+'            \'<table class="branch-table tbl-cards"><thead><tr><th>Branch Name</th><th>Code</th><th>Region</th><th>Active tickets</th><th>Edit</th><th>Delete</th></tr></thead><tbody>\' + rowsHtml + \'</tbody></table>\';' +
 '    });' +
 '    container.innerHTML = groupsHtml;' +
 '    /* Only the branch name opens the dashboard. Edit, Delete and the region dropdown keep' +
@@ -2971,12 +3009,12 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                    if (editingStaffIds.has(s.id)) {' +
 '                        let regionOptionsHtml = \'<option value="">Unassigned</option>\';' +
 '                        cachedRegionsForStaff.forEach(r => { regionOptionsHtml += \'<option value="\'+escHtml(r.name)+\'"\'+(r.name === s.region ? \' selected\' : \'\')+\'>\'+escHtml(r.name)+\'</option>\'; });' +
-'                        regionCell = \'<td><select id="editStaffRegion-\'+escHtml(s.id)+\'" style="padding:6px;border:1px solid #cbd5e0;border-radius:4px;">\'+regionOptionsHtml+\'</select></td>\';' +
+'                        regionCell = \'<td data-label="Region"><select id="editStaffRegion-\'+escHtml(s.id)+\'" style="padding:6px;border:1px solid #cbd5e0;border-radius:4px;">\'+regionOptionsHtml+\'</select></td>\';' +
 '                    } else {' +
-'                        regionCell = \'<td>\'+escHtml(s.region || "Unassigned")+\'</td>\';' +
+'                        regionCell = \'<td data-label="Region">\'+escHtml(s.region || "Unassigned")+\'</td>\';' +
 '                    }' +
 '                }' +
-'                rowsHtml += \'<tr data-staff="\'+escHtml(s.id)+\'"><td>\'+idCell+\'</td><td>\'+nameCell+\'</td><td>\'+emailCell+\'</td>\'+regionCell+\'<td>\'+checkboxesHtml+\'</td><td>\'+editCell+\'</td><td>\'+deleteCell+\'</td></tr>\';' +
+'                rowsHtml += \'<tr data-staff="\'+escHtml(s.id)+\'"><td data-label="Staff ID">\'+idCell+\'</td><td data-label="Name Tag">\'+nameCell+\'</td><td data-label="Email / Mobile / Password">\'+emailCell+\'</td>\'+regionCell+\'<td data-label="Assigned Branches">\'+checkboxesHtml+\'</td><td>\'+editCell+\'</td><td>\'+deleteCell+\'</td></tr>\';' +
 '            });' +
 '            tbody.innerHTML = rowsHtml;' +
 '        }' +
@@ -3120,7 +3158,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                }' +
 '                const statusBadge = a.enabled ? \'<span class="badge status-resolved">Enabled</span>\' : \'<span class="badge p-High">Disabled</span>\';' +
 '                const toggleBtn = \'<button type="button" class="branch-delete-btn" onclick="toggleRegionAdminEnabled(\\\'\'+a.id+\'\\\', \'+(!a.enabled)+\')">\'+ (a.enabled ? "Disable" : "Enable") +\'</button>\';' +
-'                rowsHtml += \'<tr><td>\'+nameCell+\'</td><td>\'+escHtml(a.username)+\'</td><td>\'+regionCell+\'</td><td>\'+statusBadge+\' \'+toggleBtn+\'</td><td>\'+editCell+\'</td><td><button type="button" class="branch-delete-btn" onclick="deleteRegionAdmin(\\\'\'+a.id+\'\\\')">Delete</button></td></tr>\';' +
+'                rowsHtml += \'<tr><td data-label="Name">\'+nameCell+\'</td><td data-label="Username">\'+escHtml(a.username)+\'</td><td data-label="Region">\'+regionCell+\'</td><td data-label="Status">\'+statusBadge+\' \'+toggleBtn+\'</td><td>\'+editCell+\'</td><td><button type="button" class="branch-delete-btn" onclick="deleteRegionAdmin(\\\'\'+a.id+\'\\\')">Delete</button></td></tr>\';' +
 '            });' +
 '            tbody.innerHTML = rowsHtml;' +
 '            /* Attach listeners after render (inline handlers would need nested-quote gymnastics);' +
@@ -3922,7 +3960,13 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            switchView(pendingRefresh.view);' +
 '            if (pendingRefresh.message) { setTimeout(function() { showAdminToast(pendingRefresh.message); }, 350); }' +
 '        } else {' +
-'            loadTickets();' +
+// Pull-to-refresh reloads the page, so reopen whatever panel was on screen (inbox,
+// staff, reports...) instead of dropping back to the ticket list.
+'            let pullView = null;' +
+'            try { pullView = sessionStorage.getItem("sarathyPullRefreshView"); sessionStorage.removeItem("sarathyPullRefreshView"); } catch (e) { pullView = null; }' +
+'            const pullViews = ["tickets", "reports", "performance", "profile", "branches", "staff", "audit", "admins", "regions", "newticket", "mybranches", "inbox"];' +
+'            if (pullView && pullViews.indexOf(pullView) !== -1) { switchView(pullView); }' +
+'            else { loadTickets(); }' +
 '        }' +
 '        try { var authToast = sessionStorage.getItem("authToast"); sessionStorage.removeItem("authToast"); if (authToast === "login") { setTimeout(function() { showAdminToast("Logged in successfully."); }, 350); } } catch (e) {}' +
 

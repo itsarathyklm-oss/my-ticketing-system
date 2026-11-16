@@ -1,10 +1,5 @@
-// Escapes user-supplied text for safe innerHTML rendering.
-function escHtml(v) {
-    if (v === null || v === undefined) return "";
-    return String(v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-}
-
 // admin_features.js - External features for admin panel
+// (escHtml comes from the admin page's inline script, which runs before this file loads.)
 
 // Service worker registration
 if ('serviceWorker' in navigator) {
@@ -15,7 +10,7 @@ if ('serviceWorker' in navigator) {
 (function() {
     const container = document.getElementById('viewNewTicket');
     if (!container) return;
-    container.innerHTML = '<div style="width:100%;margin:0;min-height:calc(100vh - 110px);display:flex;flex-direction:column;"><div style="background:#1e2229;border-radius:14px 14px 0 0;padding:12px 24px;display:flex;align-items:center;gap:12px;"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#e53e3e" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg><span style="font-family:Barlow Condensed,sans-serif;font-weight:700;font-size:16px;letter-spacing:1px;color:#fff;text-transform:uppercase;">CREATE NEW TICKET</span></div><div style="background:#fdfcfb;border-radius:0 0 14px 14px;padding:14px 24px;display:flex;flex-direction:column;flex:1 1 auto;min-height:0;box-shadow:0 4px 20px rgba(0,0,0,0.08);"><div style="font-family:Barlow Condensed,sans-serif;font-weight:600;font-size:17px;color:#1e2229;margin-bottom:2px;">Submit a New Ticket</div><div style="font-size:11px;color:#8a8f98;margin-bottom:6px;">Fill in the details below to create a ticket.</div><div style="height:0;border-top:2px dashed #e2ded9;margin:8px -24px;"></div><div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;grid-template-rows:auto auto auto 1fr auto auto;gap:9px;margin-top:8px;flex:1 1 auto;min-height:0;"><div><label style="display:block;margin-bottom:2px;font-weight:600;font-size:10.5px;color:#6b7280;text-transform:uppercase;">Your Name</label><input type="text" id="newTktName" placeholder="Full Name" style="width:100%;padding:6px 11px;border:1.5px solid #e5e1de;border-radius:7px;font-size:13px;background:#faf9f7;"></div><div><label style="display:block;margin-bottom:2px;font-weight:600;font-size:10.5px;color:#6b7280;text-transform:uppercase;">Designation</label><input type="text" id="newTktDesignation" placeholder="Designation" style="width:100%;padding:6px 11px;border:1.5px solid #e5e1de;border-radius:7px;font-size:13px;background:#faf9f7;"></div><div><label style="display:block;margin-bottom:2px;font-weight:600;font-size:10.5px;color:#6b7280;text-transform:uppercase;">Mobile Number</label><input type="tel" id="newTktMobile" placeholder="10-digit mobile" maxlength="10" style="width:100%;padding:6px 11px;border:1.5px solid #e5e1de;border-radius:7px;font-size:13px;background:#faf9f7;"></div><div><label style="display:block;margin-bottom:2px;font-weight:600;font-size:10.5px;color:#6b7280;text-transform:uppercase;">Assign Staff</label><select id="newTktStaff" style="width:100%;padding:6px 11px;border:1.5px solid #e5e1de;border-radius:7px;font-size:13px;background:#faf9f7;"><option value="" disabled selected>Loading staff...</option></select></div><div style="grid-column:1/-1;"><label style="display:block;margin-bottom:2px;font-weight:600;font-size:10.5px;color:#6b7280;text-transform:uppercase;">Issue Title</label><input type="text" id="newTktTitle" placeholder="Issue title" style="width:100%;padding:6px 11px;border:1.5px solid #e5e1de;border-radius:7px;font-size:13px;background:#faf9f7;"></div><div><label style="display:block;margin-bottom:2px;font-weight:600;font-size:10.5px;color:#6b7280;text-transform:uppercase;">Region</label><select id="newTktRegion" onchange="updateNewTktBranchOptions()" style="width:100%;padding:6px 11px;border:1.5px solid #e5e1de;border-radius:7px;font-size:13px;background:#faf9f7;"><option value="" disabled selected>Loading...</option></select></div><div><label style="display:block;margin-bottom:2px;font-weight:600;font-size:10.5px;color:#6b7280;text-transform:uppercase;">Branch Location</label><select id="newTktBranch" style="width:100%;padding:6px 11px;border:1.5px solid #e5e1de;border-radius:7px;font-size:13px;background:#faf9f7;"><option value="" disabled selected>Select region first</option></select></div><div><label style="display:block;margin-bottom:2px;font-weight:600;font-size:10.5px;color:#6b7280;text-transform:uppercase;">Priority Level</label><select id="newTktPriority" style="width:100%;padding:6px 11px;border:1.5px solid #e5e1de;border-radius:7px;font-size:13px;background:#faf9f7;"><option value="Low">Low</option><option value="Medium" selected>Medium</option><option value="High">High</option></select></div><div><label style="display:block;margin-bottom:2px;font-weight:600;font-size:10.5px;color:#6b7280;text-transform:uppercase;">Category</label><select id="newTktCategory" style="width:100%;padding:6px 11px;border:1.5px solid #e5e1de;border-radius:7px;font-size:13px;background:#faf9f7;"><option value="" disabled selected>Select Category</option><option value="Hardware">Hardware</option><option value="Software">Software</option><option value="Network">Network</option><option value="Printer">Printer</option><option value="Other">Other</option></select></div><div style="grid-column:1/-1;display:flex;flex-direction:column;min-height:0;"><label style="display:block;margin-bottom:2px;font-weight:600;font-size:10.5px;color:#6b7280;text-transform:uppercase;">Description</label><textarea id="newTktDescription" rows="2" placeholder="Describe the issue" style="width:100%;padding:6px 11px;border:1.5px solid #e5e1de;border-radius:7px;font-size:13px;background:#faf9f7;resize:none;flex:1 1 auto;min-height:56px;"></textarea></div><div style="grid-column:1/-1;"><label style="display:block;margin-bottom:2px;font-weight:600;font-size:10.5px;color:#6b7280;text-transform:uppercase;">Upload Screenshot (Optional)</label><input type="file" id="newTktScreenshot" accept="image/jpeg,image/png,image/webp,image/gif,application/pdf" style="width:100%;padding:6px 11px;border:1.5px solid #e5e1de;border-radius:7px;font-size:13px;background:#faf9f7;"></div><button onclick="submitNewTicket()" style="grid-column:1/-1;margin-top:10px;padding:9px;width:100%;background:linear-gradient(120deg,#e53e3e,#c53030);color:#fff;border:none;border-radius:8px;cursor:pointer;font-family:Barlow Condensed,sans-serif;font-weight:700;font-size:14px;letter-spacing:1px;text-transform:uppercase;box-shadow:0 8px 20px rgba(197,48,48,0.4);">SUBMIT TICKET</button></div></div></div>';
+    container.innerHTML = '<div style="width:100%;margin:0;min-height:calc(100vh - 110px);display:flex;flex-direction:column;"><div style="background:#1e2229;border-radius:14px 14px 0 0;padding:12px 24px;display:flex;align-items:center;gap:12px;"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#e53e3e" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg><span style="font-family:Barlow Condensed,sans-serif;font-weight:700;font-size:16px;letter-spacing:1px;color:#fff;text-transform:uppercase;">CREATE NEW TICKET</span></div><div style="background:#fdfcfb;border-radius:0 0 14px 14px;padding:14px 24px;display:flex;flex-direction:column;flex:1 1 auto;min-height:0;box-shadow:0 4px 20px rgba(0,0,0,0.08);"><div style="font-family:Barlow Condensed,sans-serif;font-weight:600;font-size:17px;color:#1e2229;margin-bottom:2px;">Submit a New Ticket</div><div style="font-size:11px;color:#8a8f98;margin-bottom:6px;">Fill in the details below to create a ticket.</div><div style="height:0;border-top:2px dashed #e2ded9;margin:8px -24px;"></div><div class="new-tkt-grid" style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;grid-template-rows:auto auto auto 1fr auto auto;gap:9px;margin-top:8px;flex:1 1 auto;min-height:0;"><div><label style="display:block;margin-bottom:2px;font-weight:600;font-size:10.5px;color:#6b7280;text-transform:uppercase;">Your Name</label><input type="text" id="newTktName" placeholder="Full Name" style="width:100%;padding:6px 11px;border:1.5px solid #e5e1de;border-radius:7px;font-size:13px;background:#faf9f7;"></div><div><label style="display:block;margin-bottom:2px;font-weight:600;font-size:10.5px;color:#6b7280;text-transform:uppercase;">Designation</label><input type="text" id="newTktDesignation" placeholder="Designation" style="width:100%;padding:6px 11px;border:1.5px solid #e5e1de;border-radius:7px;font-size:13px;background:#faf9f7;"></div><div><label style="display:block;margin-bottom:2px;font-weight:600;font-size:10.5px;color:#6b7280;text-transform:uppercase;">Mobile Number</label><input type="tel" id="newTktMobile" placeholder="10-digit mobile" maxlength="10" style="width:100%;padding:6px 11px;border:1.5px solid #e5e1de;border-radius:7px;font-size:13px;background:#faf9f7;"></div><div><label style="display:block;margin-bottom:2px;font-weight:600;font-size:10.5px;color:#6b7280;text-transform:uppercase;">Assign Staff</label><select id="newTktStaff" style="width:100%;padding:6px 11px;border:1.5px solid #e5e1de;border-radius:7px;font-size:13px;background:#faf9f7;"><option value="" disabled selected>Loading staff...</option></select></div><div style="grid-column:1/-1;"><label style="display:block;margin-bottom:2px;font-weight:600;font-size:10.5px;color:#6b7280;text-transform:uppercase;">Issue Title</label><input type="text" id="newTktTitle" placeholder="Issue title" style="width:100%;padding:6px 11px;border:1.5px solid #e5e1de;border-radius:7px;font-size:13px;background:#faf9f7;"></div><div><label style="display:block;margin-bottom:2px;font-weight:600;font-size:10.5px;color:#6b7280;text-transform:uppercase;">Region</label><select id="newTktRegion" onchange="updateNewTktBranchOptions()" style="width:100%;padding:6px 11px;border:1.5px solid #e5e1de;border-radius:7px;font-size:13px;background:#faf9f7;"><option value="" disabled selected>Loading...</option></select></div><div><label style="display:block;margin-bottom:2px;font-weight:600;font-size:10.5px;color:#6b7280;text-transform:uppercase;">Branch Location</label><select id="newTktBranch" style="width:100%;padding:6px 11px;border:1.5px solid #e5e1de;border-radius:7px;font-size:13px;background:#faf9f7;"><option value="" disabled selected>Select region first</option></select></div><div><label style="display:block;margin-bottom:2px;font-weight:600;font-size:10.5px;color:#6b7280;text-transform:uppercase;">Priority Level</label><select id="newTktPriority" style="width:100%;padding:6px 11px;border:1.5px solid #e5e1de;border-radius:7px;font-size:13px;background:#faf9f7;"><option value="Low">Low</option><option value="Medium" selected>Medium</option><option value="High">High</option></select></div><div><label style="display:block;margin-bottom:2px;font-weight:600;font-size:10.5px;color:#6b7280;text-transform:uppercase;">Category</label><select id="newTktCategory" style="width:100%;padding:6px 11px;border:1.5px solid #e5e1de;border-radius:7px;font-size:13px;background:#faf9f7;"><option value="" disabled selected>Select Category</option><option value="Hardware">Hardware</option><option value="Software">Software</option><option value="Network">Network</option><option value="Printer">Printer</option><option value="Other">Other</option></select></div><div style="grid-column:1/-1;display:flex;flex-direction:column;min-height:0;"><label style="display:block;margin-bottom:2px;font-weight:600;font-size:10.5px;color:#6b7280;text-transform:uppercase;">Description</label><textarea id="newTktDescription" rows="2" placeholder="Describe the issue" style="width:100%;padding:6px 11px;border:1.5px solid #e5e1de;border-radius:7px;font-size:13px;background:#faf9f7;resize:none;flex:1 1 auto;min-height:56px;"></textarea></div><div style="grid-column:1/-1;"><label style="display:block;margin-bottom:2px;font-weight:600;font-size:10.5px;color:#6b7280;text-transform:uppercase;">Upload Screenshot (Optional)</label><input type="file" id="newTktScreenshot" accept="image/jpeg,image/png,image/webp,image/gif,application/pdf" style="width:100%;padding:6px 11px;border:1.5px solid #e5e1de;border-radius:7px;font-size:13px;background:#faf9f7;"></div><button onclick="submitNewTicket()" style="grid-column:1/-1;margin-top:10px;padding:9px;width:100%;background:linear-gradient(120deg,#e53e3e,#c53030);color:#fff;border:none;border-radius:8px;cursor:pointer;font-family:Barlow Condensed,sans-serif;font-weight:700;font-size:14px;letter-spacing:1px;text-transform:uppercase;box-shadow:0 8px 20px rgba(197,48,48,0.4);">SUBMIT TICKET</button></div></div></div>';
 })();
 
 // ============ NEW TICKET FORM FUNCTIONS ============
@@ -319,3 +314,98 @@ async function replyFromBroadcastThread(replyId, broadcastId) {
 
 // Load the resolution checklist UI (fully additive)
 (function(){var s=document.createElement("script");s.src="/checklist.js";document.head.appendChild(s);})();
+
+// ============ PULL TO REFRESH (touch devices) ============
+// The dashboard scrolls inside .main-content, so the browser's own pull-to-refresh never
+// reaches it. Pulling down while that pane is at the top shows an indicator, and releasing
+// past the threshold reloads the page. Pointer-only devices are left untouched.
+(function initPullToRefresh() {
+    if (!('ontouchstart' in window)) return;
+    var main = document.querySelector('.main-content');
+    if (!main) return;
+
+    var style = document.createElement('style');
+    style.textContent =
+        '#ptrIndicator{position:fixed;top:0;left:50%;transform:translate(-50%,-100%);display:flex;align-items:center;gap:8px;' +
+        'background:#fff;border:1px solid #e2e8f0;border-bottom-left-radius:12px;border-bottom-right-radius:12px;' +
+        'padding:8px 16px;font-size:12px;font-weight:600;color:#4a5568;box-shadow:0 8px 20px rgba(0,0,0,.12);' +
+        'z-index:5000;opacity:0;transition:opacity .15s ease;pointer-events:none;}' +
+        '#ptrIndicator.visible{opacity:1;}' +
+        '#ptrIndicator .ptr-spinner{width:14px;height:14px;border:2px solid #cbd5e0;border-top-color:#0056b3;' +
+        'border-radius:50%;animation:ptrSpin .7s linear infinite;display:none;flex-shrink:0;}' +
+        '@keyframes ptrSpin{to{transform:rotate(360deg);}}';
+    document.head.appendChild(style);
+
+    var el = document.createElement('div');
+    el.id = 'ptrIndicator';
+    el.innerHTML = '<span class="ptr-spinner"></span><span class="ptr-label">Pull to refresh</span>';
+    document.body.appendChild(el);
+    var label = el.querySelector('.ptr-label');
+    var spinner = el.querySelector('.ptr-spinner');
+
+    var THRESHOLD = 60, MAX = 90, DAMPING = 0.55;
+    var startY = 0, pulling = false, dist = 0;
+    // The refresh reloads the page, so remember which panel was open and reopen it
+    // afterwards instead of dropping the user back on the tickets dashboard.
+    var VIEW_NAMES = {
+        viewTickets: 'tickets', viewReports: 'reports', viewPerformance: 'performance',
+        viewMyProfile: 'profile', viewBranches: 'branches', viewStaff: 'staff',
+        viewAuditLog: 'audit', viewAdmins: 'admins', viewRegions: 'regions',
+        viewNewTicket: 'newticket', viewMyBranches: 'mybranches', viewInbox: 'inbox'
+    };
+
+    function rememberView() {
+        var active = document.querySelector('.dashboard-view.active');
+        var name = active ? VIEW_NAMES[active.id] : '';
+        try {
+            if (name && name !== 'tickets') sessionStorage.setItem('sarathyPullRefreshView', name);
+            else sessionStorage.removeItem('sarathyPullRefreshView');
+        } catch (e) {}
+    }
+
+    function place(px) {
+        el.style.transform = 'translate(-50%, calc(-100% + ' + px + 'px))';
+    }
+
+    function reset() {
+        pulling = false;
+        dist = 0;
+        el.classList.remove('visible');
+        place(0);
+        spinner.style.display = 'none';
+        label.textContent = 'Pull to refresh';
+    }
+
+    main.addEventListener('touchstart', function (e) {
+        if (main.scrollTop > 0 || e.touches.length !== 1) return;
+        startY = e.touches[0].clientY;
+        pulling = true;
+        dist = 0;
+    }, { passive: true });
+
+    main.addEventListener('touchmove', function (e) {
+        if (!pulling) return;
+        if (main.scrollTop > 0) { reset(); return; }
+        var dy = e.touches[0].clientY - startY;
+        if (dy <= 0) { if (dist) reset(); return; }
+        dist = Math.min(MAX, dy * DAMPING);
+        el.classList.add('visible');
+        place(dist);
+        label.textContent = dist >= THRESHOLD ? 'Release to refresh' : 'Pull to refresh';
+        if (e.cancelable) e.preventDefault();
+    }, { passive: false });
+
+    main.addEventListener('touchend', function () {
+        if (!pulling) return;
+        pulling = false;
+        if (dist < THRESHOLD) { reset(); return; }
+        el.classList.add('visible');
+        place(THRESHOLD);
+        label.textContent = 'Refreshing\u2026';
+        spinner.style.display = 'inline-block';
+        rememberView();
+        setTimeout(function () { location.reload(); }, 120);
+    });
+
+    main.addEventListener('touchcancel', reset);
+})();
