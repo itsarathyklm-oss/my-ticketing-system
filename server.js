@@ -3965,13 +3965,17 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            let pullView = null;' +
 '            try { pullView = sessionStorage.getItem("sarathyPullRefreshView"); sessionStorage.removeItem("sarathyPullRefreshView"); } catch (e) { pullView = null; }' +
 '            const pullViews = ["tickets", "reports", "performance", "profile", "branches", "staff", "audit", "admins", "regions", "newticket", "mybranches", "inbox"];' +
-'            if (pullView && pullViews.indexOf(pullView) !== -1) { switchView(pullView); }' +
+// admin_features.js is injected after this script, and reopening Inbox calls loadInbox()
+// which uses loadBroadcastAudience() from that file. Switching here ran before the file
+// existed, so the inbox list was left empty. Hold the view name and let the loader below
+// switch once admin_features.js has executed.
+'            if (pullView && pullViews.indexOf(pullView) !== -1) { window.__sarathyPullView = pullView; }' +
 '            else { loadTickets(); }' +
 '        }' +
 '        try { var authToast = sessionStorage.getItem("authToast"); sessionStorage.removeItem("authToast"); if (authToast === "login") { setTimeout(function() { showAdminToast("Logged in successfully."); }, 350); } } catch (e) {}' +
 
 '    </script>' +
-'    <script>(function(){var s=document.createElement("script");s.src="/admin_features.js";document.head.appendChild(s);})()</script>' +
+'    <script>(function(){function restorePullView(){var v=window.__sarathyPullView;if(v){window.__sarathyPullView=null;switchView(v);}}var s=document.createElement("script");s.src="/admin_features.js";s.onload=restorePullView;s.onerror=restorePullView;document.head.appendChild(s);})()</script>' +
 '</body>' +
 '</html>';
 
