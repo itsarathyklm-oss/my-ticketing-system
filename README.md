@@ -186,7 +186,7 @@ Ticket numbering: `display_number` is stamped at creation (`SAC70/0001`) and **n
 
 ## File uploads
 
-Screenshots and note attachments go to **Cloudinary** (`helpdesk_screenshots` folder) via `multer-storage-cloudinary`. Upload security is an **allowlist**, not a blocklist — anything not explicitly allowed is rejected regardless of a disguised extension:
+Screenshots and note attachments go to **Cloudinary** (`helpdesk_screenshots` folder) via `multer-storage-cloudinary-v2`. Upload security is an **allowlist**, not a blocklist — anything not explicitly allowed is rejected regardless of a disguised extension:
 
 - **Extensions:** `.jpg .jpeg .png .webp .gif .pdf`
 - **MIME types:** `image/jpeg image/png image/webp image/gif application/pdf`

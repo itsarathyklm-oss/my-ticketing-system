@@ -12,7 +12,7 @@ dns.setDefaultResultOrder('ipv4first');
 const session = require('express-session');
 const multer = require('multer');
 const cloudinary = require('cloudinary').v2;
-const { CloudinaryStorage } = require('multer-storage-cloudinary');
+const { CloudinaryStorage } = require('multer-storage-cloudinary-v2');
 const nodemailer = require('nodemailer');
 const bcrypt = require('bcryptjs');
 const ExcelJS = require('exceljs');
