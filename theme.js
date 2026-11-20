@@ -46,6 +46,11 @@
         'html[data-theme="dark"] .staff-popover{background:' + DARK.surface + ' !important;border-color:' + DARK.border + ' !important;color:' + DARK.text + ' !important;box-shadow:0 10px 30px rgba(0,0,0,.55) !important;}',
         'html[data-theme="dark"] .ticket-card.ticket-escalated{background:#1d1a14 !important;}',
         'html[data-theme="dark"] .ticket-card.ticket-high-priority{background:#211518 !important;border-color:#7f2b2b !important;}',
+        'html[data-theme="dark"] .ticket-skeleton{background:' + DARK.surface + ' !important;border-color:' + DARK.border + ' !important;}',
+        'html[data-theme="dark"] .sk-bar{background:#2a3542 !important;}',
+        'html[data-theme="dark"] .sk-bar::after{background:linear-gradient(90deg,rgba(255,255,255,0),rgba(255,255,255,0.09),rgba(255,255,255,0)) !important;}',
+        'html[data-theme="dark"] .sk-panel{background:#161e27 !important;border-color:' + DARK.border + ' !important;}',
+        'html[data-theme="dark"] .stat-loading{background:' + DARK.bg + ' !important;}',
 
         // ---- text --------------------------------------------------------
         'html[data-theme="dark"] .metric-label,html[data-theme="dark"] .metric-subtitle,',

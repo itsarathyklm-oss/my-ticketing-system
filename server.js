@@ -516,7 +516,7 @@ app.get('/', (req, res) => {
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body {
     font-family: 'Inter', 'Segoe UI', Arial, sans-serif;
-    min-height: 100vh; display: flex; align-items: center; justify-content: center;
+    min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center;
     background-image:
         radial-gradient(circle at 18% 20%, rgba(229,62,62,0.32), transparent 42%),
         radial-gradient(circle at 85% 18%, rgba(229,62,62,0.14), transparent 40%),
@@ -564,7 +564,8 @@ button[type="submit"]:active { transform: translateY(0); }
 .tab-switch { display: flex; background: #f1f0ee; }
 .tab-btn { flex: 1; padding: 10px; border: none; background: transparent; cursor: pointer; font-family: 'Barlow Condensed', sans-serif; font-weight: 600; font-size: 12px; letter-spacing: .5px; text-transform: uppercase; color: #8a8f98; transition: all .2s; }
 .tab-btn.active { background: #fdfcfb; color: #e53e3e; box-shadow: inset 0 -2px 0 #e53e3e; }
-.check-status-btn { margin-top: 12px; padding: 11px; width: 100%; background: #1e2229; color: #fff; border: none; border-radius: 8px; cursor: pointer; font-family: 'Barlow Condensed', sans-serif; font-weight: 700; font-size: 13px; letter-spacing: 1px; text-transform: uppercase; transition: background .2s; }
+.check-status-btn { margin-top: 12px; padding: 11px; width: 100%; background: #1e2229; color: #fff; border: none; border-radius: 8px; cursor: pointer; font-family: 'Barlow Condensed', sans-serif; font-weight: 700; font-size: 13px; letter-spacing: 1px; text-transform: uppercase; transition: background .2s; display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+.check-status-btn .spinner { display: inline-block; flex: 0 0 auto; }
 .check-status-btn:hover { background: #2d323e; }
 .check-status-btn:disabled { opacity: .7; cursor: not-allowed; }
 .status-loading { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 18px 0; color: #8a8f98; font-size: 13px; font-weight: 500; }
@@ -585,8 +586,10 @@ button[type="submit"]:active { transform: translateY(0); }
 .toast { position: fixed; top: 16px; left: 50%; transform: translateX(-50%) translateY(-16px); background: #22543d; color: #fff; padding: 12px 22px; border-radius: 9px; font-size: 13px; font-weight: 600; box-shadow: 0 8px 24px rgba(0,0,0,0.3); z-index: 2000; opacity: 0; transition: opacity .25s, transform .25s; pointer-events: none; max-width: 90vw; text-align: center; }
 .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 .toast.error { background: #9b2c2c; }
-.page-footer { position: fixed; bottom: 8px; left: 0; width: 100%; text-align: center; font-size: 11px; color: rgba(255,255,255,0.55); letter-spacing: .3px; }
-</style></head><body>${INTRO_SPLASH_HTML}<div id="formToast" class="toast"></div><div class="ticket-card"><div class="ticket-ribbon"><img src="/logo.png" alt="Company Logo" onerror="this.style.display='none'"><span class="ticket-ribbon-text">Sarathy IT Helpdesk</span></div><div class="tab-switch"><button type="button" class="tab-btn active" id="tabSubmitBtn" onclick="showTab('submit')">Submit Ticket</button><button type="button" class="tab-btn" id="tabStatusBtn" onclick="showTab('status')">Check Status</button></div><div class="ticket-body"><div id="submitPane"><h2 class="form-title">Submit a New Ticket</h2><div class="form-subtitle">We'll route it to the right person and keep you posted.</div><div class="ticket-perforation"></div><form id="ticketForm" enctype="multipart/form-data" class="form-grid"><div class="form-field"><label>Your Name</label><input type="text" id="submitterName" required></div><div class="form-field"><label>Designation</label><input type="text" id="submitterDesignation"></div><div class="form-field"><label>Mobile Number</label><input type="tel" id="mobile" placeholder="10-digit mobile number" pattern="[0-9]{10}" maxlength="10" inputmode="numeric" oninput="this.value=this.value.replace(/[^0-9]/g,'').slice(0,10)" required></div><div class="form-field full-width"><label>Issue Title</label><input type="text" id="title" required></div><div class="form-field"><label>Region</label><select id="region" required onchange="updateBranchOptions()"><option value="" disabled selected>Loading...</option></select></div><div class="form-field"><label>Branch Location</label><select id="branch" required><option value="" disabled selected>Select region first</option></select></div><div class="form-field"><label>Priority Level</label><select id="priority"><option value="Low">Low</option><option value="Medium" selected>Medium</option><option value="High">High</option></select></div><div class="form-field"><label>Category</label><select id="category" required><option value="" disabled selected>Select Category</option><option value="Hardware">Hardware</option><option value="Software">Software</option><option value="Network">Network</option><option value="Printer">Printer</option><option value="Other">Other</option></select></div><div class="form-field full-width"><label>Description</label><textarea id="description" required></textarea></div><div class="form-field full-width"><label>Upload Screenshot (Optional, PDF/JPG/PNG/WEBP/GIF, max 5MB)</label><input type="file" id="screenshot" accept="image/jpeg,image/png,image/webp,image/gif,application/pdf,.jpg,.jpeg,.png,.webp,.gif,.pdf"><div id="screenshotFileRow" class="screenshot-file-row"><span id="screenshotFileName" class="screenshot-file-name"></span><button type="button" class="screenshot-clear-btn" title="Remove file" aria-label="Remove selected file" onclick="clearScreenshotFile()">&times;</button></div></div><button type="submit" id="submitTicketBtn">Submit Ticket</button></form></div><div id="statusPane" style="display:none;"><h2 class="form-title">Check Ticket Status</h2><div class="form-subtitle">Enter the mobile number you used when submitting.</div><label>Mobile Number</label><input type="tel" id="statusMobile" placeholder="Enter your 10-digit mobile number" pattern="[0-9]{10}" maxlength="10" inputmode="numeric" oninput="this.value=this.value.replace(/[^0-9]/g,'').slice(0,10)"><button type="button" class="check-status-btn" onclick="checkTicketStatus()">Check Status</button><div id="statusResults"></div></div></div></div><div class="page-footer">&copy; 2026 Sarathy Pvt Ltd</div><script>
+.page-footer { margin: 10px 0 2px; text-align: center; font-size: 11px; color: rgba(255,255,255,0.55); letter-spacing: .3px; }
+.footer-label { color: #4c9aff; cursor: pointer; }
+.footer-label:hover { text-decoration: underline; }
+</style></head><body>${INTRO_SPLASH_HTML}<div id="formToast" class="toast"></div><div class="ticket-card"><div class="ticket-ribbon"><img src="/logo.png" alt="Company Logo" onerror="this.style.display='none'"><span class="ticket-ribbon-text">Sarathy IT Helpdesk</span></div><div class="tab-switch"><button type="button" class="tab-btn active" id="tabSubmitBtn" onclick="showTab('submit')">Submit Ticket</button><button type="button" class="tab-btn" id="tabStatusBtn" onclick="showTab('status')">Check Status</button></div><div class="ticket-body"><div id="submitPane"><h2 class="form-title">Submit a New Ticket</h2><div class="form-subtitle">We'll route it to the right person and keep you posted.</div><div class="ticket-perforation"></div><form id="ticketForm" enctype="multipart/form-data" class="form-grid"><div class="form-field"><label>Your Name</label><input type="text" id="submitterName" required></div><div class="form-field"><label>Designation</label><input type="text" id="submitterDesignation"></div><div class="form-field"><label>Mobile Number</label><input type="tel" id="mobile" placeholder="10-digit mobile number" pattern="[0-9]{10}" maxlength="10" inputmode="numeric" oninput="this.value=this.value.replace(/[^0-9]/g,'').slice(0,10)" required></div><div class="form-field full-width"><label>Issue Title</label><input type="text" id="title" required></div><div class="form-field"><label>Region</label><select id="region" required onchange="updateBranchOptions()"><option value="" disabled selected>Loading...</option></select></div><div class="form-field"><label>Branch Location</label><select id="branch" required><option value="" disabled selected>Select region first</option></select></div><div class="form-field"><label>Priority Level</label><select id="priority"><option value="Low">Low</option><option value="Medium" selected>Medium</option><option value="High">High</option></select></div><div class="form-field"><label>Category</label><select id="category" required><option value="" disabled selected>Select Category</option><option value="Hardware">Hardware</option><option value="Software">Software</option><option value="Network">Network</option><option value="Printer">Printer</option><option value="Other">Other</option></select></div><div class="form-field full-width"><label>Description</label><textarea id="description" required></textarea></div><div class="form-field full-width"><label>Upload Screenshot (Optional, PDF/JPG/PNG/WEBP/GIF, max 5MB)</label><input type="file" id="screenshot" accept="image/jpeg,image/png,image/webp,image/gif,application/pdf,.jpg,.jpeg,.png,.webp,.gif,.pdf"><div id="screenshotFileRow" class="screenshot-file-row"><span id="screenshotFileName" class="screenshot-file-name"></span><button type="button" class="screenshot-clear-btn" title="Remove file" aria-label="Remove selected file" onclick="clearScreenshotFile()">&times;</button></div></div><button type="submit" id="submitTicketBtn">Submit Ticket</button></form></div><div id="statusPane" style="display:none;"><h2 class="form-title">Check Ticket Status</h2><div class="form-subtitle">Enter the mobile number you used when submitting.</div><label>Mobile Number</label><input type="tel" id="statusMobile" placeholder="Enter your 10-digit mobile number" pattern="[0-9]{10}" maxlength="10" inputmode="numeric" oninput="this.value=this.value.replace(/[^0-9]/g,'').slice(0,10)"><button type="button" class="check-status-btn" onclick="checkTicketStatus()">Check Status</button><div id="statusResults"></div></div></div></div><div class="page-footer">&copy; ${new Date().getFullYear()} Sarathy Pvt Ltd &middot; <span class="footer-label">Privacy</span> &middot; <span class="footer-label">Support</span></div><script>
     let allBranchesCache = [];
     let toastTimer = null;
     function showToast(message, isError) {
@@ -907,7 +910,7 @@ button[type="submit"]:disabled { opacity: .7; cursor: not-allowed; transform: no
 .admin-toast-progress { position: absolute; bottom: 0; left: 0; height: 3px; background: #38a169; animation: toastshrink 4s linear forwards; }
 .admin-toast.error .admin-toast-progress { background: #e53e3e; }
 @keyframes toastshrink { from { width: 100%; } to { width: 0%; } }
-</style></head><body>${INTRO_SPLASH_HTML}<div class="login-card"><div class="badge-hole"></div><div class="login-ribbon"><img src="/logo.png" alt="Company Logo" onerror="this.style.display='none'"><span class="login-ribbon-text">IT DEPARTMENT SARATHY</span><span class="login-ribbon-sub">Staff &amp; Admin Access</span></div><div class="login-body"><form id="loginForm"><label>Username / Staff Name</label><input type="text" id="username" required><label>Password</label><div class="password-wrapper"><input type="password" id="password" required><button type="button" class="toggle-password" id="togglePassword" aria-label="Show password"><svg id="eyeIcon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button></div><div class="caps-warning" id="capsWarning">Caps Lock is on</div><div class="login-error" id="loginError"></div><button type="submit" id="loginBtn" class="login-submit-btn"><span style="display:flex;align-items:center;justify-content:center;gap:8px;"><svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg> LOGIN</span></button></form></div></div><div class="page-footer">&copy; 2026 Sarathy Pvt Ltd</div><div id="adminToast" class="admin-toast"></div><script>
+</style></head><body>${INTRO_SPLASH_HTML}<div class="login-card"><div class="badge-hole"></div><div class="login-ribbon"><img src="/logo.png" alt="Company Logo" onerror="this.style.display='none'"><span class="login-ribbon-text">IT DEPARTMENT SARATHY</span><span class="login-ribbon-sub">Staff &amp; Admin Access</span></div><div class="login-body"><form id="loginForm"><label>Username / Staff Name</label><input type="text" id="username" required><label>Password</label><div class="password-wrapper"><input type="password" id="password" required><button type="button" class="toggle-password" id="togglePassword" aria-label="Show password"><svg id="eyeIcon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button></div><div class="caps-warning" id="capsWarning">Caps Lock is on</div><div class="login-error" id="loginError"></div><button type="submit" id="loginBtn" class="login-submit-btn"><span style="display:flex;align-items:center;justify-content:center;gap:8px;"><svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg> LOGIN</span></button></form></div></div><div class="page-footer">&copy; ${new Date().getFullYear()} Sarathy Pvt Ltd</div><div id="adminToast" class="admin-toast"></div><script>
     const loginForm = document.getElementById('loginForm');
     const loginBtn = document.getElementById('loginBtn');
     const loginError = document.getElementById('loginError');
@@ -1354,8 +1357,20 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '        .metric-card.assigned { border-top-color: #e53e3e; }' +
 '        .metric-card.escalated { border-top-color: #d97706; }' +
 '        #ticketList { position: relative; }' +
-'        .stat-loading { position: absolute; top: 0; right: 0; bottom: 0; left: 0; display: flex; align-items: flex-start; justify-content: center; padding-top: 72px; background: rgba(255, 255, 255, 0.78); border-radius: 10px; z-index: 30; }' +
-'        .stat-loading img { width: 130px; height: auto; display: block; }' +
+'        .stat-loading { position: absolute; top: 0; right: 0; bottom: 0; left: 0; z-index: 30; background: #f8f9fa; border-radius: 10px; overflow: hidden; }' +
+'        .stat-loading img { position: absolute; top: 72px; left: 50%; transform: translateX(-50%); width: 130px; height: auto; display: block; z-index: 1; }' +
+'        .ticket-skeleton { background: #fff; border: 1px solid #e2e8f0; border-top: 4px solid #e2e8f0; border-radius: 8px; padding: 24px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }' +
+'        .sk-bar { position: relative; overflow: hidden; background: #e8edf3; border-radius: 6px; }' +
+'        .sk-bar::after { content: ""; position: absolute; top: 0; bottom: 0; left: 0; width: 100%; background: linear-gradient(90deg, rgba(255,255,255,0) 0%, rgba(255,255,255,0.9) 50%, rgba(255,255,255,0) 100%); transform: translateX(-100%); animation: skShimmer 1.3s ease-in-out infinite; }' +
+'        @keyframes skShimmer { to { transform: translateX(100%); } }' +
+'        @media (prefers-reduced-motion: reduce) { .sk-bar::after { animation: none; } }' +
+'        .sk-title { height: 20px; width: 45%; margin-bottom: 14px; }' +
+'        .sk-badge-row { display: flex; gap: 8px; margin-bottom: 16px; }' +
+'        .sk-pill { height: 18px; width: 62px; border-radius: 50px; }' +
+'        .sk-line { height: 12px; margin-bottom: 10px; }' +
+'        .sk-panel { margin-top: 16px; padding: 14px 16px; background: #f9fafb; border: 1px solid #edf2f7; border-radius: 8px; }' +
+'        .sk-panel .sk-line { height: 11px; margin-bottom: 12px; }' +
+'        .sk-panel .sk-line:last-child { margin-bottom: 0; }' +
 '        .metric-label { font-size: 11px; font-weight: 600; color: #718096; text-transform: uppercase; letter-spacing: 0.5px; }' +
 '        .metric-value { font-size: 20px; font-weight: 700; color: #2d3748; margin-top: 1px; }' +
 '        .metric-value + .widget-load-gif { height: 20px; width: auto; vertical-align: middle; }' +
@@ -2207,6 +2222,14 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '        let currentPage = 1;' +
 '        const PAGE_SIZE = 10;' +
 '        var statLoadingEpoch = 0;' +
+'        function ticketSkeletonCardHtml() {' +
+'            return \'<div class="ticket-skeleton" aria-hidden="true"><div class="sk-bar sk-title"></div><div class="sk-badge-row"><span class="sk-bar sk-pill"></span><span class="sk-bar sk-pill"></span><span class="sk-bar sk-pill"></span></div><div class="sk-bar sk-line" style="width:92%"></div><div class="sk-bar sk-line" style="width:68%"></div><div class="sk-panel"><div class="sk-bar sk-line" style="width:45%"></div><div class="sk-bar sk-line" style="width:62%"></div><div class="sk-bar sk-line" style="width:38%"></div><div class="sk-bar sk-line" style="width:55%"></div></div></div>\';' +
+'        }' +
+'        function skeletonStackHtml() {' +
+'            var html = "";' +
+'            for (var i = 0; i < 3; i++) html += ticketSkeletonCardHtml();' +
+'            return html;' +
+'        }' +
 '        function showStatLoading() {' +
 '            var holder = document.getElementById("ticketList");' +
 '            if (!holder) return null;' +
@@ -2214,10 +2237,11 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            if (old && old.parentNode) old.parentNode.removeChild(old);' +
 '            var o = document.createElement("div");' +
 '            o.className = "stat-loading";' +
+'            o.innerHTML = skeletonStackHtml();' +
 '            var img = document.createElement("img");' +
 '            img.src = "/loading.gif";' +
 '            img.alt = "Loading";' +
-'            o.appendChild(img);' +
+'            o.insertBefore(img, o.firstChild);' +
 '            holder.appendChild(o);' +
 '            return o;' +
 '        }' +
@@ -3949,6 +3973,9 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            } catch (err) {}' +
 '        }' +
 '        document.addEventListener("visibilitychange", function () { if (!document.hidden) checkQueueChanged(); });' +
+'        /* Skeleton cards for the very first queue render; loadTickets() below replaces them. */' +
+'        var ticketListOnLoad = document.getElementById("ticketList");' +
+'        if (ticketListOnLoad) ticketListOnLoad.innerHTML = skeletonStackHtml();' +
 '        loadStaffFilterOptions();' +
 '        loadSidebarIdentity();' +
 '        loadRegionFilterOptions();' +
@@ -5402,12 +5429,34 @@ app.post('/tickets', publicTicketRateLimiter, (req, res, next) => {
     });
 }, async (req, res) => {
     try {
-        const branchName = req.body.branch || 'N/A';
+        // express.json()/urlencoded() leave req.body undefined for requests that carry no
+        // parsable body, so guard it once instead of reading through it repeatedly.
+        const body = req.body || {};
+
+        // Server-side guard for the fields the form marks as required. Without it an empty
+        // submission was still accepted and stored (title "", submittedBy "Unknown"), so
+        // reject it here before any ticket number or assignment work happens.
+        const requiredFields = [
+            ['submittedBy', 'Your Name'],
+            ['mobile', 'Mobile Number'],
+            ['title', 'Issue Title'],
+            ['branch', 'Branch Location']
+        ];
+        const missingFields = requiredFields
+            .filter(([field]) => typeof body[field] !== 'string' || !body[field].trim())
+            .map(([, label]) => label);
+        if (missingFields.length > 0) {
+            return res.status(400).json({
+                error: `Please fill in the required field${missingFields.length > 1 ? 's' : ''}: ${missingFields.join(', ')}.`
+            });
+        }
+
+        const branchName = body.branch.trim();
         // Sorted by staff id so the rotation order (1,2,3,1,2,3...) is stable across restarts.
         const allStaff = await Staff.findAll({ order: [['staffId', 'ASC']] });
 
         let assignedStaff = null;
-        const requestedStaffName = req.body.assignedTo;
+        const requestedStaffName = body.assignedTo;
 
         // If admin selected a specific staff member, assign directly to them
         if (requestedStaffName && requestedStaffName.trim()) {
@@ -5472,14 +5521,14 @@ app.post('/tickets', publicTicketRateLimiter, (req, res, next) => {
         }
 
         const newTicket = await Ticket.create({
-            title: req.body.title,
-            submittedBy: req.body.submittedBy || 'Unknown',
-            designation: req.body.designation || '',
-            category: req.body.category || 'Other',
+            title: body.title.trim(),
+            submittedBy: body.submittedBy.trim(),
+            designation: body.designation || '',
+            category: body.category || 'Other',
             branch: branchName,
-            mobile: req.body.mobile,
-            priority: req.body.priority,
-            description: req.body.description,
+            mobile: body.mobile.trim(),
+            priority: body.priority,
+            description: body.description,
             screenshot: req.file ? req.file.path : null,
             assignedTo: assignedStaff ? assignedStaff.name : 'Unassigned',
             assignedStaffId: assignedStaff ? assignedStaff.id : null,
