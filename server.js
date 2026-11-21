@@ -87,8 +87,15 @@ var o=document.getElementById('sarathyIntroOverlay');
 var v=document.getElementById('sarathyIntroVideo');
 if(!o)return;
 var KEY='sarathyIntroSeen';
-try{if(sessionStorage.getItem(KEY)){if(o.parentNode)o.parentNode.removeChild(o);return;}}catch(e){}
+// Once per tab. sessionStorage normally carries this, but a tab's storage area can
+// be emptied between two pages of the same tab (that replayed the intro after
+// login); window.name survives such a wipe and is empty in a new tab.
+var seenFlag=false;
+try{seenFlag=!!sessionStorage.getItem(KEY);}catch(e){}
+if(!seenFlag)seenFlag=window.name===KEY;
 try{sessionStorage.setItem(KEY,'1');}catch(e){}
+window.name=KEY;
+if(seenFlag){if(o.parentNode)o.parentNode.removeChild(o);return;}
 var done=false;
 function dismiss(){if(done)return;done=true;o.style.opacity='0';setTimeout(function(){if(o&&o.parentNode)o.parentNode.removeChild(o);},500);}
 function skip(){if(done)return;done=true;if(v){try{v.pause();}catch(e){}}if(o&&o.parentNode)o.parentNode.removeChild(o);}
@@ -396,6 +403,16 @@ app.use(session({
         secure: process.env.NODE_ENV === 'production'
     }
 }));
+
+// Authenticated responses must never be cached: /admin embeds ticket data, and a
+// stale copy must not survive a logout or come back from the browser cache. Public
+// pages are untouched. This is the same predicate the auth helpers below use.
+app.use((req, res, next) => {
+    if (req.session && (req.session.isAdmin || req.session.isStaff)) {
+        res.setHeader("Cache-Control", "no-store");
+    }
+    next();
+});
 
 // Basic brute-force/flood protection: fixed window per IP. Each limiter gets its
 // own Map; expired entries are pruned every minute so the maps cannot grow without
