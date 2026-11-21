@@ -32,7 +32,7 @@
         '.chk-prog-pct{color:#2f9e5f;}',
         '.chk-bar{height:9px;border-radius:50px;background:#eee9e4;overflow:hidden;}',
         '.chk-bar-in{height:100%;width:0;background:linear-gradient(90deg,#48bb78,#2f9e5f);border-radius:50px;transition:width .3s;}',
-        '.chk-list{padding:14px 22px 6px;overflow-y:auto;}',
+        '.chk-list{padding:14px 22px 6px;overflow-y:auto;overscroll-behavior:contain;}',
         '.chk-item{border:1.5px solid #e5e1de;border-radius:10px;padding:11px 14px;margin-bottom:10px;background:#fdfcfb;}',
         '.chk-item.done{border-color:#8ee0b0;background:#f4fcf7;}',
         '.chk-item.na{opacity:.65;background:#f4f3f1;}',
@@ -144,6 +144,7 @@
             '</div>';
         document.body.appendChild(ov);
         modal = ov;
+        lockPageScroll(true);
         ov.querySelector('.chk-close').addEventListener('click', closeModal);
         ov.querySelector('.chk-f-btn').addEventListener('click', closeModal);
         ov.addEventListener('mousedown', function (e) { if (e.target === ov) closeModal(); });
@@ -156,10 +157,17 @@
         });
     }
     function escClose(e) { if (e.key === 'Escape') closeModal(); }
+    // The dashboard scrolls inside .main-content, so that is the scroller to freeze
+    // while the popup is open (the admin body is already overflow:hidden).
+    function lockPageScroll(on) {
+        var m = document.querySelector('.main-content');
+        if (m) m.style.overflowY = on ? 'hidden' : '';
+    }
     function closeModal() {
         document.removeEventListener('keydown', escClose);
         if (modal && modal.parentNode) modal.parentNode.removeChild(modal);
         modal = null;
+        lockPageScroll(false);
         currentTicket = null;
     }
 

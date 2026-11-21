@@ -105,6 +105,15 @@ const RegionAdmin = sequelize.define('RegionAdmin', {
     photoUrl: { type: DataTypes.STRING(500), field: 'photo_url' } // Cloudinary avatar, NULL = initials
 }, { tableName: 'region_admins', timestamps: false });
 
+// --- AppSetting ---
+// Small key/value store for settings that belong to no single row. The Super Admin is an
+// environment-managed account with no table of its own, so its My Profile avatar lives
+// here under the key 'super_admin_photo_url'. sequelize.sync() creates the table on boot.
+const AppSetting = sequelize.define('AppSetting', {
+    settingKey: { type: DataTypes.STRING(100), primaryKey: true, field: 'setting_key' },
+    settingValue: { type: DataTypes.TEXT, field: 'setting_value' }
+}, { tableName: 'app_settings', timestamps: false });
+
 // --- Ticket ---
 // ticketNumber is just this row's auto-increment id — no separate counter needed in MySQL.
 const Ticket = sequelize.define('Ticket', {
@@ -371,6 +380,7 @@ module.exports = {
     Staff,
     StaffBranchAssignment,
     RegionAdmin,
+    AppSetting,
     Ticket,
     TicketComment,
     AuditLog,

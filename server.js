@@ -20,7 +20,7 @@ const { Op, fn, col, literal } = require('sequelize');
 const {
     sequelize, Region, Branch, Staff, StaffBranchAssignment, RegionAdmin,
     Ticket, TicketComment, AuditLog, Notification, InboxMessage,
-    TicketChecklist,
+    TicketChecklist, AppSetting,
     ensureBranchCodeColumns,
     ensureRegionAdminColumns,
     ensureStaffIdentityColumns,
@@ -578,6 +578,44 @@ button[type="submit"]:active { transform: translateY(0); }
 .status-result-number { font-family: 'Barlow Condensed', sans-serif; font-weight: 700; font-size: 15px; color: #1e2229; letter-spacing: .5px; }
 .status-result-title { font-size: 13px; color: #1e2229; font-weight: 600; margin-top: 5px; }
 .status-result-meta { font-size: 11px; color: #8a8f98; margin-top: 3px; }
+.status-result-card.clickable { cursor: pointer; transition: border-color .18s, box-shadow .18s, background .18s; }
+.status-result-card.clickable:hover, .status-result-card.clickable:focus-visible { border-color: #e53e3e; background: #ffffff; box-shadow: 0 8px 20px rgba(30,34,41,0.08); outline: none; }
+.status-result-body { display: flex; align-items: center; gap: 10px; }
+.status-result-info { flex: 1; min-width: 0; }
+.status-result-arrow { flex: 0 0 auto; font-size: 17px; font-weight: 700; line-height: 1; color: #e53e3e; }
+.updates-overlay { position: fixed; inset: 0; z-index: 1600; display: none; align-items: center; justify-content: center; padding: 14px; background: rgba(12,14,18,0.62); }
+.updates-overlay.show { display: flex; }
+body.updates-open { overflow: hidden; }
+.updates-modal { width: 100%; max-width: 540px; max-height: 88vh; display: flex; flex-direction: column; background: #fdfcfb; border-radius: 14px; box-shadow: 0 24px 70px rgba(0,0,0,0.5); overflow: hidden; }
+.updates-head { background: #1e2229; color: #fff; padding: 12px 18px; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-shrink: 0; }
+.updates-eyebrow { font-family: 'Barlow Condensed', sans-serif; font-size: 10.5px; letter-spacing: 1.4px; text-transform: uppercase; color: #f2a6a6; }
+.updates-number { font-family: 'Barlow Condensed', sans-serif; font-weight: 700; font-size: 18px; letter-spacing: .5px; }
+.updates-close { background: rgba(255,255,255,0.12); color: #fff; border: none; width: 30px; height: 30px; border-radius: 50%; font-size: 18px; line-height: 1; cursor: pointer; flex-shrink: 0; }
+.updates-close:hover { background: rgba(255,255,255,0.24); }
+.updates-body { padding: 16px 18px 18px; overflow-y: auto; overscroll-behavior: contain; }
+.updates-title { font-size: 14px; font-weight: 700; color: #1e2229; }
+.updates-sub { font-size: 11.5px; color: #8a8f98; margin-top: 4px; }
+.updates-handler { margin-top: 12px; border: 1px solid #e5e1de; border-left: 3px solid #e53e3e; border-radius: 9px; background: #faf9f7; padding: 10px 12px; }
+.updates-handler-label { font-size: 10px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase; color: #8a8f98; }
+.updates-handler-name { font-size: 13.5px; font-weight: 700; color: #1e2229; margin-top: 2px; }
+.updates-progress { display: flex; align-items: center; gap: 8px; margin-top: 9px; }
+.updates-progress-bar { flex: 1; height: 6px; border-radius: 4px; background: #e9e6e2; overflow: hidden; }
+.updates-progress-fill { height: 100%; background: linear-gradient(120deg, #e53e3e, #c53030); }
+.updates-progress-text { font-size: 10.5px; font-weight: 700; color: #6b7280; white-space: nowrap; }
+.updates-section-label { font-family: 'Barlow Condensed', sans-serif; font-size: 12px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: #8a8f98; margin: 16px 0 8px; }
+.upd-item { border: 1px solid #e5e1de; border-radius: 9px; padding: 10px 12px; background: #faf9f7; margin-bottom: 8px; }
+.upd-item.done { border-color: #cde8d5; background: #f6fbf7; }
+.upd-item-top { display: flex; align-items: flex-start; gap: 8px; }
+.upd-step { flex: 0 0 auto; width: 18px; height: 18px; border-radius: 50%; background: #e9e6e2; color: #6b7280; font-size: 10.5px; font-weight: 700; display: flex; align-items: center; justify-content: center; }
+.upd-item.done .upd-step { background: #22543d; color: #fff; }
+.upd-label { flex: 1; font-size: 12.5px; font-weight: 600; color: #1e2229; line-height: 1.35; }
+.upd-state { flex: 0 0 auto; font-size: 9.5px; font-weight: 700; letter-spacing: .3px; text-transform: uppercase; padding: 3px 7px; border-radius: 50px; background: #eef0f3; color: #6b7280; }
+.upd-item.done .upd-state { background: #d8f0e0; color: #22543d; }
+.upd-item.na .upd-state { background: #f1f0ee; color: #8a8f98; }
+.upd-answer { margin: 7px 0 0 26px; font-size: 12px; color: #3f4650; background: #ffffff; border-left: 2px solid #d7dbe0; padding: 6px 9px; border-radius: 0 6px 6px 0; white-space: pre-wrap; word-break: break-word; }
+.upd-meta { margin: 6px 0 0 26px; font-size: 10.5px; color: #8a8f98; }
+.updates-note { font-size: 10.5px; color: #8a8f98; margin-top: 12px; text-align: center; }
+.updates-empty { font-size: 12.5px; color: #8a8f98; padding: 14px 0; text-align: center; }
 .status-pager { display: flex; justify-content: center; align-items: center; gap: 6px; margin-top: 14px; flex-wrap: wrap; }
 .status-pager-btn { min-width: 34px; padding: 7px 11px; border: 1px solid #d7dbe0; border-radius: 8px; background: #ffffff; color: #1e2229; font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit; }
 .status-pager-btn:hover:not(:disabled) { background: #f1f0ee; }
@@ -589,7 +627,7 @@ button[type="submit"]:active { transform: translateY(0); }
 .page-footer { margin: 10px 0 2px; text-align: center; font-size: 11px; color: rgba(255,255,255,0.55); letter-spacing: .3px; }
 .footer-label { color: #4c9aff; cursor: pointer; }
 .footer-label:hover { text-decoration: underline; }
-</style></head><body>${INTRO_SPLASH_HTML}<div id="formToast" class="toast"></div><div class="ticket-card"><div class="ticket-ribbon"><img src="/logo.png" alt="Company Logo" onerror="this.style.display='none'"><span class="ticket-ribbon-text">Sarathy IT Helpdesk</span></div><div class="tab-switch"><button type="button" class="tab-btn active" id="tabSubmitBtn" onclick="showTab('submit')">Submit Ticket</button><button type="button" class="tab-btn" id="tabStatusBtn" onclick="showTab('status')">Check Status</button></div><div class="ticket-body"><div id="submitPane"><h2 class="form-title">Submit a New Ticket</h2><div class="form-subtitle">We'll route it to the right person and keep you posted.</div><div class="ticket-perforation"></div><form id="ticketForm" enctype="multipart/form-data" class="form-grid"><div class="form-field"><label>Your Name</label><input type="text" id="submitterName" required></div><div class="form-field"><label>Designation</label><input type="text" id="submitterDesignation"></div><div class="form-field"><label>Mobile Number</label><input type="tel" id="mobile" placeholder="10-digit mobile number" pattern="[0-9]{10}" maxlength="10" inputmode="numeric" oninput="this.value=this.value.replace(/[^0-9]/g,'').slice(0,10)" required></div><div class="form-field full-width"><label>Issue Title</label><input type="text" id="title" required></div><div class="form-field"><label>Region</label><select id="region" required onchange="updateBranchOptions()"><option value="" disabled selected>Loading...</option></select></div><div class="form-field"><label>Branch Location</label><select id="branch" required><option value="" disabled selected>Select region first</option></select></div><div class="form-field"><label>Priority Level</label><select id="priority"><option value="Low">Low</option><option value="Medium" selected>Medium</option><option value="High">High</option></select></div><div class="form-field"><label>Category</label><select id="category" required><option value="" disabled selected>Select Category</option><option value="Hardware">Hardware</option><option value="Software">Software</option><option value="Network">Network</option><option value="Printer">Printer</option><option value="Other">Other</option></select></div><div class="form-field full-width"><label>Description</label><textarea id="description" required></textarea></div><div class="form-field full-width"><label>Upload Screenshot (Optional, PDF/JPG/PNG/WEBP/GIF, max 5MB)</label><input type="file" id="screenshot" accept="image/jpeg,image/png,image/webp,image/gif,application/pdf,.jpg,.jpeg,.png,.webp,.gif,.pdf"><div id="screenshotFileRow" class="screenshot-file-row"><span id="screenshotFileName" class="screenshot-file-name"></span><button type="button" class="screenshot-clear-btn" title="Remove file" aria-label="Remove selected file" onclick="clearScreenshotFile()">&times;</button></div></div><button type="submit" id="submitTicketBtn">Submit Ticket</button></form></div><div id="statusPane" style="display:none;"><h2 class="form-title">Check Ticket Status</h2><div class="form-subtitle">Enter the mobile number you used when submitting.</div><label>Mobile Number</label><input type="tel" id="statusMobile" placeholder="Enter your 10-digit mobile number" pattern="[0-9]{10}" maxlength="10" inputmode="numeric" oninput="this.value=this.value.replace(/[^0-9]/g,'').slice(0,10)"><button type="button" class="check-status-btn" onclick="checkTicketStatus()">Check Status</button><div id="statusResults"></div></div></div></div><div class="page-footer">&copy; ${new Date().getFullYear()} Sarathy Pvt Ltd &middot; <span class="footer-label">Privacy</span> &middot; <span class="footer-label">Support</span></div><script>
+</style></head><body>${INTRO_SPLASH_HTML}<div id="formToast" class="toast"></div><div class="updates-overlay" id="updatesOverlay" onclick="if(event.target===this)closeTicketUpdates()"><div class="updates-modal" role="dialog" aria-modal="true" aria-labelledby="updatesNumber"><div class="updates-head"><div><div class="updates-eyebrow">Live update</div><div class="updates-number" id="updatesNumber">Ticket</div></div><button type="button" class="updates-close" aria-label="Close live update" onclick="closeTicketUpdates()">&times;</button></div><div class="updates-body" id="updatesBody"></div></div></div><div class="ticket-card"><div class="ticket-ribbon"><img src="/logo.png" alt="Company Logo" onerror="this.style.display='none'"><span class="ticket-ribbon-text">Sarathy IT Helpdesk</span></div><div class="tab-switch"><button type="button" class="tab-btn active" id="tabSubmitBtn" onclick="showTab('submit')">Submit Ticket</button><button type="button" class="tab-btn" id="tabStatusBtn" onclick="showTab('status')">Check Status</button></div><div class="ticket-body"><div id="submitPane"><h2 class="form-title">Submit a New Ticket</h2><div class="form-subtitle">We'll route it to the right person and keep you posted.</div><div class="ticket-perforation"></div><form id="ticketForm" enctype="multipart/form-data" class="form-grid"><div class="form-field"><label>Your Name</label><input type="text" id="submitterName" required></div><div class="form-field"><label>Designation</label><input type="text" id="submitterDesignation"></div><div class="form-field"><label>Mobile Number</label><input type="tel" id="mobile" placeholder="10-digit mobile number" pattern="[0-9]{10}" maxlength="10" inputmode="numeric" oninput="this.value=this.value.replace(/[^0-9]/g,'').slice(0,10)" required></div><div class="form-field full-width"><label>Issue Title</label><input type="text" id="title" required></div><div class="form-field"><label>Region</label><select id="region" required onchange="updateBranchOptions()"><option value="" disabled selected>Loading...</option></select></div><div class="form-field"><label>Branch Location</label><select id="branch" required><option value="" disabled selected>Select region first</option></select></div><div class="form-field"><label>Priority Level</label><select id="priority"><option value="Low">Low</option><option value="Medium" selected>Medium</option><option value="High">High</option></select></div><div class="form-field"><label>Category</label><select id="category" required><option value="" disabled selected>Select Category</option><option value="Hardware">Hardware</option><option value="Software">Software</option><option value="Network">Network</option><option value="Printer">Printer</option><option value="Other">Other</option></select></div><div class="form-field full-width"><label>Description</label><textarea id="description" required></textarea></div><div class="form-field full-width"><label>Upload Screenshot (Optional, PDF/JPG/PNG/WEBP/GIF, max 5MB)</label><input type="file" id="screenshot" accept="image/jpeg,image/png,image/webp,image/gif,application/pdf,.jpg,.jpeg,.png,.webp,.gif,.pdf"><div id="screenshotFileRow" class="screenshot-file-row"><span id="screenshotFileName" class="screenshot-file-name"></span><button type="button" class="screenshot-clear-btn" title="Remove file" aria-label="Remove selected file" onclick="clearScreenshotFile()">&times;</button></div></div><button type="submit" id="submitTicketBtn">Submit Ticket</button></form></div><div id="statusPane" style="display:none;"><h2 class="form-title">Check Ticket Status</h2><div class="form-subtitle">Enter the mobile number you used when submitting.</div><label>Mobile Number</label><input type="tel" id="statusMobile" placeholder="Enter your 10-digit mobile number" pattern="[0-9]{10}" maxlength="10" inputmode="numeric" oninput="this.value=this.value.replace(/[^0-9]/g,'').slice(0,10)"><button type="button" class="check-status-btn" onclick="checkTicketStatus()">Check Status</button><div id="statusResults"></div></div></div></div><div class="page-footer">&copy; ${new Date().getFullYear()} Sarathy Pvt Ltd &middot; <span class="footer-label">Privacy</span> &middot; <span class="footer-label">Support</span></div><script>
     let allBranchesCache = [];
     let toastTimer = null;
     function showToast(message, isError) {
@@ -774,6 +812,7 @@ button[type="submit"]:active { transform: translateY(0); }
                 return;
             }
             const tickets = await res.json();
+            statusLookupMobile = mobile;
             renderStatusResults(tickets);
             showToast('Ticket statuses refreshed successfully!');
         } catch (err) {
@@ -793,6 +832,9 @@ button[type="submit"]:active { transform: translateY(0); }
     const STATUS_PAGE_SIZE = 5;
     let statusResultsList = [];
     let statusResultsPage = 1;
+    // The mobile the shown list was looked up with, so a popup opened later sends exactly
+    // the number that produced this list - not whatever is in the box right now.
+    let statusLookupMobile = '';
 
     function renderStatusResults(tickets) {
         const container = document.getElementById('statusResults');
@@ -819,13 +861,18 @@ button[type="submit"]:active { transform: translateY(0); }
             const resolvedLine = (t.status === 'Resolved' && t.resolvedAt)
                 ? '<div class="status-result-meta">Resolved by ' + escHtml(t.assignedTo || 'staff') + ' on ' + new Date(t.resolvedAt).toLocaleString() + '</div>'
                 : '<div class="status-result-meta">Being handled by: ' + escHtml(t.assignedTo || 'Unassigned') + '</div>';
-            html += '<div class="status-result-card">' +
+            html += '<div class="status-result-card clickable" role="button" tabindex="0" data-ticket="' + t._id + '" onclick="openTicketUpdates(this.dataset.ticket)" onkeydown="if(event.keyCode===13||event.keyCode===32){event.preventDefault();openTicketUpdates(this.dataset.ticket);}">' +
                 '<div class="status-result-top"><span class="status-result-number">#' + (t.displayNumber || String(t.ticketNumber).padStart(4, '0')) + '</span>' +
                 '<span class="badge ' + statusClass + '">' + t.status + '</span></div>' +
+                '<div class="status-result-body">' +
+                '<div class="status-result-info">' +
                 '<div class="status-result-title">' + escHtml(t.title) + '</div>' +
                 '<div class="status-result-meta">' + escHtml(t.branch) + ' &middot; ' + escHtml(t.priority) + ' priority</div>' +
                 '<div class="status-result-meta">Submitted: ' + (t.createdAt ? new Date(t.createdAt).toLocaleString() : '') + '</div>' +
                 resolvedLine +
+                '</div>' +
+                '<span class="status-result-arrow" aria-hidden="true">&rarr;</span>' +
+                '</div>' +
                 '</div>';
         });
         if (pages > 1) {
@@ -839,6 +886,66 @@ button[type="submit"]:active { transform: translateY(0); }
         }
         container.innerHTML = html;
     }
+
+    async function openTicketUpdates(id) {
+        const overlay = document.getElementById('updatesOverlay');
+        const body = document.getElementById('updatesBody');
+        const numberEl = document.getElementById('updatesNumber');
+        const mobile = statusLookupMobile || document.getElementById('statusMobile').value.trim();
+        numberEl.textContent = 'Ticket';
+        body.innerHTML = '<div class="status-loading"><span class="spinner-dark"></span>Loading live update...</div>';
+        body.scrollTop = 0;
+        overlay.classList.add('show');
+        document.body.classList.add('updates-open');
+        try {
+            const res = await fetch('/tickets/' + encodeURIComponent(id) + '/updates?mobile=' + encodeURIComponent(mobile), { cache: 'no-store' });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                body.innerHTML = '<div class="updates-empty">' + escHtml(data.error || 'Could not load this live update.') + '</div>';
+                return;
+            }
+            numberEl.textContent = '#' + data.displayNumber;
+            body.innerHTML = buildTicketUpdates(data);
+        } catch (err) {
+            body.innerHTML = '<div class="updates-empty">Could not load this live update. Please check your connection and try again.</div>';
+        }
+    }
+
+    function closeTicketUpdates() {
+        document.getElementById('updatesOverlay').classList.remove('show');
+        document.body.classList.remove('updates-open');
+    }
+
+    // Read-only rendering: the checklist is maintained by IT staff, the submitter only reads it.
+    function buildTicketUpdates(d) {
+        const statusClass = d.status === 'Resolved' ? 'status-resolved' : 'status-open';
+        const pct = d.total ? Math.round((d.done / d.total) * 100) : 0;
+        const items = (d.items || []).map(function (it, i) {
+            const cls = it.state === 'done' ? ' done' : (it.state === 'na' ? ' na' : '');
+            const stateText = it.state === 'done' ? 'Completed' : (it.state === 'na' ? 'N/A' : 'Awaiting');
+            const answer = it.answer ? '<div class="upd-answer">' + escHtml(it.answer) + '</div>' : '';
+            const meta = (it.state !== 'pending' && it.updatedAt)
+                ? '<div class="upd-meta">' + escHtml(it.updatedBy || 'IT staff') + ' &middot; ' + new Date(it.updatedAt).toLocaleString() + '</div>'
+                : '';
+            return '<div class="upd-item' + cls + '"><div class="upd-item-top"><span class="upd-step">' + (i + 1) + '</span>' +
+                '<span class="upd-label">' + escHtml(it.label) + '</span>' +
+                '<span class="upd-state">' + stateText + '</span></div>' + answer + meta + '</div>';
+        }).join('');
+        return '<div class="updates-title">' + escHtml(d.title) + '</div>' +
+            '<div class="updates-sub">' + escHtml(d.branch) + ' &middot; ' + escHtml(d.priority) + ' priority &middot; <span class="badge ' + statusClass + '">' + escHtml(d.status) + '</span></div>' +
+            '<div class="updates-handler">' +
+                '<div class="updates-handler-label">Handled by</div>' +
+                '<div class="updates-handler-name">' + escHtml(d.assignedTo || 'Unassigned') + '</div>' +
+                '<div class="updates-sub">Submitted ' + (d.createdAt ? new Date(d.createdAt).toLocaleString() : '-') + (d.resolvedAt ? ' &middot; Resolved ' + new Date(d.resolvedAt).toLocaleString() : '') + '</div>' +
+                '<div class="updates-progress"><div class="updates-progress-bar"><div class="updates-progress-fill" style="width:' + pct + '%"></div></div>' +
+                '<span class="updates-progress-text">' + d.done + ' of ' + d.total + ' steps</span></div>' +
+            '</div>' +
+            '<div class="updates-section-label">Current update</div>' +
+            (items || '<div class="updates-empty">No update has been posted yet.</div>') +
+            '<div class="updates-note">Read-only view. Updates are added by the IT department.</div>';
+    }
+
+    document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeTicketUpdates(); });
 
     function goStatusPage(p) {
         const pages = Math.max(1, Math.ceil(statusResultsList.length / STATUS_PAGE_SIZE));
@@ -1159,7 +1266,10 @@ app.get('/profile', checkUserLogin, async (req, res) => {
         if (req.session.isSuperAdmin) {
             profile.role = 'Super Admin';
             profile.allRegions = true;
-            profile.canUploadPhoto = false; // env-managed account: no row to hold a photo
+            // The Super Admin has no staff/region-admin row, so its avatar is kept in
+            // app_settings under 'super_admin_photo_url'.
+            const superPhoto = await AppSetting.findByPk('super_admin_photo_url');
+            profile.photoUrl = (superPhoto && superPhoto.settingValue) || '';
             return res.json(profile);
         }
         if (req.session.isAdmin) {
@@ -1198,12 +1308,9 @@ app.get('/profile', checkUserLogin, async (req, res) => {
     }
 });
 
-// The only part of My Profile a user can change: their picture. The Super Admin account is
-// environment-managed, so it is rejected before anything is sent to Cloudinary.
+// The only part of My Profile a user can change: their picture. Staff and region admins
+// store it on their own row; the Super Admin (which has no row) stores it in app_settings.
 app.post('/profile/photo', checkUserLogin, (req, res, next) => {
-    if (req.session.isSuperAdmin) {
-        return res.status(400).json({ error: 'The Super Admin account is managed by the environment, so a photo cannot be uploaded here.' });
-    }
     profilePhotoUpload.single('photo')(req, res, (err) => {
         if (err) {
             if (err.code === 'LIMIT_FILE_SIZE') return res.status(400).json({ error: 'That image is too large. Maximum allowed size is 5MB.' });
@@ -1219,7 +1326,9 @@ app.post('/profile/photo', checkUserLogin, (req, res, next) => {
     try {
         if (!req.file) return res.status(400).json({ error: 'Choose an image file first.' });
         const photoUrl = req.file.path;
-        if (req.session.isAdmin) {
+        if (req.session.isSuperAdmin) {
+            await AppSetting.upsert({ settingKey: 'super_admin_photo_url', settingValue: photoUrl });
+        } else if (req.session.isAdmin) {
             const adminRow = req.session.regionAdminId
                 ? await RegionAdmin.findByPk(req.session.regionAdminId)
                 : await RegionAdmin.findOne({ where: { name: req.session.username } });
@@ -1235,6 +1344,20 @@ app.post('/profile/photo', checkUserLogin, (req, res, next) => {
             await staffRow.save();
         }
         res.json({ success: true, photoUrl });
+    } catch (err) {
+        console.error('Request failed:', err.message); res.status(500).json({ error: 'Something went wrong. Please try again.' });
+    }
+});
+
+// Removing the picture is offered for the Super Admin only: its avatar lives in
+// app_settings, so dropping that row makes the avatar fall back to the initials.
+app.delete('/profile/photo', checkUserLogin, async (req, res) => {
+    try {
+        if (!req.session.isSuperAdmin) {
+            return res.status(400).json({ error: 'Only the Super Admin account can remove its photo here.' });
+        }
+        await AppSetting.destroy({ where: { settingKey: 'super_admin_photo_url' } });
+        res.json({ success: true });
     } catch (err) {
         console.error('Request failed:', err.message); res.status(500).json({ error: 'Something went wrong. Please try again.' });
     }
@@ -1382,7 +1505,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '        .ticket-card.ticket-resolved { border-top-color: #38a169; }' +
 '        .ticket-card.ticket-escalated { border-top-color: #dd6b20; background: #fffaf0; }' +
 '        .admin-action-warning { margin: 10px 0 0; padding: 9px 12px; background: #fff7ed; border: 1px solid #f59e0b; border-left: 4px solid #dc2626; border-radius: 6px; color: #92400e; font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 8px; }' +
-'        .admin-action-banner { display: none; align-items: center; gap: 10px; margin: 0 0 14px; padding: 11px 14px; background: #fff7ed; border: 1px solid #f59e0b; border-left: 4px solid #dc2626; border-radius: 8px; color: #92400e; font-size: 13px; line-height: 1.45; }' +
+'        .admin-action-banner { display: none; cursor: pointer; align-items: center; gap: 10px; margin: 0 0 14px; padding: 11px 14px; background: #fff7ed; border: 1px solid #f59e0b; border-left: 4px solid #dc2626; border-radius: 8px; color: #92400e; font-size: 13px; line-height: 1.45; }' +
 '        .ticket-card.ticket-high-priority { background: #fff5f5; border: 2px solid #e53e3e; border-top: 4px solid #e53e3e; }' +
 '        .ticket-card.ticket-high-priority .ticket-title { color: #c53030; }' +
 '        .ticket-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; }' +
@@ -1424,6 +1547,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '        .comment-item strong { color: #2d3748; }' +
 '        .comment-form { display: flex; gap: 10px; margin-top: 12px; flex-wrap: wrap; align-items: center; }' +
 '        .comment-form input { flex-grow: 1; padding: 8px 12px; border: 1px solid #e2e8f0; border-radius: 6px; font-size: 13px; }' +
+'        .comment-form input.note-required { border-color: #e53e3e; box-shadow: 0 0 0 3px rgba(229,62,62,.14); }' +
 '        .comment-form button { background-color: #3182ce; color: white; border: none; padding: 8px 16px; font-size: 13px; font-weight: 600; border-radius: 6px; cursor: pointer; }' +
 '        .comment-attach-btn { display: flex; align-items: center; justify-content: center; padding: 8px 12px; border: 1px solid #e2e8f0; border-radius: 6px; background: #f7fafc; cursor: pointer; font-size: 14px; flex-shrink: 0; }' +
 '        .comment-attach-btn:hover { background: #edf2f7; }' +
@@ -1667,6 +1791,7 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                            <img id=\"profilePhotoPreview\" alt=\"Selected photo preview\" style=\"display:none;width:44px;height:44px;border-radius:50%;object-fit:cover;border:1px solid #e2e8f0;flex-shrink:0;\">' +
 '                            <input type="file" id="profilePhotoInput" accept="image/png,image/jpeg,image/webp" style="font-size:13px;">' +
 '                            <button class="branch-add-btn" id="profilePhotoBtn" onclick="uploadProfilePhoto()">Upload photo</button>' +
+'                            <button type="button" class="branch-delete-btn" id="profilePhotoRemoveBtn" onclick="removeProfilePhoto()" style="display:none;">Remove photo</button>' +
 '                            <button type=\"button\" class=\"profile-photo-clear\" id=\"profilePhotoClearBtn\" title=\"Remove selected photo\" aria-label=\"Remove selected photo\" onclick=\"clearProfilePhoto()\">&times;</button>' +
 '                        </div>' +
 '                        <div style="font-size:11.5px;color:#a0aec0;margin-top:6px;">JPG, PNG or WEBP, up to 5 MB.</div>' +
@@ -2301,6 +2426,8 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            if (searchEl) searchEl.value = "";' +
 '            currentStatusFilter = "default-view";' +
 '            currentPage = 1;' +
+'            const panel = document.getElementById("ticketFilterPanel");' +
+'            if (panel && panel.style.display !== "none") toggleFilterPanel();' +
 '            loadTickets();' +
 '        }' +
 '        function goToPage(page) {' +
@@ -2607,14 +2734,52 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            var h = document.querySelector("#slaSummary .sla-load-gif");' +
 '            if (h && h.parentNode) h.parentNode.removeChild(h);' +
 '        }' +
+'        var adminActionTicketIds = [];' +
 '        function updateAdminActionBanner(list) {' +
 '            if (!isAdmin) return;' +
 '            var el = document.getElementById(\"adminActionBanner\");' +
 '            if (!el) return;' +
-'            var n = (list || []).filter(function (t) { return !!t.needsAdminAction; }).length;' +
+'            var actionTickets = (list || []).filter(function (t) { return !!t.needsAdminAction; });' +
+'            adminActionTicketIds = actionTickets.map(function (t) { return String(t._id); });' +
+'            var n = actionTickets.length;' +
 '            if (!n) { el.style.display = \"none\"; el.innerHTML = \"\"; return; }' +
 '            el.style.display = \"flex\";' +
 '            el.innerHTML = \"&#9888; <span><strong>Action Required:</strong> \" + n + (n === 1 ? \" ticket is\" : \" tickets are\") + \" not assigned to any staff - allocate an IT staff member to clear this.</span>\";' +
+'            el.onclick = openActionRequiredTicket;' +
+'            el.title = \"Open the ticket that needs action\";' +
+'        }' +
+'        function revealActionTicket(card) {' +
+'            if (!card) return;' +
+'            card.scrollIntoView({ behavior: \"smooth\", block: \"start\" });' +
+'            card.classList.remove(\"notification-focus\");' +
+'            void card.offsetWidth;' +
+'            card.classList.add(\"notification-focus\");' +
+'            setTimeout(function () { card.classList.remove(\"notification-focus\"); }, 3000);' +
+'        }' +
+'        async function openActionRequiredTicket() {' +
+'            var targetId = adminActionTicketIds[0];' +
+'            if (!targetId) return;' +
+'            var shownCards = document.querySelectorAll(\"#ticketList .ticket-card\");' +
+'            for (var ci = 0; ci < shownCards.length; ci++) {' +
+'                if (shownCards[ci].getAttribute(\"data-ticket-id\") === targetId) { revealActionTicket(shownCards[ci]); return; }' +
+'            }' +
+'            try {' +
+'                const res = await fetch(\"/tickets\", { cache: \"no-store\" });' +
+'                if (!res.ok) throw new Error(\"Could not load tickets (\" + res.status + \").\");' +
+'                const all = await res.json();' +
+'                let list = all.filter(t => t.status === \"Open\");' +
+'                let status = \"default-view\";' +
+'                let idx = list.findIndex(t => String(t._id) === targetId);' +
+'                if (idx < 0) { list = sortOpenFirstThenResolvedByRecency(all); status = \"all\"; idx = list.findIndex(t => String(t._id) === targetId); }' +
+'                if (idx < 0) throw new Error(\"This ticket is not available in your view.\");' +
+'                [\"filterFromDate\", \"filterToDate\", \"filterCategory\", \"filterStaff\", \"filterRegion\", \"filterSearchText\"].forEach(function (fid) { var fEl = document.getElementById(fid); if (fEl) fEl.value = \"\"; });' +
+'                currentStatusFilter = status;' +
+'                currentPage = Math.floor(idx / PAGE_SIZE) + 1;' +
+'                await loadTickets();' +
+'                revealActionTicket(document.querySelector(\"#ticketList .ticket-card[data-ticket-id=\\\"\" + targetId + \"\\\"]\"));' +
+'            } catch (err) {' +
+'                showAdminToast(err && err.message ? err.message : \"Could not open the ticket.\", true);' +
+'            }' +
 '        }' +
 '        async function loadTickets() {' +
 '            try {' +
@@ -2717,10 +2882,10 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                let commentListHtml = "";' +
 '                if (ticket.comments) {' +
 '                    ticket.comments.forEach(c => {' +
-'                        commentListHtml += \'<div class="comment-item"><strong>\'+escHtml(c.author)+\':</strong> \'+escHtml(c.text)+(c.attachment ? \' <a href="\'+escHtml(c.attachment)+\'" target="_blank">\uD83D\uDCCE Attachment</a>\' : "")+\'</div>\';' +
+'                        commentListHtml += \'<div class="comment-item"><strong>\'+escHtml(c.author)+\':</strong> \'+escHtml(c.text)+(c.attachment ? \' <a href="\'+escHtml(c.attachment)+\'" target="_blank"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#2563eb" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px" aria-hidden="true"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"></path></svg> Attachment</a>\' : "")+\'</div>\';' +
 '                    });' +
 '                }' +
-'                ticketCardsHtml += \'<div class="ticket-card \'+cardStateClass+\'" data-ticket-id="\'+ticket._id+\'"><div class="ticket-header"><div><h3 class="ticket-title">#\'+(ticket.displayNumber || String(ticket.ticketNumber).padStart(4,"0"))+\' \'+escHtml(ticket.title)+\'</h3><div style="margin-top: 8px;"><span class="badge p-\'+escHtml(ticket.priority)+\'">\'+escHtml(ticket.priority)+\'</span><span class="badge status-\'+ticket.status.toLowerCase()+\'">\'+ticket.status+\'</span><span class="badge badge-category">\'+escHtml(ticket.category || "Other")+\'</span>\'+escalatedBadge+slaBadgeHtml(ticket)+newBadge+\'</div></div>\'+actionsHtml+\'</div><p class="ticket-desc">\'+escHtml(ticket.description)+\'</p>\'+imageHtml+(ticket.needsAdminAction?\'<div class=\"admin-action-warning\">&#9888; <span><strong>Action Required:</strong> \'+escHtml(ticket.adminActionReason || \"Not assigned to any staff\")+\'</span></div>\':\'\')+\'<div class="assignment-info"><div class="assignment-row"><span class="assignment-label">Submitted By</span><span class="assignment-value">\'+escHtml(ticket.submittedBy || "Unknown")+(ticket.designation ? " ("+escHtml(ticket.designation)+")" : "")+\'</span></div><div class="assignment-row"><span class="assignment-label">Branch</span><span class="assignment-value">\'+escHtml(ticket.branch)+\'</span></div><div class="assignment-row"><span class="assignment-label">Mobile</span><span class="assignment-value">\'+escHtml(ticket.mobile)+\'</span></div><div class="assignment-row"><span class="assignment-label">Assigned</span><span class="assignment-value">\'+escHtml(ticket.assignedTo)+\'</span></div><div class="assignment-row"><span class="assignment-label">Submitted</span><span class="assignment-value">\'+(ticket.createdAt ? new Date(ticket.createdAt).toLocaleString() : "N/A")+\'</span></div>\'+escalationLine+resolvedLine+\'</div><div class="comments-section"><h4 class="comments-header">Internal Work Notes</h4><div>\'+(commentListHtml || "No updates.")+\'</div><div class="comment-form"><input type="text" id="input-\'+ticket._id+\'" placeholder="Write operational update..."><label class="comment-attach-btn" title="Attach a file (optional)">📎<input type="file" id="attachment-\'+ticket._id+\'" style="display:none;" accept="image/jpeg,image/png,image/webp,image/gif,application/pdf,.jpg,.jpeg,.png,.webp,.gif,.pdf" onchange="updateAttachmentLabel(\\\'\'+ticket._id+\'\\\')"></label><span id="attachmentName-\'+ticket._id+\'" class="attachment-name-tag"></span><button type="button" id="attachmentClear-\'+ticket._id+\'" class="attachment-clear-btn" title="Remove attachment" aria-label="Remove attachment" onclick="clearAttachment(\\\'\'+ticket._id+\'\\\')">&times;</button><button onclick="addComment(\\\'\'+ticket._id+\'\\\')">Post</button></div></div></div>\';' +
+'                ticketCardsHtml += \'<div class="ticket-card \'+cardStateClass+\'" data-ticket-id="\'+ticket._id+\'"><div class="ticket-header"><div><h3 class="ticket-title">#\'+(ticket.displayNumber || String(ticket.ticketNumber).padStart(4,"0"))+\' \'+escHtml(ticket.title)+\'</h3><div style="margin-top: 8px;"><span class="badge p-\'+escHtml(ticket.priority)+\'">\'+escHtml(ticket.priority)+\'</span><span class="badge status-\'+ticket.status.toLowerCase()+\'">\'+ticket.status+\'</span><span class="badge badge-category">\'+escHtml(ticket.category || "Other")+\'</span>\'+escalatedBadge+slaBadgeHtml(ticket)+newBadge+\'</div></div>\'+actionsHtml+\'</div><p class="ticket-desc">\'+escHtml(ticket.description)+\'</p>\'+imageHtml+(ticket.needsAdminAction?\'<div class=\"admin-action-warning\">&#9888; <span><strong>Action Required:</strong> \'+escHtml(ticket.adminActionReason || \"Not assigned to any staff\")+\'</span></div>\':\'\')+\'<div class="assignment-info"><div class="assignment-row"><span class="assignment-label">Submitted By</span><span class="assignment-value">\'+escHtml(ticket.submittedBy || "Unknown")+(ticket.designation ? " ("+escHtml(ticket.designation)+")" : "")+\'</span></div><div class="assignment-row"><span class="assignment-label">Branch</span><span class="assignment-value">\'+escHtml(ticket.branch)+\'</span></div><div class="assignment-row"><span class="assignment-label">Mobile</span><span class="assignment-value">\'+escHtml(ticket.mobile)+\'</span></div><div class="assignment-row"><span class="assignment-label">Assigned</span><span class="assignment-value">\'+escHtml(ticket.assignedTo)+\'</span></div><div class="assignment-row"><span class="assignment-label">Submitted</span><span class="assignment-value">\'+(ticket.createdAt ? new Date(ticket.createdAt).toLocaleString() : "N/A")+\'</span></div>\'+escalationLine+resolvedLine+\'</div><div class="comments-section"><h4 class="comments-header">Internal Work Notes</h4><div>\'+(commentListHtml || "No updates.")+\'</div><div class="comment-form"><input type="text" id="input-\'+ticket._id+\'" placeholder="Write operational update..."><label class="comment-attach-btn" title="Attach a file (optional)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#2563eb" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"></path></svg><input type="file" id="attachment-\'+ticket._id+\'" style="display:none;" accept="image/jpeg,image/png,image/webp,image/gif,application/pdf,.jpg,.jpeg,.png,.webp,.gif,.pdf" onchange="updateAttachmentLabel(\\\'\'+ticket._id+\'\\\')"></label><span id="attachmentName-\'+ticket._id+\'" class="attachment-name-tag"></span><button type="button" id="attachmentClear-\'+ticket._id+\'" class="attachment-clear-btn" title="Remove attachment" aria-label="Remove attachment" onclick="clearAttachment(\\\'\'+ticket._id+\'\\\')">&times;</button><button onclick="addComment(\\\'\'+ticket._id+\'\\\')">Post</button></div></div></div>\';' +
 '            });' +
 '            listDiv.innerHTML = ticketCardsHtml;' +
 '            /* The marks have now been shown, so the next visit counts them as seen. */' +
@@ -3607,7 +3772,15 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            const nameTag = document.getElementById("attachmentName-" + id);' +
 '            const text = textInput.value.trim();' +
 '            const file = fileInput && fileInput.files && fileInput.files[0];' +
-'            if (!text && !file) return;' +
+'            if (!text && !file) {' +
+'                showAdminToast("Please write an update or attach a file before posting.", true);' +
+'                if (textInput) {' +
+'                    textInput.classList.add("note-required");' +
+'                    textInput.oninput = function () { if (this.value.trim()) this.classList.remove("note-required"); };' +
+'                    textInput.focus();' +
+'                }' +
+'                return;' +
+'            }' +
 '            const formData = new FormData();' +
 '            formData.append("text", text);' +
 '            if (file) formData.append("attachment", file);' +
@@ -3825,6 +3998,8 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '                    access.innerHTML = \'<div style="color:#718096;">No work areas are assigned yet.</div>\';' +
 '                }' +
 '                document.getElementById("profilePhotoRow").style.display = p.canUploadPhoto ? "block" : "none";' +
+'                var removePhotoBtn = document.getElementById("profilePhotoRemoveBtn");' +
+'                if (removePhotoBtn) removePhotoBtn.style.display = (p.role === "Super Admin" && p.photoUrl) ? "inline-block" : "none";' +
 '                paintSidebarIdentity(p);' +
 '            } catch (err) {' +
 '                nameEl.textContent = "Could not load profile";' +
@@ -3880,6 +4055,18 @@ app.get('/admin', checkUserLogin, (req, res) => {
 '            var input = document.getElementById(\"profilePhotoInput\");' +
 '            if (input) input.value = \"\";' +
 '            syncProfilePhotoClear();' +
+'        }' +
+'        function removeProfilePhoto() {' +
+'            showConfirmModal("Remove your profile picture? Your avatar will go back to your initials.", async () => {' +
+'                try {' +
+'                    const res = await fetch("/profile/photo", { method: "DELETE" });' +
+'                    const data = await res.json().catch(() => ({}));' +
+'                    if (res.ok) { showAdminToast("Profile picture removed."); loadProfile(); }' +
+'                    else { showAdminToast(data.error || "Could not remove photo.", true); }' +
+'                } catch (err) {' +
+'                    showAdminToast("Something went wrong. Please try again.", true);' +
+'                }' +
+'            }, "Remove");' +
 '        }' +
 '        (function initProfilePhotoPicker() {' +
 '            var input = document.getElementById(\"profilePhotoInput\");' +
@@ -4598,6 +4785,55 @@ app.get('/tickets/lookup', lookupRateLimiter, async (req, res) => {
         });
         // Map passes the index as the second argument, so wrap it: serializeTicket needs the request.
         res.json(tickets.map(t => serializeTicket(t, req)));
+    } catch (err) {
+        console.error('Request failed:', err.message); res.status(500).json({ error: 'Something went wrong. Please try again.' });
+    }
+});
+
+// Public live update for one ticket: the resolution checklist the IT staff maintain,
+// read-only. The submitter already proved the mobile number in the lookup, so the same
+// number must match here too - a bare ticket id is never enough.
+app.get('/tickets/:id/updates', lookupRateLimiter, async (req, res) => {
+    try {
+        const mobile = String(req.query.mobile || '').trim();
+        const ticket = await Ticket.findByPk(req.params.id);
+        if (!ticket || !mobile || ticket.mobile !== mobile) {
+            return res.status(404).json({ error: 'No ticket found for that mobile number.' });
+        }
+        const rows = await TicketChecklist.findAll({ where: { ticketId: ticket.id } });
+        const byKey = {};
+        rows.forEach(r => { byKey[r.itemKey] = r; });
+        let done = 0;
+        const items = CHECKLIST_ITEMS.map(it => {
+            const row = byKey[it.key];
+            // Same completeness rule as the admin checklist: a ticked item without its
+            // required description is not finished yet, so it reads as pending here.
+            const state = !row ? 'pending'
+                : row.state === 'na' ? 'na'
+                : (row.state === 'done' && (!it.needsAnswer || String(row.answer || '').trim())) ? 'done'
+                : 'pending';
+            if (state !== 'pending') done++;
+            return {
+                label: it.label,
+                state: state,
+                answer: row ? (row.answer || '') : '',
+                updatedBy: row ? (row.updatedBy || '') : '',
+                updatedAt: row ? row.updatedAt : null
+            };
+        });
+        res.json({
+            displayNumber: ticket.displayNumber || String(ticket.id).padStart(4, '0'),
+            title: ticket.title,
+            branch: ticket.branch,
+            priority: ticket.priority,
+            status: ticket.status,
+            createdAt: ticket.createdAt,
+            resolvedAt: ticket.resolvedAt,
+            assignedTo: ticket.assignedTo || 'Unassigned',
+            done: done,
+            total: CHECKLIST_ITEMS.length,
+            items: items
+        });
     } catch (err) {
         console.error('Request failed:', err.message); res.status(500).json({ error: 'Something went wrong. Please try again.' });
     }
