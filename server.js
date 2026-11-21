@@ -4448,12 +4448,12 @@ app.get('/tickets/report', checkUserLogin, async (req, res) => {
 // --- Mandatory resolution checklist (staff must complete it before resolving) ---
 // Items 1,2,3,6 need a typed description when ticked; N/A skips an item entirely.
 const CHECKLIST_ITEMS = [
-    { key: 'first_call',  label: 'First response conveyed to customer on the first call', needsAnswer: true,  hint: 'Type what was conveyed to the customer on the first call.' },
+    { key: 'first_call',  label: 'First response conveyed to client on the first call', needsAnswer: true,  hint: 'Type what was conveyed to the client on the first call.' },
     { key: 'diagnosed',   label: 'Issue diagnosed / root cause identified', needsAnswer: true,  hint: 'Briefly describe the root cause found.' },
     { key: 'fix_applied', label: 'Fix applied / necessary action taken', needsAnswer: true,  hint: 'Briefly describe the fix or action taken.' },
     { key: 'tested_ok',   label: 'Issue verified working (tested)', needsAnswer: false, hint: '' },
-    { key: 'informed',    label: 'Customer informed about the resolution', needsAnswer: false, hint: '' },
-    { key: 'confirmed',   label: 'Customer confirmed the issue is resolved', needsAnswer: true,  hint: 'Type the customer confirmation response.' }
+    { key: 'informed',    label: 'Client informed about the resolution', needsAnswer: false, hint: '' },
+    { key: 'confirmed',   label: 'Client confirmed the issue is resolved', needsAnswer: true,  hint: 'Type the client confirmation response.' }
 ];
 
 async function getChecklistState(ticketId) {
